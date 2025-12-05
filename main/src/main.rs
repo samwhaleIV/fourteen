@@ -6,15 +6,22 @@ pub mod point;
 use std::env;
 use winit::{event_loop::{ControlFlow,EventLoop}};
 
-use crate::test_state::TestState;
-
 use env_logger::{Builder, Target};
+
+use crate::app::LogTraceConfig;
 
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = app::create_app(test_state::generate_test_state);
+    let mut app = app::create_app(
+        test_state::generate_test_state,
+        LogTraceConfig {
+            window_focus: true,
+            other: true,
+            ..Default::default()
+        }
+    );
 
     event_loop.run_app(&mut app)?;
 

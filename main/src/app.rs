@@ -65,12 +65,8 @@ pub struct App {
     frame_number: u128,
     event_number: u128,
 
-    width: u32,
-    height: u32,
-
-    log_trace_redraw: bool,
-    log_trace_mouse_move: bool,
-    log_trace_window_move: bool,
+    window_width: u32,
+    window_height: u32,
 
     window: Option<Arc<Window>>,
     graphics: Option<Graphics>,
@@ -80,19 +76,43 @@ pub struct App {
  
     state_generator: AppStateGenerator,
     state: AppState,
+    
+    log_trace_config: LogTraceConfig
 }
 
 struct DummyState;
 
 impl AppStateHandler for DummyState {
-    fn unload(&mut self,_graphics: &Graphics) {}
-    fn update(&mut self) -> UpdateResult {
-        return UpdateResult { operation: AppOperation::Continue, new_state: None }
+    /* Oh no! You've activated my trap card. */
+    fn unload(&mut self,_graphics: &Graphics) {
+        panic!("Cannot unload the dummy state!");
     }
-    fn render(&mut self,_render_pass: &mut RenderPass) {}
+    fn update(&mut self) -> UpdateResult {
+        panic!("Cannot update the dummy state!");
+    }
+    fn render(&mut self,_render_pass: &mut RenderPass) {
+        panic!("Cannot render the dummy state!");
+    }
 }
 
-pub fn create_app(state_generator: AppStateGenerator) -> App {
+fn placeholder_state_generator(_: &Graphics) -> AppState {
+    panic!("Cannot generate an AppState using the placeholder state generator");
+}
+
+#[derive(Default)]
+pub struct LogTraceConfig {
+    pub redraw: bool,
+    pub mouse_move: bool,
+    pub window_move: bool,
+    pub resize: bool,
+    pub mouse_over_window: bool,
+    pub mouse_click: bool,
+    pub key_change: bool,
+    pub window_focus: bool,
+    pub other: bool
+}
+
+pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceConfig) -> App {
     return App {
         window: None,
         graphics: None,
@@ -108,16 +128,14 @@ pub fn create_app(state_generator: AppStateGenerator) -> App {
 
         app_exiting: false,
 
-        width: 0,
-        height: 0,
+        window_width: 0,
+        window_height: 0,
 
         frame_number: 0,
         event_number: 0,
-
+ 
         /* For Debugging */
-        log_trace_redraw: false,
-        log_trace_mouse_move: false,
-        log_trace_window_move: false
+        log_trace_config
     }
 }
 
@@ -147,18 +165,16 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
 
 impl App {
     fn configure_surface(&mut self) {
-        let width = self.width;
-        let height = self.height;
+        let width = self.window_width;
+        let height = self.window_height;
 
         if width < 1 || height < 1 {
+            log::warn!("Cannot configure surface with one or more of the following size components: {}x{}",width,height);
             return;
         }
-        
-        let graphics = match &mut self.graphics {
-            Some(graphics) => graphics,
-            None => panic!("Graphics should already exist before a resize operation.")
-        };
 
+        let graphics = self.graphics.as_mut().unwrap();
+        
         graphics.config.width = width;
         graphics.config.height = height;
 
@@ -168,14 +184,8 @@ impl App {
     }
 
     fn update(&mut self) -> EventLoopOperation {
-        let graphics = match &self.graphics {
-            Some(graphics) => graphics,
-            _ => return EventLoopOperation::Continue
-        };
         if !self.state_loaded {
-            let new_state = (self.state_generator)(graphics);
-            self.state = new_state;
-            self.state_loaded = true;
+            self.load_state();
         }
         return match self.state.update() {
             UpdateResult {
@@ -197,31 +207,50 @@ impl App {
                 new_state: None
             } => EventLoopOperation::Terminate,
 
+            /* These invalid results can probably be fixed up by a better creation pattern. I.e. don't let the caller write them manually. */
+
             UpdateResult {
                 new_state: Some(_),
                 ..
-            } => panic!("Invalid app operation. A state has been provided, but it has not been provided with a transition instruction."),
+            } => {
+                log::error!("Invalid update result: A state has been provided, but it has not been provided with a transition instruction. Triggering app termination.");
+                return EventLoopOperation::Terminate;
+            },
 
             UpdateResult {
                 operation: AppOperation::Transition,
                 new_state: None
-            } => panic!("Missing a state for the requested transition. What are you trying to do? Make it make sense."),
+            } => {
+                log::error!("Invalid update result: A transition has been requested, but a state has not been provided. Triggering app termination.");
+                return EventLoopOperation::Terminate;
+            },
 
-            _ => panic!("Unimplemented app operation. This is not the caller's fault. Don't panic. We can fix this.")
+            _ => {
+                log::error!("Invalid update result: This operation has not been implemented. (This is not the caller's fault.) Triggering app termination.");
+                return EventLoopOperation::Terminate;
+            }
         };
     }
 
-    fn unload_state(&mut self) {
-        let graphics = match &self.graphics {
-            Some(graphics) => graphics,
-            None => panic!("Missing graphics state when needed for state unloader.")
-        };
-
-        if !self.state_loaded {
-            panic!("State is already unloaded when it shouldn't be.");
+    fn load_state(&mut self) {
+        if self.state_loaded {
+            log::warn!("Cannot load state, we are already in a loaded state.");
+            return;
         }
+        let new_state = (self.state_generator)(self.graphics.as_ref().unwrap());
+        self.state_generator = placeholder_state_generator;
+        self.state = new_state;
+        self.state_loaded = true;
+    }
 
-        self.state.unload(&graphics);
+    fn unload_state(&mut self) {
+        if !self.state_loaded {
+            if !self.app_exiting {
+                log::warn!("Cannot unload state, we are already in an unloaded state.");
+            }
+            return;
+        }
+        self.state.unload(self.graphics.as_ref().unwrap());
         self.state = Box::new(DummyState);
         self.state_loaded = false;
     }
@@ -250,10 +279,21 @@ impl App {
 
         Ok(())
     }
+
+    fn terminate_app(&mut self,event_loop: &ActiveEventLoop) {
+        if self.app_exiting {
+            log::warn!("App termination is already marked.");
+            return;
+        }
+        log::info!("Terminating app; it's the right thing to do. All programs must die eventually.");
+        self.app_exiting = true;
+        self.unload_state();
+        event_loop.exit();
+    }
  
     /* Primary function to handle updating */
     fn handle_redraw(&mut self,event_loop: &ActiveEventLoop) {
-        if self.log_trace_redraw {
+        if self.log_trace_config.redraw {
             log::trace!("handle_redraw - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
 
@@ -262,61 +302,70 @@ impl App {
             match self.update() {
                 EventLoopOperation::Continue => break,
                 EventLoopOperation::Terminate => {
-                    self.unload_state();
-                    event_loop.exit();
+                    self.terminate_app(event_loop);
                     return;
                 },
                 EventLoopOperation::Repeat => continue
             }
         }
 
-        if !self.state_loaded {
-            panic!("State is not loaded by a point in which it should definitely be loaded.");
-        }
-        
-        if !self.surface_configured {
-            self.configure_surface();
-        }
-
-        if self.surface_configured {
-            match self.render() {
-                Ok(_) => {},
-                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => self.configure_surface(),
-                Err(error) => log::error!("Unable to render: {}",error)
+        if self.state_loaded {
+            if !self.surface_configured {
+                self.configure_surface();
             }
+
+            if self.surface_configured {
+                match self.render() {
+                    Ok(_) => {},
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        log::warn!("WebGPU surface error. Is the surface lost or outdated? Attempting to configure surface again.");
+                        self.configure_surface()
+                    },
+                    Err(error) => log::error!("Unable to render: {}",error)
+                }
+            }
+        } else {
+            log::warn!("Attempt to render without a loaded state.");
         }
 
-        if let Some(window) = &mut self.window {
-            window.request_redraw();
-        }
-        
+        self.window.as_mut().unwrap().request_redraw();
         self.frame_number += 1;
     }
 
     fn handle_key_change(&mut self,_code: KeyCode,_pressed: bool){
-        log::trace!("handle_key_change - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        if self.log_trace_config.key_change {
+            log::trace!("handle_key_change - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        }
     }
 
     fn handle_mouse_press(&mut self) {
-        log::trace!("handle_mouse_press - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        if self.log_trace_config.mouse_click {
+            log::trace!("handle_mouse_press - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        }
     }
 
     fn handle_mouse_release(&mut self) {
-        log::trace!("handle_mouse_release - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        if self.log_trace_config.mouse_click {
+            log::trace!("handle_mouse_release - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        }
     }
 
     fn handle_mouse_move(&mut self,_point: Point) {
-        if self.log_trace_mouse_move {
+        if self.log_trace_config.mouse_move {
             log::trace!("handle_mouse_move - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
     }
 
     fn handle_mouse_enter(&mut self) {
-        log::trace!("handle_mouse_enter - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        if self.log_trace_config.mouse_over_window {
+            log::trace!("handle_mouse_enter - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        }
     }
 
     fn handle_mouse_leave(&mut self) {
-        log::trace!("handle_mouse_leave - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        if self.log_trace_config.mouse_over_window {
+            log::trace!("handle_mouse_leave - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        }
     }
 }
 
@@ -326,8 +375,11 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
         if self.window.is_some() {
-            log::info!("The window has been resumed. Welcome back.");
+            /* This shouldn't happen on desktop platforms. */
+            log::info!("The app has been resumed. Welcome back.");
             return;
+        } else {
+            log::info!("Received 'resumed' call. Getting on with the window and graphics setup.");
         }
         
         let (min_width,min_height) = MINIMUM_WINDOW_SIZE;
@@ -340,8 +392,16 @@ impl ApplicationHandler for App {
             .with_inner_size(window_size)
             .with_visible(false);
 
-        let window = event_loop.create_window(window_attributes).unwrap();
+        let window = match event_loop.create_window(window_attributes) {
+            Ok(window) => window,
+            Err(error) => {
+                log::error!("Could not create window through event loop: {}",error);
+                self.terminate_app(event_loop);
+                return;
+            }
+        };
 
+        /* It's okay that this is optional; it's only used to center the window. */
         if let Some(monitor) = window.current_monitor() {
             let position = get_center_position(monitor.size(),window.outer_size());
             window.set_outer_position(position);
@@ -354,10 +414,13 @@ impl ApplicationHandler for App {
 
         self.window = Some(arc_window);
         self.graphics = Some(graphics);
+
+        log::info!("Graphics pipeline and window are now configured.");
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        log::info!("Window suspended. Goodnight, sweet prince.");
+        /* This shouldn't happen on desktop platforms. */
+        log::info!("App suspended. Goodnight, sweet prince.");
     }
 
     fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
@@ -367,11 +430,13 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::RedrawRequested => self.handle_redraw(event_loop),
 
-            WindowEvent::Resized(size) => {          
-                log::trace!("resized - frame_number:{} | event_number:{} | {}x{}",self.frame_number,self.event_number,size.width,size.height);
+            WindowEvent::Resized(size) => {    
+                if self.log_trace_config.resize {
+                   log::trace!("resized - frame_number:{} | event_number:{} | {}x{}",self.frame_number,self.event_number,size.width,size.height);
+                }
 
-                self.width = size.width;
-                self.height = size.height;
+                self.window_width = size.width;
+                self.window_height = size.height;
 
                 self.configure_surface();
             },
@@ -410,40 +475,58 @@ impl ApplicationHandler for App {
             WindowEvent::CursorEntered { device_id: _ } => self.handle_mouse_enter(),
             WindowEvent::CursorLeft { device_id: _ } => self.handle_mouse_leave(),
 
-            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                self.app_exiting = true;
-                self.unload_state();
-                event_loop.exit();
+            WindowEvent::CloseRequested | WindowEvent::Destroyed => self.terminate_app(event_loop), //Goodbye, cruel world.
+
+            WindowEvent::Moved(_) => {
+                if self.log_trace_config.window_move {
+                    log::trace!("window moved - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                }
             },
 
             WindowEvent::Focused(focused) => match focused {
-                true => log::trace!("window focused - frame_number:{} | event_number:{}",self.frame_number,self.event_number),
+                true => {
+                    if self.log_trace_config.window_focus {
+                        log::trace!("window focused - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                    }
+                },
 
-                false => log::trace!("window lost focus - frame_number:{} | event_number:{}",self.frame_number,self.event_number),
+                false => {
+                    if self.log_trace_config.window_focus {
+                        log::trace!("window lost focus - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                    }
+                },
             },
 
+            /* I actually have no idea what the fuck this event means. */
             WindowEvent::ActivationTokenDone {
                 token,
                 serial: _,
             } => {
-                let token_string = token.into_raw();
-                log::trace!("activation token done - frame_number:{} | event_number:{} | token:{}",self.frame_number,self.event_number,token_string);
-            },
-
-            WindowEvent::ScaleFactorChanged {
-                scale_factor: _,
-                inner_size_writer: _
-            } => log::trace!("scale factor changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number),
-
-            WindowEvent::ThemeChanged(_) => log::trace!("theme changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number),
-
-            WindowEvent::Occluded(occluded) => log::trace!("occluded - frame_number:{} | event_number:{} | occlusion:{}",self.frame_number,self.event_number,occluded),
-
-            WindowEvent::Moved(_) => {
-                if self.log_trace_window_move {
-                    log::trace!("window moved - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                if self.log_trace_config.other {
+                    let token_string = token.into_raw();
+                    log::trace!("activation token done - frame_number:{} | event_number:{} | token:{}",self.frame_number,self.event_number,token_string);
                 }
             },
+
+            /* TODO: Might want to use this ? */
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if self.log_trace_config.other {
+                    log::trace!("scale factor changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                }
+            }
+
+            WindowEvent::ThemeChanged(_) => {
+                if self.log_trace_config.other {
+                    log::trace!("theme changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                }
+            },
+
+            WindowEvent::Occluded(occluded) => {
+                if self.log_trace_config.other {
+                    log::trace!("occluded - frame_number:{} | event_number:{} | occlusion:{}",self.frame_number,self.event_number,occluded);
+                }
+            },
+
             _ => {}
         };
 
