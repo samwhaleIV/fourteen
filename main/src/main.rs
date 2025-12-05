@@ -14,8 +14,7 @@ fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let state = TestState::default();
-    let mut app = app::create_app(Box::new(state));
+    let mut app = app::create_app(test_state::generate_test_state);
 
     event_loop.run_app(&mut app)?;
 

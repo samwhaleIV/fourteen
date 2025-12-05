@@ -20,7 +20,7 @@ use winit::{
 
 pub struct UpdateResult {
     pub operation: AppOperation,
-    pub new_state: Option<AppState>
+    pub new_state: Option<AppStateGenerator>
 }
 
 impl Default for UpdateResult {
@@ -33,7 +33,6 @@ impl Default for UpdateResult {
 }
 
 pub trait AppStateHandler {
-    fn load(&mut self,graphics: &Graphics);
     fn unload(&mut self,graphics: &Graphics);
     fn update(&mut self) -> UpdateResult;
     fn render(&mut self,render_pass: &mut RenderPass);
@@ -51,42 +50,49 @@ enum EventLoopOperation {
     Repeat
 }
 
-enum StateTransitionPhase {
-    FirstStateUnloaded
-}
-
 pub enum RenderPassMode {
     Basic
 }
 
-type AppState = Box<dyn AppStateHandler>;
+pub type AppState = Box<dyn AppStateHandler>;
+pub type AppStateGenerator = fn(&Graphics) -> AppState;
 
 pub struct App {
-    window: Option<Arc<Window>>,
-    graphics: Option<Graphics>,
-
-    start_time: Instant,
-    render_pass_mode: RenderPassMode,
-
-    state: AppState,
-
     state_loaded: bool,
     surface_configured: bool,
+    app_exiting: bool,
 
     frame_number: u128,
     event_number: u128,
-
-    app_exiting: bool,
 
     width: u32,
     height: u32,
 
     log_trace_redraw: bool,
     log_trace_mouse_move: bool,
-    log_trace_window_move: bool
+    log_trace_window_move: bool,
+
+    window: Option<Arc<Window>>,
+    graphics: Option<Graphics>,
+
+    start_time: Instant,
+    render_pass_mode: RenderPassMode,
+ 
+    state_generator: AppStateGenerator,
+    state: AppState,
 }
 
-pub fn create_app(start_state: Box<dyn AppStateHandler>) -> App {
+struct DummyState;
+
+impl AppStateHandler for DummyState {
+    fn unload(&mut self,_graphics: &Graphics) {}
+    fn update(&mut self) -> UpdateResult {
+        return UpdateResult { operation: AppOperation::Continue, new_state: None }
+    }
+    fn render(&mut self,_render_pass: &mut RenderPass) {}
+}
+
+pub fn create_app(state_generator: AppStateGenerator) -> App {
     return App {
         window: None,
         graphics: None,
@@ -94,7 +100,8 @@ pub fn create_app(start_state: Box<dyn AppStateHandler>) -> App {
         start_time: Instant::now(),
         render_pass_mode: RenderPassMode::Basic,
 
-        state: start_state,
+        state_generator,
+        state: Box::new(DummyState),
 
         state_loaded: false,
         surface_configured: false,
@@ -166,7 +173,8 @@ impl App {
             _ => return EventLoopOperation::Continue
         };
         if !self.state_loaded {
-            self.state.load(graphics);
+            let new_state = (self.state_generator)(graphics);
+            self.state = new_state;
             self.state_loaded = true;
         }
         return match self.state.update() {
@@ -177,11 +185,10 @@ impl App {
 
             UpdateResult {
                 operation: AppOperation::Transition,
-                new_state: Some(state)
+                new_state: Some(state_generator)
             } => {
-                self.state.unload(&graphics);
-                self.state_loaded = false;
-                self.state = state;
+                self.unload_state();
+                self.state_generator = state_generator;
                 return EventLoopOperation::Repeat;
             }
 
@@ -204,7 +211,7 @@ impl App {
         };
     }
 
-    fn unload(&mut self) {
+    fn unload_state(&mut self) {
         let graphics = match &self.graphics {
             Some(graphics) => graphics,
             None => panic!("Missing graphics state when needed for state unloader.")
@@ -214,7 +221,8 @@ impl App {
             panic!("State is already unloaded when it shouldn't be.");
         }
 
-        self.state.unload(graphics);
+        self.state.unload(&graphics);
+        self.state = Box::new(DummyState);
         self.state_loaded = false;
     }
 
@@ -254,7 +262,7 @@ impl App {
             match self.update() {
                 EventLoopOperation::Continue => break,
                 EventLoopOperation::Terminate => {
-                    self.unload();
+                    self.unload_state();
                     event_loop.exit();
                     return;
                 },
@@ -404,7 +412,7 @@ impl ApplicationHandler for App {
 
             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
                 self.app_exiting = true;
-                self.unload();
+                self.unload_state();
                 event_loop.exit();
             },
 
