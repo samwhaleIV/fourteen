@@ -3,7 +3,7 @@ const WINDOW_TITLE: &'static str = include_str!("../config/window_title.txt");
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (400,300);
 
 use std::{sync::Arc, time::{Instant}};
-use crate::graphics::{Graphics, PipelineVariant};
+use crate::graphics::{Graphics};
 use wgpu::{TextureView};
 
 use winit::{
@@ -30,8 +30,8 @@ impl Default for UpdateResult {
 }
 
 pub enum InputEvent {
-    WindowSize(MousePoint), /* Sent after load and resize (1) */
-    MouseMove(MousePoint), /* Sent after load and before mouse press and release (2) */
+    WindowSize(MousePoint), /* Sent after state load and resize (1) */
+    MouseMove(MousePoint), /* Sent after state load and before mouse press and release (2) */
 
     MousePress(MousePoint), /* Not sent after load if pressed through transition.  */
     MouseRelease(MousePoint), /* Not sent unless mouse press started on the active state. */
@@ -46,9 +46,9 @@ pub enum InputEvent {
 
 pub trait AppStateHandler {
     fn unload(&mut self,graphics: &Graphics);
+    fn input(&mut self,event: InputEvent);
     fn update(&mut self) -> UpdateResult;
     fn render(&mut self,graphics: &Graphics,texture_view: &TextureView);
-    fn input(&mut self,event: InputEvent);
 }
 
 pub type AppState = Box<dyn AppStateHandler>;
@@ -64,6 +64,8 @@ pub struct App {
 
     window_width: u32,
     window_height: u32,
+
+    mouse_point: MousePoint,
 
     window: Option<Arc<Window>>,
     graphics: Option<Graphics>,
@@ -107,7 +109,7 @@ impl AppStateHandler for DummyState {
         panic!("Cannot render the dummy state!");
     }
     fn input(&mut self,_: InputEvent) {
-        todo!()
+        panic!("Cannot input to the dummy state!");
     }
 }
 
@@ -152,6 +154,8 @@ pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceC
 
         frame_number: 0,
         event_number: 0,
+        
+        mouse_point: MousePoint { x: 0, y: 0 },
  
         /* For Debugging */
         log_trace_config
@@ -232,51 +236,6 @@ impl App {
             }
         };
     }
-
-    fn load_state(&mut self) {
-        if self.state_loaded {
-            log::warn!("Cannot load state, we are already in a loaded state.");
-            return;
-        }
-        let new_state = (self.state_generator)(self.graphics.as_ref().unwrap());
-        self.state_generator = placeholder_state_generator;
-        self.state = new_state;
-        self.state_loaded = true;
-    }
-
-    fn unload_state(&mut self) {
-        if !self.state_loaded {
-            if !self.app_exiting {
-                log::warn!("Cannot unload state, we are already in an unloaded state.");
-            }
-            return;
-        }
-        self.state.unload(self.graphics.as_ref().unwrap());
-        self.state = Box::new(DummyState);
-        self.state_loaded = false;
-    }
-
-    fn render(&mut self) -> Result<(),wgpu::SurfaceError> {
-        let graphics = self.graphics.as_mut().unwrap();
-
-        let output = graphics.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.state.render(graphics,&view);
-        output.present();
-
-        Ok(())
-    }
-
-    fn terminate_app(&mut self,event_loop: &ActiveEventLoop) {
-        if self.app_exiting {
-            log::warn!("App termination is already marked.");
-            return;
-        }
-        log::info!("Terminating app; it's the right thing to do. All programs must die eventually.");
-        self.app_exiting = true;
-        self.unload_state();
-        event_loop.exit();
-    }
  
     /* Primary function to handle updating */
     fn handle_redraw(&mut self,event_loop: &ActiveEventLoop) {
@@ -319,40 +278,89 @@ impl App {
         self.frame_number += 1;
     }
 
+    fn load_state(&mut self) {
+        if self.state_loaded {
+            log::warn!("Cannot load state, we are already in a loaded state.");
+            return;
+        }
+        let new_state = (self.state_generator)(self.graphics.as_ref().unwrap());
+        self.state_generator = placeholder_state_generator;
+        self.state = new_state;
+        self.state_loaded = true;
+    }
+
+    fn unload_state(&mut self) {
+        if !self.state_loaded {
+            if !self.app_exiting {
+                log::warn!("Cannot unload state, we are already in an unloaded state.");
+            }
+            return;
+        }
+        self.state.unload(self.graphics.as_ref().unwrap());
+        self.state = Box::new(DummyState);
+        self.state_loaded = false;
+    }
+
+    
+    fn render(&mut self) -> Result<(),wgpu::SurfaceError> {
+        let graphics = self.graphics.as_mut().unwrap();
+
+        let output = graphics.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.state.render(graphics,&view);
+        output.present();
+
+        Ok(())
+    }
+
+    fn terminate_app(&mut self,event_loop: &ActiveEventLoop) {
+        if self.app_exiting {
+            log::warn!("App termination is already marked.");
+            return;
+        }
+        log::info!("Terminating app; it's the right thing to do.");
+        self.app_exiting = true;
+        self.unload_state();
+        event_loop.exit();
+        log::info!("Termination success. Event loop exiting.");
+    }
+
     fn handle_key_change(&mut self,_code: KeyCode,_pressed: bool){
         if self.log_trace_config.key_change {
             log::trace!("handle_key_change - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
+        //TODO
     }
 
     fn handle_mouse_press(&mut self) {
         if self.log_trace_config.mouse_click {
             log::trace!("handle_mouse_press - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
+        if !self.state_loaded {
+            return;
+        }
+        //TODO
     }
 
     fn handle_mouse_release(&mut self) {
         if self.log_trace_config.mouse_click {
             log::trace!("handle_mouse_release - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
+        if !self.state_loaded {
+            return;
+        }
+        //TODO
     }
 
     fn handle_mouse_move(&mut self,point: MousePoint) {
         if self.log_trace_config.mouse_move {
             log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.x,point.y);
         }
-    }
-
-    fn handle_mouse_enter(&mut self) {
-        if self.log_trace_config.mouse_over_window {
-            log::trace!("handle_mouse_enter - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+        self.mouse_point = point;
+        if !self.state_loaded {
+            return;
         }
-    }
-
-    fn handle_mouse_leave(&mut self) {
-        if self.log_trace_config.mouse_over_window {
-            log::trace!("handle_mouse_leave - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-        }
+        //TODO
     }
 }
 
@@ -394,8 +402,7 @@ impl ApplicationHandler for App {
             window.set_outer_position(position);
         }
 
-        let pipeline_variant = PipelineVariant::Basic;     
-        let graphics = match pollster::block_on(Graphics::new(window.clone(),pipeline_variant)) {
+        let graphics = match pollster::block_on(Graphics::new(window.clone())) {
             Ok(graphics) => graphics,
             Err(error) => {
                 log::error!("{}",error);
@@ -417,7 +424,7 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
-        if self.app_exiting {
+        if self.app_exiting || !self.state_loaded {
             return;
         }
         match event {
@@ -471,8 +478,17 @@ impl ApplicationHandler for App {
                 self.handle_mouse_move(MousePoint {x: position.x as i32,y: position.y as i32});
             }
 
-            WindowEvent::CursorEntered { device_id: _ } => self.handle_mouse_enter(),
-            WindowEvent::CursorLeft { device_id: _ } => self.handle_mouse_leave(),
+            WindowEvent::CursorEntered { device_id: _ } => {
+                if self.log_trace_config.mouse_over_window {
+                    log::trace!("handle_mouse_enter - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                }
+            },
+
+            WindowEvent::CursorLeft { device_id: _ } => {
+                if self.log_trace_config.mouse_over_window {
+                    log::trace!("handle_mouse_leave - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+                }
+            },
 
             WindowEvent::CloseRequested | WindowEvent::Destroyed => self.terminate_app(event_loop), //Goodbye, cruel world.
 

@@ -1,58 +1,48 @@
-use wgpu::{Buffer, RenderPass, RenderPipeline, TextureView};
-use wgpu::util::{DeviceExt,BufferInitDescriptor};
+use wgpu::{TextureView};
 
 use crate::app::{AppState, InputEvent, UpdateResult};
-use crate::graphics::{self, Graphics};
+use crate::graphics::{Graphics,Vertex};
 use crate::app::AppStateHandler;
-use crate::app::AppOperation;
-use crate::paintbrush::{PaintBrush, create_paint_brush};
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
-}
- 
-
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
-];
+use crate::paintbrush::{PaintBrush, VertexBufferReference, create_paint_brush};
 
 pub struct TestState {
     paint_brush: PaintBrush,
-    vertex_buffer: Buffer
+    vertex_buffer: VertexBufferReference
 }
 
-pub fn generate_test_state(graphics: &Graphics) -> AppState {
-    let vertex_buffer = graphics.device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(VERTICES),
-        usage: wgpu::BufferUsages::VERTEX,
-    }); 
-    return Box::new(TestState {
-        vertex_buffer,
-        paint_brush: create_paint_brush()
-    });
+pub fn generate_test_state(graphics: &Graphics) -> AppState {    
+    let mut paint_brush = create_paint_brush();
+
+    let vertex_buffer = paint_brush.create_vertex_buffer(graphics,&[
+        Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+        Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+        Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+    ]);
+
+    return Box::new(TestState {vertex_buffer,paint_brush});
 }
 
 impl AppStateHandler for TestState {
     fn unload(&mut self,_graphics: &Graphics) {
-
+        self.paint_brush.unload();
     }
     fn update(&mut self) -> UpdateResult {
         return UpdateResult::default();
     }
 
     fn render(&mut self,graphics: &Graphics,render_target: &TextureView) {
-        self.paint_brush.draw_primitives(0..3,0..1);
-        
+
+        let size = self.vertex_buffer.len();
+
+        self.paint_brush.set_clear_color(wgpu::Color::BLACK);
+
+        self.paint_brush.set_vertex_buffer(&self.vertex_buffer,0,0..size);
+        self.paint_brush.draw_primitives(0..size,0..1);
+
         self.paint_brush.render(graphics,render_target);
     }
     
-    fn input(&mut self,event: InputEvent) {
+    fn input(&mut self,_event: InputEvent) {
         //todo!()
     }
 }
