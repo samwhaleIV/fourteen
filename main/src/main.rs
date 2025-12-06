@@ -1,10 +1,10 @@
 mod app;
 mod test_state;
 mod graphics;
-pub mod point;
+mod paintbrush;
 
 use std::env;
-use winit::{event_loop::{ControlFlow,EventLoop}};
+use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 
 use env_logger::{Builder, Target};
 
@@ -16,12 +16,10 @@ fn create_event_loop() -> anyhow::Result<()> {
 
     let mut app = app::create_app(
         test_state::generate_test_state,
-        LogTraceConfig {
-            window_focus: true,
-            other: true,
-            ..Default::default()
-        }
+        LogTraceConfig::default()
     );
+
+    event_loop.listen_device_events(DeviceEvents::WhenFocused);
 
     event_loop.run_app(&mut app)?;
 

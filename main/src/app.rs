@@ -3,11 +3,8 @@ const WINDOW_TITLE: &'static str = include_str!("../config/window_title.txt");
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (400,300);
 
 use std::{sync::Arc, time::{Instant}};
-
-use crate::{point::Point};
-use crate::graphics::{Graphics,PipelineVariant};
-
-use wgpu::{CommandEncoder, RenderPass, TextureView};
+use crate::graphics::{Graphics, PipelineVariant};
+use wgpu::{TextureView};
 
 use winit::{
     application::ApplicationHandler,
@@ -32,26 +29,26 @@ impl Default for UpdateResult {
     }
 }
 
+pub enum InputEvent {
+    WindowSize(MousePoint), /* Sent after load and resize (1) */
+    MouseMove(MousePoint), /* Sent after load and before mouse press and release (2) */
+
+    MousePress(MousePoint), /* Not sent after load if pressed through transition.  */
+    MouseRelease(MousePoint), /* Not sent unless mouse press started on the active state. */
+
+    KeyPress(KeyCode), /* Sent after load if keys pressed through transition. */
+    KeyRelease(KeyCode), /* Not sent to an unloading state */
+
+    MouseMoveRaw((f64,f64))
+
+    /* could also making the loading implementation parameterized */
+}
+
 pub trait AppStateHandler {
     fn unload(&mut self,graphics: &Graphics);
     fn update(&mut self) -> UpdateResult;
-    fn render(&mut self,render_pass: &mut RenderPass);
-}
-
-pub enum AppOperation {
-    Continue,
-    Terminate,
-    Transition
-}
-
-enum EventLoopOperation {
-    Continue,
-    Terminate,
-    Repeat
-}
-
-pub enum RenderPassMode {
-    Basic
+    fn render(&mut self,graphics: &Graphics,texture_view: &TextureView);
+    fn input(&mut self,event: InputEvent);
 }
 
 pub type AppState = Box<dyn AppStateHandler>;
@@ -72,12 +69,28 @@ pub struct App {
     graphics: Option<Graphics>,
 
     start_time: Instant,
-    render_pass_mode: RenderPassMode,
  
     state_generator: AppStateGenerator,
     state: AppState,
     
     log_trace_config: LogTraceConfig
+}
+
+pub enum AppOperation {
+    Continue,
+    Terminate,
+    Transition
+}
+
+enum EventLoopOperation {
+    Continue,
+    Terminate,
+    Repeat
+}
+
+pub struct MouseDelta {
+    pub x: f64,
+    pub y: f64
 }
 
 struct DummyState;
@@ -90,13 +103,12 @@ impl AppStateHandler for DummyState {
     fn update(&mut self) -> UpdateResult {
         panic!("Cannot update the dummy state!");
     }
-    fn render(&mut self,_render_pass: &mut RenderPass) {
+    fn render(&mut self,_: &Graphics,_: &TextureView) {
         panic!("Cannot render the dummy state!");
     }
-}
-
-fn placeholder_state_generator(_: &Graphics) -> AppState {
-    panic!("Cannot generate an AppState using the placeholder state generator");
+    fn input(&mut self,_: InputEvent) {
+        todo!()
+    }
 }
 
 #[derive(Default)]
@@ -111,6 +123,14 @@ pub struct LogTraceConfig {
     pub window_focus: bool,
     pub other: bool
 }
+pub struct MousePoint {
+    x: i32,
+    y: i32
+}
+
+fn placeholder_state_generator(_: &Graphics) -> AppState {
+    panic!("Cannot generate an AppState using the placeholder state generator");
+}
 
 pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceConfig) -> App {
     return App {
@@ -118,7 +138,6 @@ pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceC
         graphics: None,
 
         start_time: Instant::now(),
-        render_pass_mode: RenderPassMode::Basic,
 
         state_generator,
         state: Box::new(DummyState),
@@ -137,24 +156,6 @@ pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceC
         /* For Debugging */
         log_trace_config
     }
-}
-
-fn get_basic_render_pass<'a>(encoder: &'a mut CommandEncoder,view: &'a TextureView) -> RenderPass<'a> {
-    return encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Render Pass"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &view,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: None,
-        occlusion_query_set: None,
-        timestamp_writes: None,
-    });
 }
 
 fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Position {
@@ -260,21 +261,7 @@ impl App {
 
         let output = graphics.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = graphics.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
-
-        {
-            let mut render_pass = match self.render_pass_mode {
-                RenderPassMode::Basic => get_basic_render_pass(&mut encoder,&view),
-                _ => get_basic_render_pass(&mut encoder,&view)
-            };
-
-            render_pass.set_pipeline(&graphics.render_pipeline);
-            self.state.render(&mut render_pass);
-        }
-
-        graphics.queue.submit(std::iter::once(encoder.finish()));
+        self.state.render(graphics,&view);
         output.present();
 
         Ok(())
@@ -350,9 +337,9 @@ impl App {
         }
     }
 
-    fn handle_mouse_move(&mut self,_point: Point) {
+    fn handle_mouse_move(&mut self,point: MousePoint) {
         if self.log_trace_config.mouse_move {
-            log::trace!("handle_mouse_move - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+            log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.x,point.y);
         }
     }
 
@@ -392,14 +379,14 @@ impl ApplicationHandler for App {
             .with_inner_size(window_size)
             .with_visible(false);
 
-        let window = match event_loop.create_window(window_attributes) {
+        let window = Arc::new(match event_loop.create_window(window_attributes) {
             Ok(window) => window,
             Err(error) => {
                 log::error!("Could not create window through event loop: {}",error);
                 self.terminate_app(event_loop);
                 return;
             }
-        };
+        });
 
         /* It's okay that this is optional; it's only used to center the window. */
         if let Some(monitor) = window.current_monitor() {
@@ -407,12 +394,18 @@ impl ApplicationHandler for App {
             window.set_outer_position(position);
         }
 
-        let arc_window = Arc::new(window);
         let pipeline_variant = PipelineVariant::Basic;     
-        let graphics = pollster::block_on(Graphics::new(arc_window.clone(),pipeline_variant)).unwrap();
-        arc_window.set_visible(true);
+        let graphics = match pollster::block_on(Graphics::new(window.clone(),pipeline_variant)) {
+            Ok(graphics) => graphics,
+            Err(error) => {
+                log::error!("{}",error);
+                self.terminate_app(event_loop);
+                return;
+            }
+        };
+        window.set_visible(true);
 
-        self.window = Some(arc_window);
+        self.window = Some(window);
         self.graphics = Some(graphics);
 
         log::info!("Graphics pipeline and window are now configured.");
@@ -421,6 +414,16 @@ impl ApplicationHandler for App {
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
         /* This shouldn't happen on desktop platforms. */
         log::info!("App suspended. Goodnight, sweet prince.");
+    }
+
+    fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
+        if self.app_exiting {
+            return;
+        }
+        match event {
+            DeviceEvent::MouseMotion { delta } => self.state.input(InputEvent::MouseMoveRaw(delta)),
+            _ => {}
+        }
     }
 
     fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
@@ -464,13 +467,9 @@ impl ApplicationHandler for App {
                 ElementState::Released => self.handle_mouse_release(),
             },
 
-            WindowEvent::CursorMoved {
-                position,
-                device_id: _
-            } => self.handle_mouse_move(Point {
-                x: position.x as i32,
-                y: position.y as i32
-            }),
+            WindowEvent::CursorMoved { position, device_id: _ } => {
+                self.handle_mouse_move(MousePoint {x: position.x as i32,y: position.y as i32});
+            }
 
             WindowEvent::CursorEntered { device_id: _ } => self.handle_mouse_enter(),
             WindowEvent::CursorLeft { device_id: _ } => self.handle_mouse_leave(),

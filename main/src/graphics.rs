@@ -1,5 +1,7 @@
 use std::sync::Arc;
+
 use winit::window::Window;
+use wgpu::{CommandEncoder,TextureView,RenderPass};
 
 pub struct Graphics {
     pub surface: wgpu::Surface<'static>,
@@ -74,10 +76,10 @@ impl Graphics {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window)?;
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptionsBase {
-            power_preference: wgpu::PowerPreference::HighPerformance,
+            power_preference: wgpu::PowerPreference::None,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface)
         }).await?;
@@ -110,12 +112,29 @@ impl Graphics {
         };
 
         let render_pipeline = match pipeline_variant {
-            PipelineVariant::Basic => create_basic_pipeline(&device,config.format),
-            _ => create_basic_pipeline(&device,config.format)
+            PipelineVariant::Basic => create_basic_pipeline(&device,config.format)
         };
 
         return Ok(Self {
             surface, device, queue, config, render_pipeline
         });
     }
+}
+
+pub fn get_basic_render_pass<'encoder>(encoder: &'encoder mut CommandEncoder,view: &'encoder TextureView) -> RenderPass<'encoder> {
+    return encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        occlusion_query_set: None,
+        timestamp_writes: None,
+    });
 }

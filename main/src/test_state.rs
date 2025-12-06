@@ -1,10 +1,11 @@
-use wgpu::{Buffer, RenderPass};
+use wgpu::{Buffer, RenderPass, RenderPipeline, TextureView};
 use wgpu::util::{DeviceExt,BufferInitDescriptor};
 
-use crate::app::{AppState, UpdateResult};
-use crate::graphics::Graphics;
+use crate::app::{AppState, InputEvent, UpdateResult};
+use crate::graphics::{self, Graphics};
 use crate::app::AppStateHandler;
 use crate::app::AppOperation;
+use crate::paintbrush::{PaintBrush, create_paint_brush};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -21,6 +22,7 @@ const VERTICES: &[Vertex] = &[
 ];
 
 pub struct TestState {
+    paint_brush: PaintBrush,
     vertex_buffer: Buffer
 }
 
@@ -29,8 +31,11 @@ pub fn generate_test_state(graphics: &Graphics) -> AppState {
         label: Some("Vertex Buffer"),
         contents: bytemuck::cast_slice(VERTICES),
         usage: wgpu::BufferUsages::VERTEX,
+    }); 
+    return Box::new(TestState {
+        vertex_buffer,
+        paint_brush: create_paint_brush()
     });
-    return Box::new(TestState { vertex_buffer });
 }
 
 impl AppStateHandler for TestState {
@@ -41,7 +46,13 @@ impl AppStateHandler for TestState {
         return UpdateResult::default();
     }
 
-    fn render(&mut self,render_pass: &mut RenderPass) {
-        render_pass.draw(0..3, 0..1); // 3.
+    fn render(&mut self,graphics: &Graphics,render_target: &TextureView) {
+        self.paint_brush.draw_primitives(0..3,0..1);
+        
+        self.paint_brush.render(graphics,render_target);
+    }
+    
+    fn input(&mut self,event: InputEvent) {
+        //todo!()
     }
 }
