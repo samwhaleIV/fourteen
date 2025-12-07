@@ -22,10 +22,29 @@ struct NamedBindGroup {
     name: String
 }
 
+pub type ViewProjectionMatrix = [[f32;4];4];
+
+#[repr(C)]
+#[derive(Debug,Copy,Clone,bytemuck::Pod,bytemuck::Zeroable)]
+pub struct ViewProjection {
+    value: ViewProjectionMatrix,
+}
+
+impl ViewProjection {
+    pub fn create(matrix: ViewProjectionMatrix) -> Self {
+        return ViewProjection {
+            value: matrix
+        }
+    }
+    pub fn get_bytes(&self) -> &[u8] {
+        return bytemuck::cast_slice(&self.value);
+    }
+}
+
 #[derive(Debug,PartialEq,Eq,Clone,Copy)]
 pub enum BindGroupType {
     Texture,
-    CameraUniform
+    ViewProjection
 }
 
 #[derive(Clone,Copy)]
@@ -35,8 +54,7 @@ pub struct BindGroupReference {
 }
 
 pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
-pub const CAMERA_UNIFORM_BIND_GROUP_INDEX: u32 = 1;
-
+pub const VIEW_PROJECTION_BIND_GROUP_INDEX: u32 = 1;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -137,7 +155,14 @@ impl Graphics {
         let bind_group_identifiers = HashMap::new();
 
         return Ok(Self {
-            surface, device, queue, config, render_pipelines, bind_groups, bind_group_identifiers, bind_group_counter: 0, 
+            surface,
+            device,
+            queue,
+            config,
+            render_pipelines,
+            bind_groups,
+            bind_group_identifiers,
+            bind_group_counter: 0, 
         });
     }
 
@@ -152,6 +177,14 @@ impl Graphics {
     pub fn set_pipeline(&self,render_pass: &mut RenderPass,pipeline_variant: PipelineVariant) {
         if let Some(render_pipeline) = self.render_pipelines.get(&pipeline_variant) {
             render_pass.set_pipeline(render_pipeline);
+        } else {
+            panic!("Render pipeline type is not implemented.");
+        }
+    }
+
+    pub fn get_pipeline(&self,pipeline_variant: PipelineVariant) -> &RenderPipeline {
+        if let Some(render_pipeline) = self.render_pipelines.get(&pipeline_variant) {
+            return render_pipeline;
         } else {
             panic!("Render pipeline type is not implemented.");
         }
@@ -218,12 +251,13 @@ impl Graphics {
             texture_size,
         );
         
+        //TODO Texture sampler customization
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let texture_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
@@ -304,6 +338,20 @@ fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFor
         ]
     });
 
+    let view_projection_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+        label: Some("View Projection Bind Group Layout"),
+    });
+
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into())
@@ -311,7 +359,10 @@ fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFor
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[&texture_bind_group_layout],
+        bind_group_layouts: &[
+            &texture_bind_group_layout,
+            &view_projection_bind_group_layout,
+        ],
         push_constant_ranges: &[]
     });
 

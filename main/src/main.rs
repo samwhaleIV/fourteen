@@ -2,6 +2,7 @@ mod app;
 mod test_state;
 mod graphics;
 mod paintbrush;
+mod camera;
 
 use std::env;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};

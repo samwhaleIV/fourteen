@@ -1,7 +1,41 @@
-use std::{collections::{HashMap, VecDeque}, ops::{Range}};
+use std::{
+    collections::{HashMap,VecDeque},
+    ops::{Range}
+};
 
-use wgpu::{Buffer, BufferAddress, RenderPass, TextureView, util::{BufferInitDescriptor, DeviceExt}};
-use crate::graphics::{self, BindGroupReference, BindGroupType, Graphics, Vertex};
+use wgpu::{
+    BindGroup,
+    Buffer,
+    BufferAddress,
+    RenderPass,
+    TextureView,
+    util::{BufferInitDescriptor,DeviceExt}
+};
+
+use crate::graphics::{
+    self,
+    BindGroupReference,
+    BindGroupType,
+    Graphics,
+    PipelineVariant,
+    Vertex,
+    ViewProjection,
+    ViewProjectionMatrix,
+    VIEW_PROJECTION_BIND_GROUP_INDEX,
+};
+
+pub struct PaintBrush {
+    instruction_queue: RenderInstructionQueue,
+    buffers: HashMap<u32,Buffer>,
+    buffer_counter: u32,
+    clear_color: wgpu::Color,
+    view_projection_uniform_handle: ViewProjectionUniformHandle
+}
+
+struct ViewProjectionUniformHandle {
+    buffer: Buffer,
+    bind_group: BindGroup
+}
 
 type RenderInstructionQueue = VecDeque<RenderInstruction>;
 pub struct BufferReference {
@@ -18,14 +52,6 @@ impl BufferReference {
     pub fn size(&self) -> u32 {
         return self.size;
     }
-}
-
-pub struct PaintBrush {
-    render_pass_mode: RenderPassMode,
-    instruction_queue: RenderInstructionQueue,
-    buffers: HashMap<u32,Buffer>,
-    buffer_counter: u32,
-    clear_color: wgpu::Color
 }
 
 struct DrawPrimitivesData {
@@ -55,23 +81,36 @@ enum RenderInstruction {
     SetVertexBuffer(SetVertexBufferData),
     SetIndexBuffer(SetIndexBufferData),
     DrawIndexedPrimitives(DrawIndexedPrimitivesData),
-    SetTexture(BindGroupReference)
+    SetTexture(BindGroupReference),
+    SetViewProjection(Box<ViewProjection>)
 }
 
-enum RenderPassMode {
-    Basic,
-    Custom
-}
+pub fn create_paint_brush(graphics: &Graphics) -> PaintBrush {
 
-const INDEX_SIZE: u32 = size_of::<u32>() as u32;
+    let view_projection_buffer = graphics.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("View Projection Buffer"),
+        contents: bytemuck::cast_slice(&ViewProjectionMatrix::default()),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
 
-pub fn create_paint_brush() -> PaintBrush {
+    let view_projection_bind_group = graphics.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &graphics.get_pipeline(PipelineVariant::Basic).get_bind_group_layout(VIEW_PROJECTION_BIND_GROUP_INDEX),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: view_projection_buffer.as_entire_binding(),
+        }],
+        label: Some("View Projection Bind Group"),
+    });
+
     return PaintBrush {
-        render_pass_mode: RenderPassMode::Basic,
         buffers: HashMap::new(),
         instruction_queue: VecDeque::new(),
         buffer_counter: 0,
-        clear_color: wgpu::Color::WHITE
+        clear_color: wgpu::Color::WHITE,
+        view_projection_uniform_handle: ViewProjectionUniformHandle {
+            buffer: view_projection_buffer,
+            bind_group: view_projection_bind_group
+        }
     }
 }
 
@@ -87,6 +126,7 @@ impl PaintBrush {
         for buffer in self.buffers.values() {
             buffer.destroy();
         }
+        self.view_projection_uniform_handle.buffer.destroy();
     }
 
     fn create_buffer(&mut self,graphics: &Graphics,buffer_type: BufferType,contents: &[u8],length: u32) -> BufferReference {
@@ -170,6 +210,10 @@ impl PaintBrush {
         }));
     }
 
+    pub fn set_view_projection(&mut self,view_projection: Box<ViewProjection>) {
+        self.instruction_queue.push_back(RenderInstruction::SetViewProjection(view_projection));
+    }
+
     pub fn set_index_buffer(&mut self,index_buffer_ref: &BufferReference,buffer_slice: Range<u32>) {
         assert_eq!(index_buffer_ref.buffer_type,BufferType::Index,"Invalid buffer reference: This reference is not registered as an index buffer.");
 
@@ -199,10 +243,7 @@ impl PaintBrush {
         });
 
         {
-            let mut render_pass = match self.render_pass_mode {
-                RenderPassMode::Basic => graphics::get_basic_render_pass(&mut encoder,&render_target,self.clear_color),
-                RenderPassMode::Custom => todo!("Not implemented.")
-            };
+            let mut render_pass = graphics::get_basic_render_pass(&mut encoder,&render_target,self.clear_color);
 
             graphics.set_pipeline(&mut render_pass,graphics::PipelineVariant::Basic);
 
@@ -219,6 +260,9 @@ impl PaintBrush {
         match instruction {
             RenderInstruction::DrawPrimitives(data) => {
                 render_pass.draw(data.vertices.clone(),data.instances.clone());
+            },
+            RenderInstruction::DrawIndexedPrimitives(data) => {
+                render_pass.draw_indexed(data.indices.clone(),data.base_vertex,data.instances.clone());
             },
             RenderInstruction::SetVertexBuffer(data) => {
                 if let Some(vertex_buffer) = self.buffers.get(&data.id) {
@@ -243,13 +287,17 @@ impl PaintBrush {
                     panic!("Vertex buffer with ID '{}' not found.",data.id)
                 }
             },
-            RenderInstruction::DrawIndexedPrimitives(data) => {
-                render_pass.draw_indexed(data.indices.clone(),data.base_vertex,data.instances.clone());
-            },
             RenderInstruction::SetTexture(texture_reference) => {
                 let bind_group = graphics.get_bind_group(texture_reference);
                 render_pass.set_bind_group(graphics::TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
-            }
+            },
+            RenderInstruction::SetViewProjection(view_projection) => {
+                let data = view_projection.get_bytes();
+                let handle = &self.view_projection_uniform_handle;
+                graphics.queue.write_buffer(&handle.buffer,0,data);
+                let bind_group = &handle.bind_group;
+                render_pass.set_bind_group(VIEW_PROJECTION_BIND_GROUP_INDEX,bind_group,&[]);
+            },
             _ => panic!("Render instruction not implemented.")
         }
     }

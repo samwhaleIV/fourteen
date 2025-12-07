@@ -1,6 +1,7 @@
 use wgpu::{TextureView};
 
 use crate::app::{AppState, InputEvent, UpdateResult};
+use crate::camera::Camera;
 use crate::graphics::{BindGroupReference, Graphics, Vertex};
 use crate::app::AppStateHandler;
 use crate::paintbrush::{PaintBrush, BufferReference, create_paint_brush};
@@ -9,14 +10,15 @@ pub struct TestState {
     paint_brush: PaintBrush,
     vertex_buffer: BufferReference,
     index_buffer: BufferReference,
-    test_texture: BindGroupReference
+    test_texture: BindGroupReference,
+    camera: Camera
 }
 
 pub fn generate_test_state(graphics: &mut Graphics) -> AppState {    
-    let mut paint_brush = create_paint_brush();
+    let mut paint_brush = create_paint_brush(&graphics);
 
     let vertex_buffer = paint_brush.create_vertex_buffer(graphics,&[
-        Vertex { position: [-0.0868241, 0.49240386], color: [1.0,1.0,1.0], uv: [0.4131759, 0.99240386], }, // A
+        Vertex { position: [-0.0868241, 0.49240386], color: [0.0,0.0,0.0], uv: [0.4131759, 0.99240386], }, // A
         Vertex { position: [-0.49513406, 0.06958647], color: [1.0,1.0,1.0], uv: [0.0048659444, 0.56958647], }, // B
         Vertex { position: [-0.21918549, -0.44939706], color: [1.0,1.0,1.0], uv: [0.28081453, 0.05060294], }, // C
         Vertex { position: [0.35966998, -0.3473291], color: [1.0,1.0,1.0], uv: [0.85967, 0.1526709], }, // D
@@ -31,7 +33,10 @@ pub fn generate_test_state(graphics: &mut Graphics) -> AppState {
 
     let test_texture = graphics.create_texture("Test Texture");
 
+    let camera = Camera::default();
+
     return Box::new(TestState {
+        camera,
         vertex_buffer,
         paint_brush,
         index_buffer,
@@ -48,14 +53,17 @@ impl AppStateHandler for TestState {
     }
 
     fn render(&mut self,graphics: &Graphics,render_target: &TextureView) {
-        let pb = &mut self.paint_brush;     
+        let pb = &mut self.paint_brush;
+
+        self.camera.set_aspect_ratio(render_target);
 
         pb.set_clear_color(wgpu::Color::BLACK);
 
         pb.set_texture(self.test_texture);
+        pb.set_view_projection(self.camera.get_view_projection());
+
         pb.set_vertex_buffer(&self.vertex_buffer,0,0..self.vertex_buffer.size());
         pb.set_index_buffer(&self.index_buffer,0..self.index_buffer.size());
-
         pb.draw_indexed_primitives(0..self.index_buffer.len(),0,0..1);
 
         pb.render(graphics,render_target);
