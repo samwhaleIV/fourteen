@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, VecDeque}, ops::{Range}};
 
 use wgpu::{Buffer, BufferAddress, RenderPass, TextureView, util::{BufferInitDescriptor, DeviceExt}};
-use crate::graphics::{self, Graphics, Vertex};
+use crate::graphics::{self, BindGroupReference, BindGroupType, Graphics, Vertex};
 
 type RenderInstructionQueue = VecDeque<RenderInstruction>;
 pub struct BufferReference {
@@ -54,7 +54,8 @@ enum RenderInstruction {
     DrawPrimitives(DrawPrimitivesData),
     SetVertexBuffer(SetVertexBufferData),
     SetIndexBuffer(SetIndexBufferData),
-    DrawIndexedPrimitives(DrawIndexedPrimitivesData)
+    DrawIndexedPrimitives(DrawIndexedPrimitivesData),
+    SetTexture(BindGroupReference)
 }
 
 enum RenderPassMode {
@@ -176,6 +177,15 @@ impl PaintBrush {
             id: index_buffer_ref.id, buffer_slice
         }));
     }
+
+    pub fn set_texture(&mut self,texture_reference: BindGroupReference) {
+        assert_eq!(
+            texture_reference.bind_group_type,
+            BindGroupType::Texture,
+            "Invalid bind group reference. Bind group reference is not a texture."
+        );
+        self.instruction_queue.push_back(RenderInstruction::SetTexture(texture_reference));
+    }
   
     pub fn render(&mut self,graphics: &Graphics,render_target: &TextureView) {
 
@@ -197,7 +207,7 @@ impl PaintBrush {
             graphics.set_pipeline(&mut render_pass,graphics::PipelineVariant::Basic);
 
             for instruction in self.instruction_queue.iter() {
-                self.execute_instruction(&mut render_pass,instruction);
+                self.execute_instruction(graphics,&mut render_pass,instruction);
             }
             self.instruction_queue.clear();
         }
@@ -205,7 +215,7 @@ impl PaintBrush {
         graphics.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn execute_instruction(&self,render_pass: &mut RenderPass,instruction: &RenderInstruction) {
+    fn execute_instruction(&self,graphics: &Graphics,render_pass: &mut RenderPass,instruction: &RenderInstruction) {
         match instruction {
             RenderInstruction::DrawPrimitives(data) => {
                 render_pass.draw(data.vertices.clone(),data.instances.clone());
@@ -235,8 +245,12 @@ impl PaintBrush {
             },
             RenderInstruction::DrawIndexedPrimitives(data) => {
                 render_pass.draw_indexed(data.indices.clone(),data.base_vertex,data.instances.clone());
+            },
+            RenderInstruction::SetTexture(texture_reference) => {
+                let bind_group = graphics.get_bind_group(texture_reference);
+                render_pass.set_bind_group(graphics::TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
             }
-            _ => {}
+            _ => panic!("Render instruction not implemented.")
         }
     }
 }

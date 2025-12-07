@@ -52,7 +52,7 @@ pub trait AppStateHandler {
 }
 
 pub type AppState = Box<dyn AppStateHandler>;
-pub type AppStateGenerator = fn(&Graphics) -> AppState;
+pub type AppStateGenerator = fn(&mut Graphics) -> AppState;
 
 pub struct App {
     state_loaded: bool,
@@ -130,7 +130,7 @@ pub struct MousePoint {
     y: i32
 }
 
-fn placeholder_state_generator(_: &Graphics) -> AppState {
+fn placeholder_state_generator(_: &mut Graphics) -> AppState {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
@@ -283,7 +283,7 @@ impl App {
             log::warn!("Cannot load state, we are already in a loaded state.");
             return;
         }
-        let new_state = (self.state_generator)(self.graphics.as_ref().unwrap());
+        let new_state = (self.state_generator)(self.graphics.as_mut().unwrap());
         self.state_generator = placeholder_state_generator;
         self.state = new_state;
         self.state_loaded = true;

@@ -1,29 +1,57 @@
-use std::{collections::HashMap, mem};
-
+use std::{collections::HashMap};
 use std::sync::Arc;
 
 use winit::window::Window;
-use wgpu::{BufferAddress, CommandEncoder, RenderPass, RenderPipeline, TextureView};
+use wgpu::{BindGroup, BindGroupLayoutDescriptor, BufferAddress, CommandEncoder, RenderPass, RenderPipeline, TextureView};
 
 pub struct Graphics {
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
-    render_pipelines: HashMap<PipelineVariant,RenderPipeline>
+    render_pipelines: HashMap<PipelineVariant,RenderPipeline>,
+    /* Look into slotmap */
+    bind_groups: HashMap<u32,NamedBindGroup>,
+    bind_group_identifiers: HashMap<String,BindGroupReference>,
+    /* Find a way to reuse expired counters */
+    bind_group_counter: u32
 }
+
+struct NamedBindGroup {
+    value: BindGroup,
+    name: String
+}
+
+#[derive(Debug,PartialEq,Eq,Clone,Copy)]
+pub enum BindGroupType {
+    Texture,
+    CameraUniform
+}
+
+#[derive(Clone,Copy)]
+pub struct BindGroupReference {
+    pub bind_group_type: BindGroupType,
+    pub id: u32
+}
+
+pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+pub const CAMERA_UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    pub position: VertexComponent,
-    pub color: VertexComponent,
+    pub position: [f32;2],
+    pub color: [f32;3],
+    pub uv: [f32;2]
 }
-
-type VertexComponent = [f32;3];
 
 impl Vertex {
     pub const SIZE: u32 = size_of::<Vertex>() as u32;
+
+    const POSITION_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
+    const COLOR_SIZE: BufferAddress = size_of::<[f32;3]>() as BufferAddress;
+    const TEXTURE_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
 
     const fn get_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         return wgpu::VertexBufferLayout {
@@ -36,9 +64,14 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<VertexComponent>() as BufferAddress,
+                    offset: Self::POSITION_SIZE,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
+                },
+                    wgpu::VertexAttribute {
+                    offset: Self::POSITION_SIZE + Self::COLOR_SIZE,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
                 }
             ]
         };
@@ -100,9 +133,20 @@ impl Graphics {
         let basic_render_pipeline = create_basic_pipeline(&device,config.format);
         render_pipelines.insert(PipelineVariant::Basic,basic_render_pipeline);
 
+        let bind_groups = HashMap::new();
+        let bind_group_identifiers = HashMap::new();
+
         return Ok(Self {
-            surface, device, queue, config, render_pipelines
+            surface, device, queue, config, render_pipelines, bind_groups, bind_group_identifiers, bind_group_counter: 0, 
         });
+    }
+
+    pub fn get_bind_group(&self,bind_group_reference: &BindGroupReference) -> &BindGroup {
+        if let Some(bind_group) = self.bind_groups.get(&bind_group_reference.id) {
+            return &bind_group.value;
+        } else {
+            panic!("Bind group not found!");
+        }
     }
 
     pub fn set_pipeline(&self,render_pass: &mut RenderPass,pipeline_variant: PipelineVariant) {
@@ -111,6 +155,109 @@ impl Graphics {
         } else {
             panic!("Render pipeline type is not implemented.");
         }
+    }
+
+    pub fn destroy_bind_group(&mut self,bind_group_reference: BindGroupReference) {
+        if let Some(named_bind_group) = self.bind_groups.remove(&bind_group_reference.id) {
+            self.bind_group_identifiers.remove(&named_bind_group.name);
+        } else {
+            panic!("Bind group reference not found!");
+        }
+    }
+
+    /* Gets a texture reference and loads the texture if it doesn't already exist. */
+    pub fn create_texture(&mut self,identifier: &str) -> BindGroupReference {
+
+        if let Some(bind_group_reference) = self.bind_group_identifiers.get(identifier) {
+            assert_eq!(
+                bind_group_reference.bind_group_type,
+                BindGroupType::Texture,
+                "Bind group for identifier '{}' is not of the texture type.",
+                identifier
+            );
+            return bind_group_reference.clone();
+        }
+
+        let diffuse_bytes = include_bytes!("../../test_image.png");
+        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
+        let diffuse_rgba = diffuse_image.to_rgba8();
+
+        use image::GenericImageView;
+        let dimensions = diffuse_image.dimensions();
+
+        let texture_size = wgpu::Extent3d {
+            width: dimensions.0,
+            height: dimensions.1,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some(&format!("texture#{}",identifier)),
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &diffuse_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * dimensions.0),
+                rows_per_image: Some(dimensions.1),
+            },
+            texture_size,
+        );
+        
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+
+            layout: &self.render_pipelines[
+                &PipelineVariant::Basic
+            ].get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                }
+            ],
+            label: Some(&format!("texture_bind_group#{}",identifier)),
+        });
+
+
+        let id = self.bind_group_counter;
+        self.bind_group_counter += 1;
+
+        self.bind_groups.insert(id,NamedBindGroup { value: bind_group, name: identifier.to_string() });
+
+        let bind_group_reference = BindGroupReference { bind_group_type: BindGroupType::Texture, id };
+        self.bind_group_identifiers.insert(identifier.to_string(),bind_group_reference);
+
+        return bind_group_reference;
     }
 }
 
@@ -132,7 +279,31 @@ pub fn get_basic_render_pass<'encoder>(encoder: &'encoder mut CommandEncoder,vie
     });
 }
 
-fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFormat) -> wgpu::RenderPipeline {        
+    let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("Texture Bind Group Layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float {
+                        filterable: true
+                    },
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ]
+    });
+
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into())
@@ -140,7 +311,7 @@ fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFor
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[&texture_bind_group_layout],
         push_constant_ranges: &[]
     });
 
