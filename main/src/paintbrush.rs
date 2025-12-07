@@ -4,25 +4,27 @@ use wgpu::{Buffer, BufferAddress, RenderPass, TextureView, util::{BufferInitDesc
 use crate::graphics::{self, Graphics, Vertex};
 
 type RenderInstructionQueue = VecDeque<RenderInstruction>;
-
-pub type VertexBufferID = u32;
-
-pub struct VertexBufferReference {
-    id: VertexBufferID,
-    length: u32
+pub struct BufferReference {
+    id: u32,
+    size: u32,
+    length: u32,
+    buffer_type: BufferType
 }
 
-impl VertexBufferReference {
+impl BufferReference {
     pub fn len(&self) -> u32 {
-        return self.length as u32;
+        return self.length;
+    }
+    pub fn size(&self) -> u32 {
+        return self.size;
     }
 }
 
 pub struct PaintBrush {
     render_pass_mode: RenderPassMode,
     instruction_queue: RenderInstructionQueue,
-    vertex_buffers: HashMap<VertexBufferID,Buffer>,
-    vertex_buffer_counter: VertexBufferID,
+    buffers: HashMap<u32,Buffer>,
+    buffer_counter: u32,
     clear_color: wgpu::Color
 }
 
@@ -32,14 +34,27 @@ struct DrawPrimitivesData {
 }
 
 struct SetVertexBufferData {
-    id: VertexBufferID,
+    id: u32,
     slot: u32,
     buffer_slice: Range<u32>
 }
 
+struct SetIndexBufferData {
+    id: u32,
+    buffer_slice: Range<u32>
+}
+
+struct DrawIndexedPrimitivesData {
+    indices: Range<u32>,
+    base_vertex: i32,
+    instances: Range<u32>
+}
+
 enum RenderInstruction {
     DrawPrimitives(DrawPrimitivesData),
-    SetVertexBuffer(SetVertexBufferData)
+    SetVertexBuffer(SetVertexBufferData),
+    SetIndexBuffer(SetIndexBufferData),
+    DrawIndexedPrimitives(DrawIndexedPrimitivesData)
 }
 
 enum RenderPassMode {
@@ -47,54 +62,90 @@ enum RenderPassMode {
     Custom
 }
 
+const INDEX_SIZE: u32 = size_of::<u32>() as u32;
+
 pub fn create_paint_brush() -> PaintBrush {
     return PaintBrush {
         render_pass_mode: RenderPassMode::Basic,
-        vertex_buffers: HashMap::new(),
+        buffers: HashMap::new(),
         instruction_queue: VecDeque::new(),
-        vertex_buffer_counter: 0,
+        buffer_counter: 0,
         clear_color: wgpu::Color::WHITE
     }
 }
 
+#[derive(Debug,PartialEq,Eq)]
+enum BufferType {
+    Vertex,
+    Index
+}
+
 impl PaintBrush {
 
-    pub fn create_vertex_buffer(&mut self,graphics: &Graphics,vertices: &[Vertex]) -> VertexBufferReference {
+    pub fn unload(&self) {
+        for buffer in self.buffers.values() {
+            buffer.destroy();
+        }
+    }
 
-        let mut vertex_count = vertices.len();
+    fn create_buffer(&mut self,graphics: &Graphics,buffer_type: BufferType,contents: &[u8],length: u32) -> BufferReference {
+        let mut buffer_size = contents.len();
 
-        if vertex_count > u32::MAX as usize {
-            log::error!("Vertex buffer is larger than 'u32' limit. Paint brush cannot address beyond this point.");
-            vertex_count = u32::MAX as usize;
+        if buffer_size > u32::MAX as usize {
+            log::error!("Buffer is larger than 'u32' limit. Paint brush cannot address beyond this point.");
+            buffer_size = u32::MAX as usize;
         }
 
-        let vertex_buffer = graphics.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let id = self.vertex_buffer_counter;
-        self.vertex_buffers.insert(id,vertex_buffer);
-        self.vertex_buffer_counter += 1;
+        let (label,usage) = match buffer_type {
+            BufferType::Vertex => ("Vertex Buffer",wgpu::BufferUsages::VERTEX),
+            BufferType::Index => ("Index Buffer",wgpu::BufferUsages::INDEX)
+        };
 
-        return VertexBufferReference { id, length: vertex_count as u32 };
+        let buffer = graphics.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(label),
+            contents: contents,
+            usage
+        });
+
+        let id = self.buffer_counter;
+        self.buffers.insert(id,buffer);
+        self.buffer_counter += 1;
+
+        return BufferReference {
+            id,
+            buffer_type,
+            length,
+            size: buffer_size as u32,
+        };
+    }
+
+    pub fn create_vertex_buffer(&mut self,graphics: &Graphics,vertices: &[Vertex]) -> BufferReference {
+        return self.create_buffer(
+            graphics,
+            BufferType::Vertex,
+            bytemuck::cast_slice(vertices),
+            vertices.len() as u32
+        );
+    }
+
+    pub fn create_index_buffer(&mut self,graphics: &Graphics,indices: &[u32]) -> BufferReference {
+        return self.create_buffer(
+            graphics,
+            BufferType::Index,
+            bytemuck::cast_slice(indices),
+            indices.len() as u32
+        );
     }
 
     pub fn set_clear_color(&mut self,color: wgpu::Color) {
         self.clear_color = color;
     }
 
-    pub fn destroy_vertex_buffer(&mut self,vertex_buffer_ref: &VertexBufferReference) {
-        if let Some(vertex_buffer) = self.vertex_buffers.remove(&vertex_buffer_ref.id) {
-            vertex_buffer.destroy();
+    pub fn destroy_buffer(&mut self,buffer_ref: &BufferReference) {
+        if let Some(buffer) = self.buffers.remove(&buffer_ref.id) {
+            buffer.destroy();
         } else {
-            log::error!("Cannot destroy buffer. Vertex buffer with ID '{}' not found.",vertex_buffer_ref.id);
-        }
-    }
-
-    pub fn unload(&self) {
-        for vertex_buffer in self.vertex_buffers.values() {
-            vertex_buffer.destroy();
+            log::error!("Cannot destroy buffer. Vertex buffer with ID '{}' not found.",buffer_ref.id);
         }
     }
 
@@ -104,9 +155,25 @@ impl PaintBrush {
         }));
     }
 
-    pub fn set_vertex_buffer(&mut self,vertex_buffer_ref: &VertexBufferReference,slot: u32,buffer_slice: Range<u32>) {
+    pub fn draw_indexed_primitives(&mut self,indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
+        self.instruction_queue.push_back(RenderInstruction::DrawIndexedPrimitives(DrawIndexedPrimitivesData { 
+            indices, base_vertex, instances
+        }));
+    }
+
+    pub fn set_vertex_buffer(&mut self,vertex_buffer_ref: &BufferReference,slot: u32,buffer_slice: Range<u32>) {
+        assert_eq!(vertex_buffer_ref.buffer_type,BufferType::Vertex,"Invalid buffer reference: This reference is not registered as a vertex buffer.");
+
         self.instruction_queue.push_back(RenderInstruction::SetVertexBuffer(SetVertexBufferData {
             id: vertex_buffer_ref.id, slot, buffer_slice
+        }));
+    }
+
+    pub fn set_index_buffer(&mut self,index_buffer_ref: &BufferReference,buffer_slice: Range<u32>) {
+        assert_eq!(index_buffer_ref.buffer_type,BufferType::Index,"Invalid buffer reference: This reference is not registered as an index buffer.");
+
+        self.instruction_queue.push_back(RenderInstruction::SetIndexBuffer(SetIndexBufferData {
+            id: index_buffer_ref.id, buffer_slice
         }));
     }
   
@@ -144,15 +211,30 @@ impl PaintBrush {
                 render_pass.draw(data.vertices.clone(),data.instances.clone());
             },
             RenderInstruction::SetVertexBuffer(data) => {
-                if let Some(vertex_buffer) = self.vertex_buffers.get(&data.id) {
+                if let Some(vertex_buffer) = self.buffers.get(&data.id) {
 
-                    let start = (data.buffer_slice.start * Vertex::SIZE) as BufferAddress;
-                    let end = (data.buffer_slice.end * Vertex::SIZE) as BufferAddress;
+                    let start = data.buffer_slice.start as BufferAddress;
+                    let end = data.buffer_slice.end as BufferAddress;
 
                     render_pass.set_vertex_buffer(data.slot,vertex_buffer.slice(start..end));
                 } else {
                     panic!("Vertex buffer with ID '{}' not found.",data.id)
                 }
+            },
+            RenderInstruction::SetIndexBuffer(data) => {
+                if let Some(index_buffer) = self.buffers.get(&data.id) {
+
+                    /* Might not need to multiply by index size ? */
+                    let start = data.buffer_slice.start as BufferAddress;
+                    let end = data.buffer_slice.end as BufferAddress;
+
+                    render_pass.set_index_buffer(index_buffer.slice(start..end),wgpu::IndexFormat::Uint32);
+                } else {
+                    panic!("Vertex buffer with ID '{}' not found.",data.id)
+                }
+            },
+            RenderInstruction::DrawIndexedPrimitives(data) => {
+                render_pass.draw_indexed(data.indices.clone(),data.base_vertex,data.instances.clone());
             }
             _ => {}
         }
