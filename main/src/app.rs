@@ -105,7 +105,7 @@ impl AppStateHandler for DummyState {
     fn update(&mut self) -> UpdateResult {
         panic!("Cannot update the dummy state!");
     }
-    fn render(&mut self,_: &Graphics,_: &TextureView) {
+    fn render(&mut self,_: &Graphics,_texture_view: &TextureView) {
         panic!("Cannot render the dummy state!");
     }
     fn input(&mut self,_: InputEvent) {
@@ -179,11 +179,8 @@ impl App {
         }
 
         let graphics = self.graphics.as_mut().unwrap();
-        
-        graphics.config.width = width;
-        graphics.config.height = height;
 
-        graphics.surface.configure(&graphics.device,&graphics.config);
+        graphics.configure_surface_size(width,height);
 
         self.surface_configured = true;
     }
@@ -304,12 +301,10 @@ impl App {
     
     fn render(&mut self) -> Result<(),wgpu::SurfaceError> {
         let graphics = self.graphics.as_mut().unwrap();
-
-        let output = graphics.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.state.render(graphics,&view);
+        let output = graphics.get_window_surface()?;
+        let texture_view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.state.render(graphics,&texture_view);
         output.present();
-
         Ok(())
     }
 

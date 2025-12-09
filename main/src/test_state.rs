@@ -2,20 +2,21 @@ use wgpu::{TextureView};
 
 use crate::app::{AppState, InputEvent, UpdateResult};
 use crate::camera::Camera;
-use crate::graphics::{BindGroupReference, Graphics, Vertex};
+use crate::graphics::{Graphics, Vertex};
 use crate::app::AppStateHandler;
-use crate::paintbrush::{PaintBrush, BufferReference, create_paint_brush};
+use crate::named_cache::CacheItemReference;
+use crate::paintbrush::{PaintBrush, BufferReference};
 
 pub struct TestState {
     paint_brush: PaintBrush,
     vertex_buffer: BufferReference,
     index_buffer: BufferReference,
-    test_texture: BindGroupReference,
+    test_texture: CacheItemReference,
     camera: Camera
 }
 
 pub fn generate_test_state(graphics: &mut Graphics) -> AppState {    
-    let mut paint_brush = create_paint_brush(&graphics);
+    let mut paint_brush = PaintBrush::default();
 
     let vertex_buffer = paint_brush.create_vertex_buffer(graphics,&[
         Vertex { position: [-0.0868241, 0.49240386], color: [0.0,0.0,0.0], uv: [0.4131759, 0.99240386], }, // A
@@ -31,7 +32,7 @@ pub fn generate_test_state(graphics: &mut Graphics) -> AppState {
         2, 3, 4
     ]);
 
-    let test_texture = graphics.create_texture("Test Texture");
+    let test_texture = graphics.get_texture("Test Texture");
 
     let camera = Camera::default();
 
@@ -56,12 +57,11 @@ impl AppStateHandler for TestState {
         let pb = &mut self.paint_brush;
 
         self.camera.set_aspect_ratio(render_target);
-
-        pb.set_clear_color(wgpu::Color::BLACK);
-
-        pb.set_texture(self.test_texture);
         pb.set_view_projection(self.camera.get_view_projection());
 
+        pb.set_clear_color(wgpu::Color::RED);
+
+        pb.set_texture(self.test_texture);
         pb.set_vertex_buffer(&self.vertex_buffer,0,0..self.vertex_buffer.size());
         pb.set_index_buffer(&self.index_buffer,0..self.index_buffer.size());
         pb.draw_indexed_primitives(0..self.index_buffer.len(),0,0..1);

@@ -1,25 +1,41 @@
-use std::{collections::HashMap};
 use std::sync::Arc;
-
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use winit::window::Window;
-use wgpu::{BindGroup, BindGroupLayoutDescriptor, BufferAddress, CommandEncoder, RenderPass, RenderPipeline, TextureView};
+use wgpu::{
+    BindGroup,
+    BindGroupLayoutDescriptor,
+    Buffer,
+    BufferAddress,
+    BufferUsages,
+    CommandEncoder,
+    CommandEncoderDescriptor,
+    RenderPass,
+    RenderPipeline,
+    SurfaceError,
+    SurfaceTexture,
+    TextureView
+};
+use crate::named_cache::{CacheItemReference, NamedCache};
 
 pub struct Graphics {
-    pub surface: wgpu::Surface<'static>,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub config: wgpu::SurfaceConfiguration,
-    render_pipelines: HashMap<PipelineVariant,RenderPipeline>,
-    /* Look into slotmap */
-    bind_groups: HashMap<u32,NamedBindGroup>,
-    bind_group_identifiers: HashMap<String,BindGroupReference>,
-    /* Find a way to reuse expired counters */
-    bind_group_counter: u32
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    render_pipeline: wgpu::RenderPipeline,
+    view_projection_reference: CacheItemReference,
+    view_projection_buffer: wgpu::Buffer,
+    bind_groups: NamedCache<TypedBindGroup>,
 }
 
-struct NamedBindGroup {
+pub struct TypedBindGroup {
     value: BindGroup,
-    name: String
+    variant: BindGroupVariant
+}
+#[derive(Debug,PartialEq,Eq,Clone,Copy)]
+pub enum BindGroupVariant {
+    Texture,
+    ViewProjection
 }
 
 pub type ViewProjectionMatrix = [[f32;4];4];
@@ -41,18 +57,6 @@ impl ViewProjection {
     }
 }
 
-#[derive(Debug,PartialEq,Eq,Clone,Copy)]
-pub enum BindGroupType {
-    Texture,
-    ViewProjection
-}
-
-#[derive(Clone,Copy)]
-pub struct BindGroupReference {
-    pub bind_group_type: BindGroupType,
-    pub id: u32
-}
-
 pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 pub const VIEW_PROJECTION_BIND_GROUP_INDEX: u32 = 1;
 
@@ -66,7 +70,7 @@ pub struct Vertex {
 
 impl Vertex {
     pub const SIZE: u32 = size_of::<Vertex>() as u32;
-
+    
     const POSITION_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
     const COLOR_SIZE: BufferAddress = size_of::<[f32;3]>() as BufferAddress;
     const TEXTURE_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
@@ -96,9 +100,15 @@ impl Vertex {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
-pub enum PipelineVariant {
-    Basic
+fn create_bind_group_name(identifier: &str,bind_group_type: BindGroupVariant) -> String {
+    let mut string = String::with_capacity(identifier.len() + 4);
+    string.push_str(identifier);
+    /* Must be equal length and match the capacity of the allocated String. */
+    string.push_str(match bind_group_type {
+        BindGroupVariant::Texture => "#tex",
+        BindGroupVariant::ViewProjection => "#vwp",
+    });
+    return string;
 }
 
 impl Graphics {
@@ -146,69 +156,98 @@ impl Graphics {
             desired_maximum_frame_latency: 2
         };
 
-        let mut render_pipelines = HashMap::new();
+        let render_pipeline = create_basic_pipeline(&device,config.format);
 
-        let basic_render_pipeline = create_basic_pipeline(&device,config.format);
-        render_pipelines.insert(PipelineVariant::Basic,basic_render_pipeline);
+        let view_projection_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("View Projection Buffer"),
+            contents: bytemuck::cast_slice(&ViewProjectionMatrix::default()),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
 
-        let bind_groups = HashMap::new();
-        let bind_group_identifiers = HashMap::new();
+        let identifier = create_bind_group_name("0",BindGroupVariant::ViewProjection);
+
+        let view_projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &render_pipeline.get_bind_group_layout(VIEW_PROJECTION_BIND_GROUP_INDEX),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: view_projection_buffer.as_entire_binding(),
+            }],
+            label: Some("View Projection Bind Group"),
+        });
+
+        let mut bind_groups = NamedCache::default();
+
+        let view_projection_reference = bind_groups.store_item(&identifier,TypedBindGroup {
+            value: view_projection_bind_group,
+            variant: BindGroupVariant::ViewProjection
+        });
 
         return Ok(Self {
             surface,
             device,
             queue,
             config,
-            render_pipelines,
+            render_pipeline,
             bind_groups,
-            bind_group_identifiers,
-            bind_group_counter: 0, 
+            view_projection_reference,
+            view_projection_buffer
         });
     }
 
-    pub fn get_bind_group(&self,bind_group_reference: &BindGroupReference) -> &BindGroup {
-        if let Some(bind_group) = self.bind_groups.get(&bind_group_reference.id) {
-            return &bind_group.value;
-        } else {
-            panic!("Bind group not found!");
-        }
+    pub fn get_bind_group(&self,bind_group_reference: &CacheItemReference) -> &BindGroup {
+        return &self.bind_groups.borrow_item(&bind_group_reference).value;
     }
 
-    pub fn set_pipeline(&self,render_pass: &mut RenderPass,pipeline_variant: PipelineVariant) {
-        if let Some(render_pipeline) = self.render_pipelines.get(&pipeline_variant) {
-            render_pass.set_pipeline(render_pipeline);
-        } else {
-            panic!("Render pipeline type is not implemented.");
-        }
+    pub fn configure_surface_size(&mut self,width: u32,height: u32) {
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device,&self.config);
     }
 
-    pub fn get_pipeline(&self,pipeline_variant: PipelineVariant) -> &RenderPipeline {
-        if let Some(render_pipeline) = self.render_pipelines.get(&pipeline_variant) {
-            return render_pipeline;
-        } else {
-            panic!("Render pipeline type is not implemented.");
-        }
+    pub fn get_default_pipeline(&self) -> &RenderPipeline {
+        return &self.render_pipeline;
     }
 
-    pub fn destroy_bind_group(&mut self,bind_group_reference: BindGroupReference) {
-        if let Some(named_bind_group) = self.bind_groups.remove(&bind_group_reference.id) {
-            self.bind_group_identifiers.remove(&named_bind_group.name);
-        } else {
-            panic!("Bind group reference not found!");
-        }
+    pub fn submit_encoder(&self,encoder: CommandEncoder) {  
+        self.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    pub fn create_buffer(&self,descriptor: &BufferInitDescriptor) -> Buffer {
+        return self.device.create_buffer_init(descriptor);
+    }
+
+    pub fn drop_bind_group(&mut self,bind_group_reference: &CacheItemReference) {
+        self.bind_groups.remove_item(bind_group_reference).value;
+    }
+
+    pub fn get_window_surface(&self) -> Result<SurfaceTexture,SurfaceError> {
+        return self.surface.get_current_texture();
+    }
+
+    pub fn create_command_encoder(&self) -> CommandEncoder {
+        return self.device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("Render Encoder")
+        });
+    }
+
+    pub fn write_view_projection(&self,view_projection: &Box<ViewProjection>) -> &BindGroup {
+        let data = view_projection.get_bytes();
+        self.queue.write_buffer(&self.view_projection_buffer,0,data);
+        return &self.bind_groups.borrow_item(&self.view_projection_reference).value;
     }
 
     /* Gets a texture reference and loads the texture if it doesn't already exist. */
-    pub fn create_texture(&mut self,identifier: &str) -> BindGroupReference {
+    pub fn get_texture(&mut self,identifier: &str) -> CacheItemReference {
 
-        if let Some(bind_group_reference) = self.bind_group_identifiers.get(identifier) {
+        if let Some(bind_group_reference) = self.bind_groups.get_reference(identifier) {
+            let bind_group = self.bind_groups.borrow_item(&bind_group_reference);
             assert_eq!(
-                bind_group_reference.bind_group_type,
-                BindGroupType::Texture,
+                bind_group.variant,
+                BindGroupVariant::Texture,
                 "Bind group for identifier '{}' is not of the texture type.",
                 identifier
             );
-            return bind_group_reference.clone();
+            return bind_group_reference;
         }
 
         let diffuse_bytes = include_bytes!("../../test_image.png");
@@ -224,6 +263,8 @@ impl Graphics {
             depth_or_array_layers: 1,
         };
 
+        let bind_group_name = create_bind_group_name(identifier,BindGroupVariant::Texture);
+
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             size: texture_size,
             mip_level_count: 1,
@@ -231,7 +272,7 @@ impl Graphics {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some(&format!("texture#{}",identifier)),
+            label: Some(&bind_group_name),
             view_formats: &[],
         });
 
@@ -264,11 +305,7 @@ impl Graphics {
         });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-
-            layout: &self.render_pipelines[
-                &PipelineVariant::Basic
-            ].get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
-
+            layout: &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -279,19 +316,13 @@ impl Graphics {
                     resource: wgpu::BindingResource::Sampler(&texture_sampler),
                 }
             ],
-            label: Some(&format!("texture_bind_group#{}",identifier)),
+            label: Some(&bind_group_name),
         });
 
-
-        let id = self.bind_group_counter;
-        self.bind_group_counter += 1;
-
-        self.bind_groups.insert(id,NamedBindGroup { value: bind_group, name: identifier.to_string() });
-
-        let bind_group_reference = BindGroupReference { bind_group_type: BindGroupType::Texture, id };
-        self.bind_group_identifiers.insert(identifier.to_string(),bind_group_reference);
-
-        return bind_group_reference;
+        return self.bind_groups.store_item(&bind_group_name,TypedBindGroup {
+            value: bind_group,
+            variant: BindGroupVariant::Texture,
+        });
     }
 }
 

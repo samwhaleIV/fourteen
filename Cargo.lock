@@ -1216,6 +1216,7 @@ dependencies = [
  "image",
  "log",
  "pollster",
+ "rand",
  "wgpu",
  "winit",
 ]

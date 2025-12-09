@@ -3,6 +3,7 @@ mod test_state;
 mod graphics;
 mod paintbrush;
 mod camera;
+mod named_cache;
 
 use std::env;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
