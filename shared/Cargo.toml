@@ -8,7 +8,7 @@ anyhow = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }
 collections = { path = "../collections" }
-bytemuck = {version = "1.24.0",features = ["derive"]}
+bytemuck =  { workspace = true }
 cgmath = "0.18.0"
 log = { workspace = true }
 pollster = "0.4.0"

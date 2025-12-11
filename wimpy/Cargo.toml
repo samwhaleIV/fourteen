@@ -9,3 +9,4 @@ collections = { path = "../collections" }
 generational-arena = "0.2"
 wgpu = { workspace = true }
 log = { workspace = true }
+bytemuck =  { workspace = true }

@@ -64,8 +64,8 @@ pub const VIEW_PROJECTION_BIND_GROUP_INDEX: u32 = 1;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32;2],
+    pub uv: [f32;2],
     pub color: [f32;3],
-    pub uv: [f32;2]
 }
 
 impl Vertex {
