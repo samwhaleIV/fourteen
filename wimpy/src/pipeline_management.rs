@@ -13,7 +13,6 @@ pub struct PipelineManager {
 const INDICES_PER_QUAD: u32 = 5;
 
 impl PipelineManager {
-
     pub fn create(wgpu_interface: &impl WGPUInterface,max_quads: u32) -> Self {
 
         /* Range checking for u16 limits */

@@ -6,7 +6,41 @@ use crate::{area::Area, color::Color, frame_binder::{FrameBinder, WGPUInterface}
 pub struct Frame {
     width: u32,
     height: u32,
+    is_top_level: bool,
     command_buffer: VecDeque<FrameCommand>,  
+}
+
+impl Frame {
+    pub fn create(width: u32,height: u32) -> Frame {
+        return Frame {
+            is_top_level: false,
+            width,
+            height,
+            command_buffer: VecDeque::default()
+        };
+    }
+
+    pub fn create_output(wgpu_interface: &impl WGPUInterface) -> Frame {
+        let (width,height) = wgpu_interface.get_output_size();
+        return Frame {
+            is_top_level: true,
+            width,
+            height,
+            command_buffer: VecDeque::default()
+        };
+    }
+
+    pub fn get_command_buffer(&self) -> &VecDeque<FrameCommand> {
+        return &self.command_buffer;
+    }
+
+    pub fn get_size(&self) -> (u32,u32) {
+        return (self.width,self.height);
+    }
+
+    pub fn is_top_level(&self) -> bool {
+        return self.is_top_level;
+    }
 }
 
 pub struct FinishedFrame {
@@ -114,14 +148,29 @@ impl Frame {
 
     /* Output & Interop */
 
-    pub fn get_finished(&mut self,frame_binder: &mut FrameBinder,wgpu_interface: &impl WGPUInterface) -> FinishedFrame {
+    pub fn render(&mut self,frame_binder: &mut FrameBinder,wgpu_interface: &impl WGPUInterface) -> FinishedFrame {
+        if self.is_top_level {
+            panic!("Cannot render top level frame to finished frame!");
+        }
         if self.command_buffer.is_empty() {
             log::warn!("Frame command buffer is empty!");
         }
         let size = self.size();
-        let frame = frame_binder.render_frame(size,&self.command_buffer,wgpu_interface);
+        let frame = frame_binder.render_frame(&self,wgpu_interface);
         self.command_buffer.clear();
         return frame;
+    }
+
+    pub fn render_final(&mut self,frame_binder: &mut FrameBinder,wgpu_interface: &impl WGPUInterface) {
+        if !self.is_top_level {
+            panic!("Cannot render non top level frame to direct output!");
+        }
+        if self.command_buffer.is_empty() {
+            log::warn!("Frame command buffer is empty!");
+        }
+        let size = self.size();
+        let frame = frame_binder.render_frame(&self,wgpu_interface);
+        self.command_buffer.clear();
     }
 
     /* Size Getters */
@@ -136,12 +185,4 @@ impl Frame {
     pub fn size(&self) -> (u32,u32) {
         return (self.width,self.height);
     }
-}
-
-pub fn create_frame(width: u32,height: u32) -> Frame {
-    return Frame {
-        width,
-        height,
-        command_buffer: VecDeque::default()
-    };
 }

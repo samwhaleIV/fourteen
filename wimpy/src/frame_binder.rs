@@ -1,9 +1,8 @@
-use std::{collections::VecDeque};
-
 use generational_arena::Arena;
 use image::{DynamicImage, ImageError, ImageReader};
+use wgpu::TextureView;
 
-use crate::frame::{FinishedFrame,FrameCommand};
+use crate::frame::{FinishedFrame, Frame, FrameCommand};
 use crate::pipeline_management::{PipelineManager, TextureContainer};
 
 pub struct FrameBinder {
@@ -14,13 +13,17 @@ pub trait WGPUInterface {
     fn get_queue(&self) -> wgpu::Queue;
     fn get_output_format(&self) -> wgpu::TextureFormat;
     fn get_pipeline_manager(&self) -> &PipelineManager;
+    fn get_output_size(&self) -> (u32,u32);
+    fn get_output_texture(&self) -> wgpu::TextureView;
 }
 
 impl FrameBinder {
-    pub fn render_frame(&mut self,size: (u32,u32),commands: &VecDeque<FrameCommand>,wgpu_interface: &impl WGPUInterface) -> FinishedFrame {
-        
+    pub fn render_frame(&mut self,frame: &Frame,wgpu_interface: &impl WGPUInterface) -> FinishedFrame {
+        if frame.is_top_level() {
+            //TODO STUFF
+        }
         /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
-        for command in commands.iter() {
+        for command in frame.get_command_buffer().iter() {
             match command {
                 FrameCommand::DrawColor(position_color) => todo!(),
                 FrameCommand::DrawFrame(finished_frame, position_uv) => todo!(),
