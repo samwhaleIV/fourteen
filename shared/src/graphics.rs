@@ -15,7 +15,7 @@ use wgpu::{
     SurfaceTexture,
     TextureView
 };
-use crate::named_cache::{CacheItemReference, NamedCache};
+use collections::named_cache::{CacheItemReference, NamedCache};
 
 pub struct Graphics {
     surface: wgpu::Surface<'static>,
@@ -73,7 +73,6 @@ impl Vertex {
     
     const POSITION_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
     const COLOR_SIZE: BufferAddress = size_of::<[f32;3]>() as BufferAddress;
-    const TEXTURE_SIZE: BufferAddress = size_of::<[f32;2]>() as BufferAddress;
 
     const fn get_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         return wgpu::VertexBufferLayout {
@@ -250,7 +249,8 @@ impl Graphics {
             return bind_group_reference;
         }
 
-        let diffuse_bytes = include_bytes!("../../test_image.png");
+        //TODO: Load from real filesystem
+        let diffuse_bytes = include_bytes!("../../content/images/test_image.png");
         let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
         let diffuse_rgba = diffuse_image.to_rgba8();
 
@@ -385,7 +385,7 @@ fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFor
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into())
+        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/position_uv_color.wgsl").into())
     });
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

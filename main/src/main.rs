@@ -1,30 +1,21 @@
-mod app;
-mod test_state;
-mod graphics;
-mod paintbrush;
-mod camera;
-mod named_cache;
-
 use std::env;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
-
 use env_logger::{Builder, Target};
-
-use crate::app::LogTraceConfig;
 
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = app::create_app(
-        test_state::generate_test_state,
-        LogTraceConfig::default()
+    let mut app = shared::app::create_app(
+        shared::test_state::generate_test_state,
+        shared::app::LogTraceConfig::default()
     );
 
     event_loop.listen_device_events(DeviceEvents::WhenFocused);
 
-    event_loop.run_app(&mut app)?;
+    log::info!("Starting event loop! Here we go. No going back now.");
 
+    event_loop.run_app(&mut app)?;
     return Ok(());
 }
 
@@ -39,8 +30,6 @@ pub fn main() {
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
     builder.init();
-
-    log::info!("Logger initialized, you bet.");
 
     let _ = create_event_loop();
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{
     collections::{HashMap,VecDeque},
     ops::{Range}
@@ -16,7 +18,9 @@ use crate::{graphics::{
     Graphics,
     Vertex,
     ViewProjection,
-}, named_cache::{CacheItemReference}};
+}};
+
+use collections::named_cache::CacheItemReference;
 
 #[derive(Default)]
 pub struct PaintBrush {
@@ -246,8 +250,7 @@ impl PaintBrush {
             RenderInstruction::SetViewProjection(view_projection) => {
                 let bind_group = graphics.write_view_projection(view_projection);
                 render_pass.set_bind_group(graphics::VIEW_PROJECTION_BIND_GROUP_INDEX,bind_group,&[]);
-            },
-            _ => panic!("Render instruction not implemented.")
+            }
         }
     }
 }

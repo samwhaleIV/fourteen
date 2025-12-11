@@ -1,11 +1,9 @@
 use wgpu::{TextureView};
-
-use crate::app::{AppState, InputEvent, UpdateResult};
+use collections::named_cache::CacheItemReference;
 use crate::camera::Camera;
 use crate::graphics::{Graphics, Vertex};
-use crate::app::AppStateHandler;
-use crate::named_cache::CacheItemReference;
 use crate::paintbrush::{PaintBrush, BufferReference};
+use crate::app_state::*;
 
 pub struct TestState {
     paint_brush: PaintBrush,

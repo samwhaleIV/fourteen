@@ -1,0 +1,15 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+winit = { workspace = true }
+image = { workspace = true }
+collections = { path = "../collections" }
+bytemuck = {version = "1.24.0",features = ["derive"]}
+cgmath = "0.18.0"
+log = { workspace = true }
+pollster = "0.4.0"
+wgpu = { workspace = true }

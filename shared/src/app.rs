@@ -1,10 +1,11 @@
-
-const WINDOW_TITLE: &'static str = include_str!("../config/window_title.txt");
+const WINDOW_TITLE: &'static str = "Twelve Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (400,300);
 
-use std::{sync::Arc, time::{Instant}};
-use crate::graphics::{Graphics};
-use wgpu::{TextureView};
+use std::sync::Arc;
+use wgpu::TextureView;
+
+use crate::app_state::*;
+use crate::graphics::Graphics;
 
 use winit::{
     application::ApplicationHandler,
@@ -14,45 +15,6 @@ use winit::{
     keyboard::{KeyCode,PhysicalKey},
     window::{Window,WindowId}
 };
-
-pub struct UpdateResult {
-    pub operation: AppOperation,
-    pub new_state: Option<AppStateGenerator>
-}
-
-impl Default for UpdateResult {
-    fn default() -> Self {
-        return UpdateResult {
-            operation: AppOperation::Continue,
-            new_state: None 
-        }
-    }
-}
-
-pub enum InputEvent {
-    WindowSize(MousePoint), /* Sent after state load and resize (1) */
-    MouseMove(MousePoint), /* Sent after state load and before mouse press and release (2) */
-
-    MousePress(MousePoint), /* Not sent after load if pressed through transition.  */
-    MouseRelease(MousePoint), /* Not sent unless mouse press started on the active state. */
-
-    KeyPress(KeyCode), /* Sent after load if keys pressed through transition. */
-    KeyRelease(KeyCode), /* Not sent to an unloading state */
-
-    MouseMoveRaw((f64,f64))
-
-    /* could also making the loading implementation parameterized */
-}
-
-pub trait AppStateHandler {
-    fn unload(&mut self,graphics: &Graphics);
-    fn input(&mut self,event: InputEvent);
-    fn update(&mut self) -> UpdateResult;
-    fn render(&mut self,graphics: &Graphics,texture_view: &TextureView);
-}
-
-pub type AppState = Box<dyn AppStateHandler>;
-pub type AppStateGenerator = fn(&mut Graphics) -> AppState;
 
 pub struct App {
     state_loaded: bool,
@@ -70,18 +32,10 @@ pub struct App {
     window: Option<Arc<Window>>,
     graphics: Option<Graphics>,
 
-    start_time: Instant,
- 
     state_generator: AppStateGenerator,
     state: AppState,
     
     log_trace_config: LogTraceConfig
-}
-
-pub enum AppOperation {
-    Continue,
-    Terminate,
-    Transition
 }
 
 enum EventLoopOperation {
@@ -138,8 +92,6 @@ pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceC
     return App {
         window: None,
         graphics: None,
-
-        start_time: Instant::now(),
 
         state_generator,
         state: Box::new(DummyState),
@@ -226,11 +178,6 @@ impl App {
                 log::error!("Invalid update result: A transition has been requested, but a state has not been provided. Triggering app termination.");
                 return EventLoopOperation::Terminate;
             },
-
-            _ => {
-                log::error!("Invalid update result: This operation has not been implemented. (This is not the caller's fault.) Triggering app termination.");
-                return EventLoopOperation::Terminate;
-            }
         };
     }
  
