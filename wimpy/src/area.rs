@@ -1,17 +1,38 @@
 pub struct Area {
-    pub top: f32,
-    pub left: f32,
-    pub right: f32,
+    pub top:    f32,
+    pub left:   f32,
+    pub right:  f32,
     pub bottom: f32,
 }
 
 impl Area {
 
-    pub const ONE: Self = Self {
-        top: 0.0,
-        left: 0.0,
-        right: 1.0,
+    pub const NORMAL: Self = Self {
+        top:    0.0,
+        left:   0.0,
+        right:  1.0,
         bottom: 1.0,
+    };
+
+    pub const INVERT_X: Self = Self {
+        top:    0.0,
+        left:   1.0,
+        right:  0.0,
+        bottom: 1.0,
+    };
+
+    pub const INVERT_Y: Self = Self {
+        top:    1.0,
+        left:   0.0,
+        right:  1.0,
+        bottom: 0.0,
+    };
+
+    pub const INVERT_XY: Self = Self {
+        top:    1.0,
+        left:   1.0,
+        right:  0.0,
+        bottom: 0.0,
     };
 
     pub fn centered_on(x: f32,y: f32,width: f32,height: f32) -> Area {

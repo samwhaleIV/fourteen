@@ -2,7 +2,7 @@ use generational_arena::Arena;
 use image::{DynamicImage, ImageError, ImageReader};
 use wgpu::TextureView;
 
-use crate::frame::{FinishedFrame, Frame, FrameCommand};
+use crate::frame::{FinishedFrame, Frame, FrameCommand, FrameInternal};
 use crate::pipeline_management::{PipelineManager, TextureContainer};
 
 pub struct FrameBinder {
