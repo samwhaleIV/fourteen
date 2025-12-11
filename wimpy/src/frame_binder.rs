@@ -2,7 +2,7 @@ use generational_arena::Arena;
 use image::{DynamicImage, ImageError, ImageReader};
 use wgpu::TextureView;
 
-use crate::frame::{FinishedFrame, Frame, FrameCommand, FrameInternal};
+use crate::frame::{FinishedFrame, FinishedFrameInternal, Frame, FrameCommand, FrameInternal};
 use crate::pipeline_management::{PipelineManager, TextureContainer};
 
 pub struct FrameBinder {
@@ -19,9 +19,8 @@ pub trait WGPUInterface {
 
 impl FrameBinder {
     pub fn render_frame(&mut self,frame: &Frame,wgpu_interface: &impl WGPUInterface) -> FinishedFrame {
-        if frame.is_top_level() {
-            //TODO STUFF
-        }
+        //TODO: Do stuff with FrameUsage
+
         /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
         for command in frame.get_command_buffer().iter() {
             match command {
@@ -43,7 +42,7 @@ impl FrameBinder {
         let texture_container = TextureContainer::from_image(&image,wgpu_interface);
         let size = texture_container.size();
         let index = self.frames.insert(texture_container);
-        return FinishedFrame::create(size,index);
+        return FinishedFrame::create_immutable(size,index);
     }
 
     pub fn create_texture_frame(&mut self,name: &str,wgpu_interface: &impl WGPUInterface) -> Result<FinishedFrame,ImageError> {

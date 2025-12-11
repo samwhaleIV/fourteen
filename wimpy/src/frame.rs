@@ -3,17 +3,24 @@
 use std::collections::VecDeque;
 use crate::{area::Area, color::Color, frame_binder::{FrameBinder, WGPUInterface}};
 
+#[derive(Clone,Copy)]
+pub enum FrameUsage {
+    Output,
+    RenderOnce,
+    Reuse
+}
+
 pub struct Frame {
     width: u32,
     height: u32,
-    is_top_level: bool,
+    usage: FrameUsage,
     command_buffer: VecDeque<FrameCommand>,  
 }
 
 pub trait FrameInternal {
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand>;
     fn get_size(&self) -> (u32,u32);
-    fn is_top_level(&self) -> bool;
+    fn get_usage(&self) -> FrameUsage;
 }
 
 impl FrameInternal for Frame {
@@ -25,22 +32,37 @@ impl FrameInternal for Frame {
         return (self.width,self.height);
     }
 
-    fn is_top_level(&self) -> bool {
-        return self.is_top_level;
+    fn get_usage(&self) -> FrameUsage {
+        return self.usage;
     }
 }
 
 pub struct FinishedFrame {
     width: u32,
     height: u32,
+    readonly: bool,
     index: generational_arena::Index,
 }
 
-impl FinishedFrame {
-    pub fn create(size: (u32,u32),index: generational_arena::Index) -> FinishedFrame {
+pub trait FinishedFrameInternal {
+    fn create_mutable(size: (u32,u32),index: generational_arena::Index) -> FinishedFrame;
+    fn create_immutable(size: (u32,u32),index: generational_arena::Index) -> FinishedFrame;
+}
+
+impl FinishedFrameInternal for FinishedFrame {
+    fn create_mutable(size: (u32,u32),index: generational_arena::Index) -> FinishedFrame {
         return FinishedFrame {
             width: size.0,
             height: size.1,
+            readonly: false,
+            index,
+        };
+    }
+    fn create_immutable(size: (u32,u32),index: generational_arena::Index) -> FinishedFrame {
+        return FinishedFrame {
+            width: size.0,
+            height: size.1,
+            readonly: true,
             index,
         };
     }
@@ -100,7 +122,17 @@ impl Frame {
 
     pub fn create(width: u32,height: u32) -> Frame {
         return Frame {
-            is_top_level: false,
+            usage: FrameUsage::RenderOnce,
+            width,
+            height,
+            command_buffer: VecDeque::default()
+        };
+    }
+
+    pub fn create_reusable(wgpu_interface: &impl WGPUInterface) -> Frame {
+        let (width,height) = wgpu_interface.get_output_size();
+        return Frame {
+            usage: FrameUsage::Reuse,
             width,
             height,
             command_buffer: VecDeque::default()
@@ -110,7 +142,7 @@ impl Frame {
     pub fn create_output(wgpu_interface: &impl WGPUInterface) -> Frame {
         let (width,height) = wgpu_interface.get_output_size();
         return Frame {
-            is_top_level: true,
+            usage: FrameUsage::Output,
             width,
             height,
             command_buffer: VecDeque::default()
