@@ -302,15 +302,18 @@ fn get_bind_groups(texture_view: &TextureView,wgpu_interface: &impl WGPUInterfac
         (FilterMode::Linear,AddressMode::ClampToEdge),
         (FilterMode::Linear,AddressMode::Repeat),
         (FilterMode::Linear,AddressMode::MirrorRepeat),
-    ].iter().map(|(filter,address)|device.create_sampler(&wgpu::SamplerDescriptor {
-        address_mode_u: *address,
-        address_mode_v: *address,
-        address_mode_w: *address,
-        mag_filter: *filter,
-        min_filter: *filter,
-        mipmap_filter: *filter,
-        ..Default::default()
-    })).map(|sampler|device.create_bind_group(&wgpu::BindGroupDescriptor {
+    ].iter().map(|(filter,address)|{
+        let (a,f) = (*address,*filter);
+        device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: a,
+            address_mode_v: a,
+            address_mode_w: a,
+            mag_filter: f,
+            min_filter: f,
+            mipmap_filter: f,
+            ..Default::default()
+        })
+    }).map(|sampler|device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: bind_group_layout,
         entries: &[
             wgpu::BindGroupEntry {
