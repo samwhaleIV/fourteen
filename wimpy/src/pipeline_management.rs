@@ -1,5 +1,6 @@
-use std::{collections::VecDeque,u8};
+use std::{collections::{VecDeque},u8};
 
+use generational_arena::{Index,Arena};
 use image::{DynamicImage, EncodableLayout, GenericImageView};
 use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, IndexFormat, RenderPipeline, TextureUsages, TextureView, util::{BufferInitDescriptor, DeviceExt}};
 use crate::{frame::{FilterMode, WrapMode}, frame_cache::WGPUInterface};
@@ -9,11 +10,16 @@ pub struct Pipeline {
     index_buffer: Buffer,
     vertex_buffer_quad_count: u32,
 
-    vertex_buffers: generational_arena::Arena<Buffer>,
-    available_vertex_buffers: VecDeque<generational_arena::Index>,
+    vertex_buffers: Arena<Buffer>,
+    available_vertex_buffers: VecDeque<Index>,
 
-    view_projection_buffer: Buffer,
-    view_projection_bind_group: BindGroup
+    view_projection_buffers: Arena<ViewProjectionBuffer>,
+    available_projection_buffers: VecDeque<Index>
+}
+
+pub struct ViewProjectionBuffer {
+    bind_group: BindGroup,
+    value: Buffer
 }
 
 const INDICES_PER_QUAD: u32 = 5;
@@ -40,21 +46,6 @@ impl Pipeline {
         let device = wgpu_interface.get_device();
         let pipeline = create_pipeline(wgpu_interface);
 
-        let view_projection_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("View Projection Buffer"),
-            contents: bytemuck::cast_slice(&ViewProjectionMatrix::default()),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let view_projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &pipeline.get_bind_group_layout(VIEW_PROJECTION_BIND_GROUP_INDEX),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: view_projection_buffer.as_entire_binding(),
-            }],
-            label: Some("View Projection Bind Group"),
-        });
-
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(&get_index_buffer_contents(max_quads)),
@@ -62,17 +53,17 @@ impl Pipeline {
         });
 
         return Self {
-            view_projection_buffer,
-            view_projection_bind_group,
             pipeline,
             vertex_buffer_quad_count: max_quads,
-            vertex_buffers: generational_arena::Arena::default(),
-            available_vertex_buffers: VecDeque::new(),
-            index_buffer
+            index_buffer,
+            vertex_buffers: Default::default(),
+            available_vertex_buffers: Default::default(),
+            view_projection_buffers: Default::default(),
+            available_projection_buffers:Default::default(),
         };
     }
 
-    pub fn get_vertex_buffer(&mut self,wgpu_interface: &impl WGPUInterface) -> generational_arena::Index {
+    pub fn get_vertex_buffer(&mut self,wgpu_interface: &impl WGPUInterface) -> Index {
         /* Why pop_front? We may as well reuse the most recently returned buffers. Maybe the driver will optimize it.  */
         if let Some(index) = self.available_vertex_buffers.pop_front() {
             return index;
@@ -84,16 +75,54 @@ impl Pipeline {
         return self.vertex_buffers.insert(new_buffer);
     }
 
-    pub fn return_vertex_buffer(&mut self,buffer_index: generational_arena::Index) {
+    pub fn return_vertex_buffer(&mut self,buffer_index: Index) {
         if !self.vertex_buffers.contains(buffer_index) {
             panic!("This vertex buffer does not belong to this pipeline manager (as far as we can tell).");
         }
         self.available_vertex_buffers.push_back(buffer_index);
     }
 
+    pub fn get_view_projection_buffer(&mut self,wgpu_interface: &impl WGPUInterface) -> Index {
+        if let Some(index) = self.available_projection_buffers.pop_front() {
+            return index;
+        }
+        let new_buffer = create_view_projection_buffer(
+            &wgpu_interface.get_device(),
+            &self.pipeline
+        );
+        return self.view_projection_buffers.insert(new_buffer);
+    }
+
+    pub fn return_view_projection_buffer(&mut self,buffer_index: Index) {
+        if !self.view_projection_buffers.contains(buffer_index) {
+            panic!("This vertex buffer does not belong to this pipeline manager (as far as we can tell).");
+        }
+        self.available_projection_buffers.push_back(buffer_index);
+    }
+
     pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
         return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
     }
+}
+
+fn create_view_projection_buffer(device: &wgpu::Device,render_pipeline: &wgpu::RenderPipeline) -> ViewProjectionBuffer {
+    let value = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("View Projection Buffer"),
+        contents: bytemuck::cast_slice(&ViewProjectionMatrix::default()),
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &render_pipeline.get_bind_group_layout(VIEW_PROJECTION_BIND_GROUP_INDEX),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: value.as_entire_binding(),
+        }],
+        label: Some("View Projection Bind Group"),
+    });
+    return ViewProjectionBuffer {
+        value,
+        bind_group
+    };
 }
 
 fn create_vertex_buffer(max_quads: u32,device: &wgpu::Device) -> Buffer {
