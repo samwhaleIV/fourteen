@@ -59,9 +59,9 @@ impl Pipeline {
         };
     }
 
-    pub fn get_buffer_set(&mut self,wgpu_interface: &impl WGPUInterface) -> Index {
-        /* Why pop_front? We may as well reuse the most recently returned buffers. Maybe the driver will optimize it.  */
-        if let Some(index) = self.available_buffer_sets.pop_front() {
+    pub fn get_buffer_set_reference(&mut self,wgpu_interface: &impl WGPUInterface) -> Index {
+        /* Why pop_back? We may as well reuse the most recently returned buffers. Maybe the driver will optimize it.  */
+        if let Some(index) = self.available_buffer_sets.pop_back() {
             return index;
         }
         let device = &wgpu_interface.get_device();
@@ -74,7 +74,14 @@ impl Pipeline {
         });
     }
 
-    pub fn return_buffer_set(&mut self,buffer_index: Index) {
+    pub fn get_buffer_set(&self,reference: Index) -> &RenderPassBufferSet {
+        if let Some(value) = self.buffer_sets.get(reference) {
+            return value;
+        }
+        panic!("This reference does not exist in the pipeline buffer set cache.");
+    }
+
+    pub fn return_buffer_set_reference(&mut self,buffer_index: Index) {
         if !self.buffer_sets.contains(buffer_index) {
             panic!("This vertex buffer does not belong to this pipeline manager (as far as we can tell).");
         }

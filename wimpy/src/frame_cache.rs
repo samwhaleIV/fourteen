@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use core::panic;
+use std::collections::{HashMap, VecDeque};
 
-use generational_arena::Arena;
+use generational_arena::{Arena, Index};
 use image::{DynamicImage, ImageError, ImageReader};
 
 use crate::frame::{FrameInternal, Frame};
@@ -8,8 +9,8 @@ use crate::pipeline_management::{Pipeline, TextureContainer};
 
 pub struct FrameCache {
     textures: Arena<TextureContainer>,
-    mutable_textures: HashMap<(u32,u32),VecDeque<generational_arena::Index>>,
-    leased_mutable_textures: HashSet<generational_arena::Index>
+    mutable_textures: HashMap<(u32,u32),VecDeque<Index>>,
+    leased_mutable_textures: HashMap<Index,(u32,u32)>
 }
 pub trait WGPUInterface {
     fn get_device(&self) -> wgpu::Device;
@@ -47,7 +48,6 @@ impl FrameCache {
             for _ in 0..cache_size_instances {
                 let mutable_texture = TextureContainer::create_mutable(*size,wgpu_interface);
                 let index = textures.insert(mutable_texture);
-
                 queue.push_back(index);
             }
 
@@ -57,7 +57,7 @@ impl FrameCache {
         return Self {
             textures,
             mutable_textures,
-            leased_mutable_textures: HashSet::default()
+            leased_mutable_textures: Default::default()
         }
     }
 
@@ -75,9 +75,47 @@ impl FrameCache {
 }
 
 impl FrameCache {
-    fn request_mutable_texture(size: (u32,u32)) -> Option<TextureContainer> {
-        //todo
-        return None;
+    pub fn get_mutable_texture_reference(&mut self,size: (u32,u32),wgpu_interface: &impl WGPUInterface) -> Index {
+        /* A pool of the specified size. */
+        let mut pool = {
+            if let Some(value) = self.mutable_textures.remove(&size) {
+                value
+            } else {
+                VecDeque::<Index>::new()
+            }
+        };
+
+        let index = {
+            if let Some(index) = pool.pop_back() {
+                self.leased_mutable_textures.insert(index,size);
+                index
+            } else {
+                let mutable_texture = TextureContainer::create_mutable(size,wgpu_interface);
+                let index = self.textures.insert(mutable_texture);
+                index
+            }
+        };
+
+        self.mutable_textures.insert(size,pool);
+        self.leased_mutable_textures.insert(index,size);
+
+        return index;
+    }
+
+    pub fn get_mutable_texture(&self,reference: Index) -> &TextureContainer {
+        if !self.leased_mutable_textures.contains_key(&reference) {
+            panic!("Index reference not found in lease cache!");
+        }
+
+        if let Some(texture) = self.textures.get(reference) {
+            return texture;
+        }
+
+        panic!("Texture reference not found in cache!");
+    }
+
+    pub fn return_mutable_texture_reference(&mut self,reference: Index) {
+
     }
 
     fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame {

@@ -64,14 +64,14 @@ impl FrameInternal for Frame {
     fn is_writable(&self) -> bool {
         return match self.usage {
             FrameType::Output => true,
-            FrameType::Mutable => self.index.is_none(),
+            FrameType::Mutable => self.index.is_some(),
             FrameType::Immutable => false,
             FrameType::Invalid => false,
         };
     }
 
     fn is_invalid(&self) -> bool {
-        return self.usage == FrameType::Invalid || self.index.is_none();
+        return self.usage == FrameType::Invalid;
     }
 
     fn to_mutable(size: (u32,u32),index: generational_arena::Index) -> Frame {
@@ -310,7 +310,7 @@ impl Frame {
         if invalid || !self.is_writable() {
             log::error!("Frame render error: Can't render to a {} destination frame.",match invalid {
                 true => "null/invalid",
-                false => "readonly"
+                false => "read-only"
             });
             self.command_buffer.clear();
             return Frame::create_null();
