@@ -1,20 +1,24 @@
-use std::u8;
+use std::{collections::VecDeque,u8};
 
 use image::{DynamicImage, EncodableLayout, GenericImageView};
 use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, IndexFormat, RenderPipeline, TextureUsages, TextureView, util::{BufferInitDescriptor, DeviceExt}};
-use crate::{frame::{FilterMode, WrapMode}, frame_binder::WGPUInterface};
+use crate::{frame::{FilterMode, WrapMode}, frame_cache::WGPUInterface};
 
-pub struct PipelineManager {
+pub struct Pipeline {
     pipeline: RenderPipeline,
     index_buffer: Buffer,
-    vertex_buffer: Buffer,
+    vertex_buffer_quad_count: u32,
+
+    vertex_buffers: generational_arena::Arena<Buffer>,
+    available_vertex_buffers: VecDeque<generational_arena::Index>,
+
     view_projection_buffer: Buffer,
     view_projection_bind_group: BindGroup
 }
 
 const INDICES_PER_QUAD: u32 = 5;
 
-impl PipelineManager {
+impl Pipeline {
     pub fn create(wgpu_interface: &impl WGPUInterface,max_quads: u32) -> Self {
 
         /* Range checking for u16 limits */
@@ -57,24 +61,47 @@ impl PipelineManager {
             usage: wgpu::BufferUsages::INDEX
         });
 
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&get_vertex_buffer_contents(max_quads)),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-        });
-
         return Self {
             view_projection_buffer,
             view_projection_bind_group,
             pipeline,
-            vertex_buffer,
+            vertex_buffer_quad_count: max_quads,
+            vertex_buffers: generational_arena::Arena::default(),
+            available_vertex_buffers: VecDeque::new(),
             index_buffer
         };
+    }
+
+    pub fn get_vertex_buffer(&mut self,wgpu_interface: &impl WGPUInterface) -> generational_arena::Index {
+        /* Why pop_front? We may as well reuse the most recently returned buffers. Maybe the driver will optimize it.  */
+        if let Some(index) = self.available_vertex_buffers.pop_front() {
+            return index;
+        }
+        let new_buffer = create_vertex_buffer(
+            self.vertex_buffer_quad_count,
+            &wgpu_interface.get_device()
+        );
+        return self.vertex_buffers.insert(new_buffer);
+    }
+
+    pub fn return_vertex_buffer(&mut self,buffer_index: generational_arena::Index) {
+        if !self.vertex_buffers.contains(buffer_index) {
+            panic!("This vertex buffer does not belong to this pipeline manager (as far as we can tell).");
+        }
+        self.available_vertex_buffers.push_back(buffer_index);
     }
 
     pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
         return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
     }
+}
+
+fn create_vertex_buffer(max_quads: u32,device: &wgpu::Device) -> Buffer {
+    return device.create_buffer_init(&BufferInitDescriptor{
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(&get_vertex_buffer_contents(max_quads)),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+    });
 }
 
 fn get_index_buffer_contents(index_count: u32) -> Vec<u16> {
@@ -291,7 +318,7 @@ fn get_bind_groups(texture_view: &TextureView,wgpu_interface: &impl WGPUInterfac
     let device = wgpu_interface.get_device();
 
     let bind_group_layout = &wgpu_interface
-        .get_pipeline_manager()
+        .get_pipeline()
         .get_texture_bind_group_layout();
 
     use wgpu::{FilterMode,AddressMode};

@@ -1,13 +1,13 @@
 #![allow(dead_code,unused_variables)]
 
-use crate::frame_binder::WGPUInterface;
+use crate::{frame_cache::WGPUInterface, pipeline_management::Pipeline};
 
 pub mod frame;
 pub mod area;
 pub mod color;
-mod frame_binder;
+pub mod frame_cache;
 mod pipeline_management;
-
+mod frame_processor;
 
 struct VirtualWGPUProvider {
 
@@ -26,7 +26,7 @@ impl WGPUInterface for VirtualWGPUProvider {
         todo!()
     }
 
-    fn get_pipeline_manager(&self) -> &pipeline_management::PipelineManager {
+    fn get_pipeline(&self) -> &Pipeline {
         todo!()
     }
 
@@ -37,14 +37,41 @@ impl WGPUInterface for VirtualWGPUProvider {
     fn get_output_texture(&self) -> wgpu::TextureView {
         todo!()
     }
+
+    fn start_encoding(&mut self) {
+        todo!()
+    }
+
+    fn get_encoder(&self) -> Option<&wgpu::CommandEncoder> {
+        todo!()
+    }
+
+    fn finish_encoding(&mut self) {
+        todo!()
+    }
 }
 
+const MAX_QUADS: u32 = 2000;
+
 fn test() {
-    let wgpu_interface = VirtualWGPUProvider {};
 
-    let mut frame_binder = frame_binder::FrameBinder::create();
+    let mut wgpu_interface = VirtualWGPUProvider {
+        //This is where the magic binding happens. Pretend it is here already.
+    };
+    let mut pipeline = Pipeline::create(&wgpu_interface,MAX_QUADS);
+    let mut cache = frame_cache::FrameCache::create();
 
-    let texture = frame_binder.create_texture_frame_debug(&wgpu_interface);
+    let texture_frame = cache.create_texture_frame_debug(&wgpu_interface);
 
-    let output_frame = frame::Frame::create_output(&wgpu_interface);
+    let mut output_frame = cache.get_output_frame(&wgpu_interface);
+
+    wgpu_interface.start_encoding();
+
+
+    output_frame.set_texture_filter(frame::FilterMode::Nearest);
+    output_frame.set_texture_wrap(frame::WrapMode::Clamp);
+    output_frame.finish(&mut cache,&mut pipeline,&wgpu_interface);
+
+
+    wgpu_interface.finish_encoding();
 }

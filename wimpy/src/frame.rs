@@ -1,10 +1,10 @@
 //#![allow(dead_code,unused_variables)]
 
 use std::{collections::VecDeque, ptr};
-use crate::{area::Area, color::Color, frame_binder::{FrameBinder, WGPUInterface}};
+use crate::{area::Area, color::Color, frame_cache::{FrameCache, WGPUInterface}, frame_processor, pipeline_management::Pipeline};
 
 #[derive(Clone,Copy,PartialEq)]
-pub enum FrameUsage {
+pub enum FrameType {
     Output,
     Mutable,
     Immutable,
@@ -17,20 +17,26 @@ pub struct Frame {
     width: u32,
     height: u32,
     index: Option<FrameIndex>,
-    usage: FrameUsage,
-    command_buffer: VecDeque<FrameCommand>,  
+    usage: FrameType,
+    command_buffer: VecDeque<FrameCommand>,
+    requires_unique_backing: bool,
 }
 
 pub trait FrameInternal {
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand>;
     fn get_size(&self) -> (u32,u32);
-    fn get_usage(&self) -> FrameUsage;
+    fn get_type(&self) -> FrameType;
 
     fn to_mutable(size: (u32,u32),index: generational_arena::Index) -> Frame;
     fn to_immutable(size: (u32,u32),index: generational_arena::Index) -> Frame;
 
     fn is_writable(&self) -> bool;
     fn is_invalid(&self) -> bool;
+
+    fn create_output(wgpu_interface: &impl WGPUInterface) -> Self;
+    fn create_mutable(size: (u32,u32)) -> Self;
+    fn create_immutable(wsize: (u32,u32),unique: bool) -> Self;
+    fn create_null() -> Self;
 }
 
 #[derive(PartialEq)]
@@ -51,40 +57,90 @@ impl FrameInternal for Frame {
         return (self.width,self.height);
     }
 
-    fn get_usage(&self) -> FrameUsage {
+    fn get_type(&self) -> FrameType {
         return self.usage;
     }
 
     fn is_writable(&self) -> bool {
         return match self.usage {
-            FrameUsage::Output => true,
-            FrameUsage::Mutable => self.index.is_none(),
-            FrameUsage::Immutable => false,
-            FrameUsage::Invalid => false,
+            FrameType::Output => true,
+            FrameType::Mutable => self.index.is_none(),
+            FrameType::Immutable => false,
+            FrameType::Invalid => false,
         };
     }
 
     fn is_invalid(&self) -> bool {
-        return self.usage == FrameUsage::Invalid || self.index.is_none();
+        return self.usage == FrameType::Invalid || self.index.is_none();
     }
 
     fn to_mutable(size: (u32,u32),index: generational_arena::Index) -> Frame {
-        return Frame {
+        return Self {
             width: size.0,
             height: size.1,
-            usage: FrameUsage::Mutable,
+            usage: FrameType::Mutable,
             index: Some(index),
+            requires_unique_backing: false,
             command_buffer: Vec::with_capacity(0).into()
         };
     }
 
     fn to_immutable(size: (u32,u32),index: generational_arena::Index) -> Frame {
-        return Frame {
+        return Self {
             width: size.0,
             height: size.1,
-            usage: FrameUsage::Immutable,
+            usage: FrameType::Immutable,
             index: Some(index),
+            requires_unique_backing: false,
             command_buffer: Vec::with_capacity(0).into()
+        };
+    }
+
+    fn create_null() -> Self {
+        return Self {
+            usage: FrameType::Invalid,
+            index: None,
+            width: 0,
+            height: 0,
+            requires_unique_backing: false,
+            command_buffer: Vec::with_capacity(0).into()
+        }
+    }
+
+    fn create_immutable(size: (u32,u32),unique: bool) -> Self {
+        validate_size(size);
+        return Self {
+            usage: FrameType::Immutable,
+            index: None,
+            width: size.0,
+            height: size.1,
+            requires_unique_backing: unique,
+            command_buffer: VecDeque::default()
+        };
+    }
+    
+    fn create_mutable(size: (u32,u32)) -> Self {
+        validate_size(size);
+        return Self {
+            usage: FrameType::Mutable,
+            index: None,
+            width: size.0,
+            height: size.1,
+            requires_unique_backing: true,
+            command_buffer: VecDeque::default()
+        };
+    }
+
+    fn create_output(wgpu_interface: &impl WGPUInterface) -> Self {
+        let size = wgpu_interface.get_output_size();
+        validate_size(size);
+        return Self {
+            usage: FrameType::Output,
+            index: None,
+            width: size.0,
+            height: size.1,
+            requires_unique_backing: false,
+            command_buffer: VecDeque::default()
         };
     }
 }
@@ -138,8 +194,8 @@ pub struct PositionUVColor {
     color: Color
 }
 
-fn validate_size(width: u32,height: u32) {
-    if width > 0 && height > 0 {
+fn validate_size(size: (u32,u32)) {
+    if size.0 > 0 && size.1 > 0 {
         return;
     }
     panic!("Invalid frame size. Width and height must be greater than 1.");
@@ -160,7 +216,7 @@ impl Frame {
         if destination.is_invalid() {
             return SrcDstCmpResult::InvalidDestination;
         }
-        if destination.is_writable() {
+        if !destination.is_writable() {
             return SrcDstCmpResult::ReadonlyDestination;
         }
         /* - - - - - - - - - - - - - - - - - - - - */
@@ -184,52 +240,6 @@ impl Frame {
             });
         }
         return valid;
-    }
-
-    /* Creation */
-
-    fn create_null() -> Self {
-        return Self {
-            usage: FrameUsage::Invalid,
-            index: None,
-            width: 0,
-            height: 0,
-            command_buffer: Vec::with_capacity(0).into()
-        }
-    }
-
-    pub fn create(width: u32,height: u32) -> Self {
-        validate_size(width,height);
-        return Self {
-            usage: FrameUsage::Immutable,
-            index: None,
-            width,
-            height,
-            command_buffer: VecDeque::default()
-        };
-    }
-    
-    pub fn create_mutable(width: u32,height: u32) -> Self {
-        validate_size(width,height);
-        return Self {
-            usage: FrameUsage::Mutable,
-            index: None,
-            width,
-            height,
-            command_buffer: VecDeque::default()
-        };
-    }
-
-    pub fn create_output(wgpu_interface: &impl WGPUInterface) -> Self {
-        let (width,height) = wgpu_interface.get_output_size();
-        validate_size(width,height);
-        return Self {
-            usage: FrameUsage::Output,
-            index: None,
-            width,
-            height,
-            command_buffer: VecDeque::default()
-        };
     }
 
     /* Draw Related Commands */
@@ -290,7 +300,12 @@ impl Frame {
 
     /* Output & Interop */
 
-    pub fn finish(&mut self,frame_binder: &mut FrameBinder,wgpu_interface: &impl WGPUInterface) -> Frame {
+    pub fn finish(
+        &mut self,
+        frame_cache: &mut FrameCache,
+        pipeline: &mut Pipeline,
+        wgpu_interface: &impl WGPUInterface
+    ) -> Frame {
         let invalid = self.is_invalid();
         if invalid || !self.is_writable() {
             log::error!("Frame render error: Can't render to a {} destination frame.",match invalid {
@@ -304,11 +319,13 @@ impl Frame {
             log::warn!("Frame command buffer is empty!");
         }
         let size = self.size();
-        let frame = frame_binder.render_frame(&self,wgpu_interface);
-        self.command_buffer.clear();
-        if self.usage == FrameUsage::Output {
-            self.usage = FrameUsage::Invalid;
+        let frame = frame_processor::render_frame(&self,frame_cache,wgpu_interface);
+
+        if self.usage == FrameType::Output {
+            self.usage = FrameType::Invalid;
         }
+        self.command_buffer.clear();
+
         return frame;
     }
 
