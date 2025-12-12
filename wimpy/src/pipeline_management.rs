@@ -1,5 +1,7 @@
-use image::{DynamicImage,GenericImageView};
-use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, IndexFormat, RenderPipeline, TextureView, util::{BufferInitDescriptor, DeviceExt}};
+use std::u8;
+
+use image::{DynamicImage, EncodableLayout, GenericImageView};
+use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, IndexFormat, RenderPipeline, TextureUsages, TextureView, util::{BufferInitDescriptor, DeviceExt}};
 use crate::{frame::{FilterMode, WrapMode}, frame_binder::WGPUInterface};
 
 pub struct PipelineManager {
@@ -158,9 +160,8 @@ impl Vertex {
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
         return wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress * 4,
+            array_stride: size_of::<Self>() as wgpu::BufferAddress * 4,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &Self::ATTRIBS,
         }
@@ -178,7 +179,7 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    multisampled: false,
+                    multisampled: false, /* Must remain false to use STORAGE_BINDING texture usage */
                     view_dimension: wgpu::TextureViewDimension::D2,
                     sample_type: wgpu::TextureSampleType::Float {
                         filterable: true
@@ -330,35 +331,63 @@ fn get_bind_groups(texture_view: &TextureView,wgpu_interface: &impl WGPUInterfac
     return bind_groups;
 }
 
-impl TextureContainer {
-    pub fn from_image(image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> TextureContainer {
+fn validate_dimensions(dimensions: (u32,u32)) {
+    if dimensions.0 > 0 && dimensions.1 > 0 {
+        return;
+    }
 
-        //TODO: Make sure alpha channel is premultiplied ... Somehow.
-        let image_data = image.to_rgba8();
+    //TODO: Validate max dimension size with WGPU capabilities
 
-        let dimensions = image.dimensions();
+    panic!("Invalid texture container dimensions. Dimensions must be greater than 0.");
+}
 
-        let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
-            depth_or_array_layers: 1,
-        };
+struct TextureCreationParameters {
+    dimensions: (u32,u32),
+    mutable: bool
+}
 
-        let device = wgpu_interface.get_device();
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+fn create_texture(
+    wgpu_interface: &impl WGPUInterface,
+    image_data: Option<&[u8]>,
+    parameters: TextureCreationParameters
+) -> TextureContainer {
 
-            //Might want to make this sRGB. No idea what the fuck is going on behind the scenes with this
-            format: wgpu::TextureFormat::Rgba8Unorm,
+    let dimensions = parameters.dimensions;
 
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: None, //TODO: Add useful labels
-            view_formats: &[],
-        });
+    validate_dimensions(dimensions);
 
+    let texture_size = wgpu::Extent3d {
+        width: dimensions.0,
+        height: dimensions.1,
+        depth_or_array_layers: 1,
+    };
+
+    let mut usage_flags = TextureUsages::TEXTURE_BINDING;
+
+    if image_data.is_some() {
+        usage_flags |= TextureUsages::COPY_DST;
+    }
+
+    if parameters.mutable {
+        usage_flags |= TextureUsages::RENDER_ATTACHMENT;
+    }
+
+    let device = wgpu_interface.get_device();
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        size: texture_size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+
+        //Might want to make this sRGB. No idea what the fuck is going on behind the scenes with this
+        format: wgpu::TextureFormat::Rgba8Unorm,
+
+        usage: usage_flags,
+        label: None, //TODO: Add useful labels
+        view_formats: &[],
+    });
+
+    if let Some(data) = image_data {
         wgpu_interface.get_queue().write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -366,7 +395,7 @@ impl TextureContainer {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &image_data,
+            data,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
@@ -375,16 +404,37 @@ impl TextureContainer {
             },
             texture_size,
         );
+    }
 
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let bind_groups = get_bind_groups(&texture_view, wgpu_interface);
+    let bind_groups = get_bind_groups(&texture_view, wgpu_interface);
 
-        return TextureContainer {
-            width: dimensions.0,
-            height: dimensions.1,
-            texture_view,
-            bind_groups
-        };
+    return TextureContainer {
+        width: dimensions.0,
+        height: dimensions.1,
+        texture_view,
+        bind_groups
+    };
+}
+
+impl TextureContainer {
+    pub fn create_mutable(dimensions: (u32,u32),wgpu_interface: &impl WGPUInterface) -> TextureContainer {
+        return create_texture(wgpu_interface,None,TextureCreationParameters {
+            dimensions,
+            mutable: true
+        });
+    }
+
+    pub fn from_image(image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> TextureContainer {
+        let dimensions = image.dimensions();
+
+        //TODO: Make sure alpha channel is premultiplied ... Somehow.
+        let image_data = image.to_rgba8();
+
+        return create_texture(wgpu_interface,Some(image_data.as_bytes()),TextureCreationParameters {
+            dimensions,
+            mutable: false
+        });
     }
 }

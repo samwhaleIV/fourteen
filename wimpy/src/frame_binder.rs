@@ -1,12 +1,15 @@
+use std::collections::{HashMap, HashSet};
+
 use generational_arena::Arena;
 use image::{DynamicImage, ImageError, ImageReader};
-use wgpu::TextureView;
 
 use crate::frame::{FrameInternal, Frame, FrameCommand};
 use crate::pipeline_management::{PipelineManager, TextureContainer};
 
 pub struct FrameBinder {
-    frames: Arena<TextureContainer>
+    textures: Arena<TextureContainer>,
+    mutable_textures: HashMap<(u32,u32),generational_arena::Index>,
+    leased_mutable_textures: HashSet<generational_arena::Index>
 }
 pub trait WGPUInterface {
     fn get_device(&self) -> wgpu::Device;
@@ -18,6 +21,39 @@ pub trait WGPUInterface {
 }
 
 impl FrameBinder {
+    pub fn create() -> Self {
+        return Self {
+            textures: Arena::default(),
+            mutable_textures: HashMap::default(),
+            leased_mutable_textures: HashSet::default()
+        }
+    }
+    pub fn create_with_buffer_frames(sizes: &[(u32,u32)],wgpu_interface: &impl WGPUInterface) -> Self {
+
+        let capacity = sizes.len();
+
+        let mut textures = Arena::with_capacity(capacity);
+        let mut mutable_textures = HashMap::with_capacity(capacity);
+
+        for size in sizes.iter() {
+            let mutable_texture = TextureContainer::create_mutable(*size,wgpu_interface);
+            let index = textures.insert(mutable_texture);
+            mutable_textures.insert(*size,index);
+        }
+
+        return Self {
+            textures,
+            mutable_textures,
+            leased_mutable_textures: HashSet::default()
+        }
+    }
+}
+
+impl FrameBinder {
+    fn request_mutable_texture(size: (u32,u32)) -> Option<TextureContainer> {
+        //todo
+        return None;
+    }
     pub fn render_frame(&self,frame: &Frame,wgpu_interface: &impl WGPUInterface) -> Frame {
         //TODO: Do stuff with FrameUsage
 
@@ -41,7 +77,7 @@ impl FrameBinder {
     fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame {
         let texture_container = TextureContainer::from_image(&image,wgpu_interface);
         let size = texture_container.size();
-        let index = self.frames.insert(texture_container);
+        let index = self.textures.insert(texture_container);
         return Frame::to_immutable(size,index);
     }
 
