@@ -173,6 +173,11 @@ fn create_texture(
 }
 
 impl TextureContainer {
+
+    pub fn get_texture_view(&self) -> &TextureView {
+        return &self.texture_view;
+    }
+
     pub fn create_mutable(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,dimensions: (u32,u32)) -> TextureContainer {
         return create_texture(wgpu_interface,bind_group_layout,None,TextureCreationParameters {
             dimensions,
@@ -190,6 +195,16 @@ impl TextureContainer {
             dimensions,
             mutable: false
         });
+    }
+
+    pub fn create_output(wgpu: &impl WGPUInterface) -> TextureContainer {
+        let (texture_view,size) = wgpu.get_output();
+        return TextureContainer {
+            width: size.0,
+            height: size.1,
+            texture_view,
+            bind_groups: Vec::with_capacity(0)
+        };
     }
 }
 

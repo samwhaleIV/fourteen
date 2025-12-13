@@ -50,7 +50,8 @@ pub struct Pipeline {
     frame_cache: FrameCache,
 
     active: bool,
-    encoder: Option<CommandEncoder>
+    encoder: Option<CommandEncoder>,
+    output_frame_index: Option<Index>
 }
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
@@ -110,6 +111,12 @@ impl Pipeline {
             self.instance_buffer_counter = 0;
             self.uniform_buffer_counter = 0;
 
+            if let Some(index) = self.output_frame_index.take() {
+                self.frame_cache.remove(index);
+            } else {
+                log::warn!("Output frame index not found on frame cleanup.");
+            }
+
             self.encoder = None;
             self.active = false;
         } else {
@@ -151,8 +158,18 @@ impl Pipeline {
         return index;
     }
 
-    pub fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame {
-        return FrameInternal::create_output(wgpu_interface);
+    fn get_output_frame(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
+        if self.output_frame_index.is_some() {
+            panic!("Output frame already exists!");
+        }
+        let texture_container = TextureContainer::create_output(wgpu_interface);
+        let size = texture_container.size();
+
+        let index = self.frame_cache.insert_keyless(texture_container);
+
+        self.output_frame_index = Some(index);
+
+        return FrameInternal::create_output(size,index);
     }
 
     /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
@@ -312,6 +329,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         frame_cache,
         encoder: None,
         active: false,
+        output_frame_index: None,
         instance_buffer_counter: usize::MIN,
         uniform_buffer_counter: usize::MIN
     };

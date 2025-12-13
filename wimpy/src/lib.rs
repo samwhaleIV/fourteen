@@ -31,15 +31,11 @@ impl WGPUInterface for VirtualWGPUProvider {
         todo!()
     }
 
+    fn get_output(&self) -> (wgpu::TextureView,(u32,u32)) {
+        todo!()
+    }
+
     fn get_output_format(&self) -> wgpu::TextureFormat {
-        todo!()
-    }
-
-    fn get_output_size(&self) -> (u32,u32) {
-        todo!()
-    }
-
-    fn get_output_texture(&self) -> &wgpu::TextureView {
         todo!()
     }
 }
@@ -58,18 +54,18 @@ fn test() -> Result<(),ImageError> {
 
     let texture_frame = pipeline.load_texture(&w,"../../content/images/null.png")?;
 
-    let mut output_frame = pipeline.start(&mut w);
+    let mut f = pipeline.start(&mut w);
 
-    output_frame.set_texture_filter(frame::FilterMode::Nearest);
-    output_frame.set_texture_wrap(frame::WrapMode::Clamp);
+    f.set_texture_filter(frame::FilterMode::Nearest);
+    f.set_texture_wrap(frame::WrapMode::Clamp);
 
-    output_frame.draw_frame(&texture_frame,PositionUVRotation {
+    f.draw_frame(&texture_frame,PositionUVRotation {
         position: Area::NORMAL,
         uv: Area::NORMAL,
         rotation: 0.0
     });
 
-    output_frame.finish(&w,&mut pipeline);
+    f.finish(&w,&mut pipeline);
 
     pipeline.finish(&mut w);
 

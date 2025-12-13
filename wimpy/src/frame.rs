@@ -31,7 +31,7 @@ enum LockStatus {
 pub struct Frame {
     width: u32,
     height: u32,
-    index: Option<FrameIndex>,
+    index: FrameIndex,
     usage: FrameType,
     command_buffer: VecDeque<FrameCommand>,
     write_lock: LockStatus
@@ -44,9 +44,11 @@ pub trait FrameInternal {
 
     fn is_writable(&self) -> bool;
 
-    fn create_output(wgpu_interface: &impl WGPUInterface) -> Self;
+    fn create_output(size: (u32,u32),index: Index) -> Self;
     fn create(size: (u32,u32),options: FrameCreationOptions) -> Self;
     fn create_texture(size: (u32,u32),index: Index) -> Self;
+
+    fn get_index(&self) -> Index;
 }
 
 #[derive(PartialEq)]
@@ -65,6 +67,10 @@ pub struct FrameCreationOptions {
 }
 
 impl FrameInternal for Frame {
+    fn get_index(&self) -> Index {
+        return self.index;
+    }
+
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand> {
         return &self.command_buffer;
     }
@@ -92,7 +98,7 @@ impl FrameInternal for Frame {
                     false => LockStatus::FutureLock,
                 },
             },
-            index: Some(options.index),
+            index: options.index,
             width: size.0,
             height: size.1,
             command_buffer: VecDeque::default()
@@ -104,15 +110,14 @@ impl FrameInternal for Frame {
         return Self {
             width: size.0,
             height: size.1,
-            index: Some(index),
+            index: index,
             usage: FrameType::Texture,
             command_buffer: Default::default(),
             write_lock: LockStatus::Locked,
         }
     }
 
-    fn create_output(wgpu_interface: &impl WGPUInterface) -> Self {
-        let size = wgpu_interface.get_output_size();
+    fn create_output(size: (u32,u32),index: Index) -> Self {
         validate_size(size);
         return Self {
             usage: FrameType::Output,
@@ -120,7 +125,7 @@ impl FrameInternal for Frame {
             height: size.1,
             command_buffer: Default::default(),
             write_lock: LockStatus::FutureLock,
-            index: None,
+            index,
         };
     }
 }
@@ -254,36 +259,28 @@ impl Frame {
         if !self.validate(frame) {
             return;
         }
-        if let Some(index) = self.index {
-            self.command_buffer.push_back(FrameCommand::DrawFrame(index,parameters));
-        }
+        self.command_buffer.push_back(FrameCommand::DrawFrame(self.index,parameters));
     }
 
     pub fn draw_frame_set(&mut self,frame: &Frame,parameters: Vec<PositionUVRotation>) {
         if !self.validate(frame) {
             return;
         }
-        if let Some(index) = self.index {
-            self.command_buffer.push_back(FrameCommand::DrawFrameSet(index,parameters));
-        }
+        self.command_buffer.push_back(FrameCommand::DrawFrameSet(self.index,parameters));
     }
 
     pub fn draw_frame_colored(&mut self,frame: &Frame,parameters: PositionUVColorRotation) {
         if !self.validate(frame) {
             return;
         }
-        if let Some(index) = self.index {
-            self.command_buffer.push_back(FrameCommand::DrawFrameColored(index,parameters));
-        }
+        self.command_buffer.push_back(FrameCommand::DrawFrameColored(self.index,parameters));
     }
 
     pub fn draw_frame_colored_set(&mut self,frame: &Frame,parameters: Vec<PositionUVColorRotation>) {
         if !self.validate(frame) {
             return;
         }
-        if let Some(index) = self.index {
-            self.command_buffer.push_back(FrameCommand::DrawFrameColoredSet(index,parameters));
-        }
+        self.command_buffer.push_back(FrameCommand::DrawFrameColoredSet(self.index,parameters));
     }
 
     /* Output & Interop */

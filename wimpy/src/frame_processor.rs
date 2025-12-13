@@ -22,11 +22,11 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
             load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
             store: wgpu::StoreOp::Store,
         };
-        
+
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Output Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: wgpu_interface.get_output_texture(),
+                view: pipeline.get_texture_container(frame.get_index()).get_texture_view(),
                 depth_slice: None,
                 resolve_target: None,
                 ops: operations,

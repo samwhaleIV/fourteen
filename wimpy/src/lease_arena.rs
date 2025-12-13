@@ -65,6 +65,11 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
         return self.all_items.insert(item);
     }
 
+    pub fn remove(&mut self,index: Index) {
+        self.all_items.remove(index);
+        /* Can't remove from the keyed or leased set because we can't know what key this index may have (if any) */
+    }
+
     pub fn get(&self,reference: Index) -> &TValue {
         if let Some(item) = self.all_items.get(reference) {
             return item;
