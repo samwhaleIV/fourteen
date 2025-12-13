@@ -31,7 +31,7 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
         }
     }
 
-    pub fn insert_leasable(&mut self,key: TKey,item: TValue,allow_lease: bool) -> Index {
+    pub fn insert_leasable(&mut self,key: TKey,item: TValue) -> Index {
         let index = self.all_items.insert(item);
 
         let mut keyed_item_pool = {
@@ -48,7 +48,20 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
         return index;
     }
 
-    pub fn insert(&mut self,key: TKey,item: TValue) -> Index {
+    /* For immediate consumption */
+    pub fn insert_leasable_and_take(&mut self,key: TKey,item: TValue) -> Index {
+        let index = self.all_items.insert(item);
+
+        if !self.keyed_items.contains_key(&key) {
+            self.keyed_items.insert(key,VecDeque::<Index>::new());
+        }
+
+        self.leased_items.insert(index,key);
+
+        return index;
+    }
+
+    pub fn insert_keyless(&mut self,item: TValue) -> Index {
         return self.all_items.insert(item);
     }
 
@@ -60,7 +73,7 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
         }
     }
 
-    pub fn start_lease<F>(&mut self,key: TKey,generator: F) -> Index where F: Fn() -> TValue {
+    pub fn try_request_lease(&mut self,key: TKey) -> Option<Index> {
         let mut keyed_item_pool = {
             if let Some(value) = self.keyed_items.remove(&key) {
                 value
@@ -74,16 +87,12 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
                 self.leased_items.insert(index,key);
                 index
             } else {
-                let item = generator();
-                let index = self.all_items.insert(item);
-                index
+                self.keyed_items.insert(key,keyed_item_pool);
+                return None;
             }
         };
 
-        self.keyed_items.insert(key,keyed_item_pool);
-        self.leased_items.insert(index,key);
-
-        return index;
+        return Some(index);
     }
 
     pub fn end_lease(&mut self,lease: Index) {
@@ -92,11 +101,23 @@ impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
                 keyed_item_pool.push_back(lease);
                 self.keyed_items.insert(key,keyed_item_pool);
             } else {
-                panic!("Keyed item group not found (keyed_items.value). By the way, this really should NOT happen. What have you done?");
+                panic!("Keyed item group not found.");
             }
         } else {
             panic!("Reference not found in lease cache!");
         }
+    }
+
+    pub fn end_all_leases(&mut self) {
+        for (lease,key) in self.leased_items.iter() {
+            if let Some(mut keyed_item_pool) = self.keyed_items.remove(&key) {     
+                keyed_item_pool.push_back(*lease);
+                self.keyed_items.insert(*key,keyed_item_pool);
+            } else {
+                panic!("Keyed item group not found.");
+            }
+        }
+        self.leased_items.clear();
     }
 
     pub fn read_lease(&self,lease: Index) -> &TValue {

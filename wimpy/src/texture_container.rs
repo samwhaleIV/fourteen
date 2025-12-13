@@ -5,16 +5,15 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup,
-    TextureUsages,
-    TextureView
+    BindGroup, BindGroupLayout, Device, TextureUsages, TextureView
 };
 
 use crate::{
     frame::{
         FilterMode,
         WrapMode,
-    }, pipeline_management::PipelineResourceManagement, wgpu_interface::WGPUInterface
+    },
+    wgpu_interface::WGPUInterface
 };
 
 pub struct TextureContainer {
@@ -46,12 +45,7 @@ impl SamplerMode {
     }
 }
 
-fn get_bind_groups(texture_view: &TextureView,wgpu_interface: &impl WGPUInterface) -> Vec<BindGroup> {
-    let device = wgpu_interface.get_device();
-
-    let bind_group_layout = &wgpu_interface
-        .get_pipeline()
-        .get_texture_bind_group_layout();
+fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout: &BindGroupLayout) -> Vec<BindGroup> {
 
     use wgpu::{FilterMode,AddressMode};
     let bind_groups: Vec<BindGroup> = vec![
@@ -107,6 +101,7 @@ struct TextureCreationParameters {
 
 fn create_texture(
     wgpu_interface: &impl WGPUInterface,
+    bind_group_layout: &BindGroupLayout,
     image_data: Option<&[u8]>,
     parameters: TextureCreationParameters
 ) -> TextureContainer {
@@ -167,7 +162,7 @@ fn create_texture(
 
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let bind_groups = get_bind_groups(&texture_view, wgpu_interface);
+    let bind_groups = get_bind_groups(&texture_view,&device,bind_group_layout);
 
     return TextureContainer {
         width: dimensions.0,
@@ -178,20 +173,20 @@ fn create_texture(
 }
 
 impl TextureContainer {
-    pub fn create_mutable(dimensions: (u32,u32),wgpu_interface: &impl WGPUInterface) -> TextureContainer {
-        return create_texture(wgpu_interface,None,TextureCreationParameters {
+    pub fn create_mutable(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,dimensions: (u32,u32)) -> TextureContainer {
+        return create_texture(wgpu_interface,bind_group_layout,None,TextureCreationParameters {
             dimensions,
             mutable: true
         });
     }
 
-    pub fn from_image(image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> TextureContainer {
+    pub fn from_image(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
         let dimensions = image.dimensions();
 
         //TODO: Make sure alpha channel is premultiplied ... Somehow.
         let image_data = image.to_rgba8();
 
-        return create_texture(wgpu_interface,Some(image_data.as_bytes()),TextureCreationParameters {
+        return create_texture(wgpu_interface,bind_group_layout,Some(image_data.as_bytes()),TextureCreationParameters {
             dimensions,
             mutable: false
         });

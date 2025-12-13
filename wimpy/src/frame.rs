@@ -1,6 +1,8 @@
 //#![allow(dead_code,unused_variables)]
 
 use std::{collections::VecDeque, ptr};
+use generational_arena::Index;
+
 use crate::{
     area::Area,
     color::Color,
@@ -12,12 +14,19 @@ use crate::{
 #[derive(Clone,Copy,PartialEq)]
 pub enum FrameType {
     Output,
-    Mutable,
-    Immutable,
-    Invalid
+    Normal,
+    Texture
 }
 
 type FrameIndex = generational_arena::Index;
+
+#[derive(PartialEq)]
+enum LockStatus {
+    FutureUnlock,
+    FutureLock,
+    Unlocked,
+    Locked,
+}
 
 pub struct Frame {
     width: u32,
@@ -25,7 +34,7 @@ pub struct Frame {
     index: Option<FrameIndex>,
     usage: FrameType,
     command_buffer: VecDeque<FrameCommand>,
-    requires_unique_backing: bool,
+    write_lock: LockStatus
 }
 
 pub trait FrameInternal {
@@ -33,25 +42,26 @@ pub trait FrameInternal {
     fn get_size(&self) -> (u32,u32);
     fn get_type(&self) -> FrameType;
 
-    fn to_mutable(size: (u32,u32),index: generational_arena::Index) -> Frame;
-    fn to_immutable(size: (u32,u32),index: generational_arena::Index) -> Frame;
-
     fn is_writable(&self) -> bool;
-    fn is_invalid(&self) -> bool;
 
     fn create_output(wgpu_interface: &impl WGPUInterface) -> Self;
-    fn create_mutable(size: (u32,u32)) -> Self;
-    fn create_immutable(wsize: (u32,u32),unique: bool) -> Self;
-    fn create_null() -> Self;
+    fn create(size: (u32,u32),options: FrameCreationOptions) -> Self;
+    fn create_texture(size: (u32,u32),index: Index) -> Self;
 }
 
 #[derive(PartialEq)]
 enum SrcDstCmpResult {
     Success,
+    CircularReference,
     ReadonlyDestination,
-    InvalidDestination,
-    InvalidSource,
-    CircularReference
+    EmptySource,
+    OutputMisuse
+}
+
+pub struct FrameCreationOptions {
+    pub persistent: bool,
+    pub write_once: bool,
+    pub index: Index,
 }
 
 impl FrameInternal for Frame {
@@ -68,73 +78,37 @@ impl FrameInternal for Frame {
     }
 
     fn is_writable(&self) -> bool {
-        return match self.usage {
-            FrameType::Output => true,
-            FrameType::Mutable => self.index.is_some(),
-            FrameType::Immutable => false,
-            FrameType::Invalid => false,
+        return self.write_lock != LockStatus::Locked;
+    }
+
+    fn create(size: (u32,u32),options: FrameCreationOptions) -> Self {
+        validate_size(size);
+        return Self {
+            usage: FrameType::Normal,
+            write_lock: match options.write_once {
+                true => LockStatus::FutureLock,
+                false => match options.persistent {
+                    true => LockStatus::FutureUnlock,
+                    false => LockStatus::FutureLock,
+                },
+            },
+            index: Some(options.index),
+            width: size.0,
+            height: size.1,
+            command_buffer: VecDeque::default()
         };
     }
 
-    fn is_invalid(&self) -> bool {
-        return self.usage == FrameType::Invalid;
-    }
-
-    fn to_mutable(size: (u32,u32),index: generational_arena::Index) -> Frame {
+    fn create_texture(size: (u32,u32),index: Index) -> Self {
+        validate_size(size);
         return Self {
             width: size.0,
             height: size.1,
-            usage: FrameType::Mutable,
             index: Some(index),
-            requires_unique_backing: false,
-            command_buffer: Vec::with_capacity(0).into()
-        };
-    }
-
-    fn to_immutable(size: (u32,u32),index: generational_arena::Index) -> Frame {
-        return Self {
-            width: size.0,
-            height: size.1,
-            usage: FrameType::Immutable,
-            index: Some(index),
-            requires_unique_backing: false,
-            command_buffer: Vec::with_capacity(0).into()
-        };
-    }
-
-    fn create_null() -> Self {
-        return Self {
-            usage: FrameType::Invalid,
-            index: None,
-            width: 0,
-            height: 0,
-            requires_unique_backing: false,
-            command_buffer: Vec::with_capacity(0).into()
+            usage: FrameType::Texture,
+            command_buffer: Default::default(),
+            write_lock: LockStatus::Locked,
         }
-    }
-
-    fn create_immutable(size: (u32,u32),unique: bool) -> Self {
-        validate_size(size);
-        return Self {
-            usage: FrameType::Immutable,
-            index: None,
-            width: size.0,
-            height: size.1,
-            requires_unique_backing: unique,
-            command_buffer: VecDeque::default()
-        };
-    }
-    
-    fn create_mutable(size: (u32,u32)) -> Self {
-        validate_size(size);
-        return Self {
-            usage: FrameType::Mutable,
-            index: None,
-            width: size.0,
-            height: size.1,
-            requires_unique_backing: true,
-            command_buffer: VecDeque::default()
-        };
     }
 
     fn create_output(wgpu_interface: &impl WGPUInterface) -> Self {
@@ -142,11 +116,11 @@ impl FrameInternal for Frame {
         validate_size(size);
         return Self {
             usage: FrameType::Output,
-            index: None,
             width: size.0,
             height: size.1,
-            requires_unique_backing: false,
-            command_buffer: VecDeque::default()
+            command_buffer: Default::default(),
+            write_lock: LockStatus::FutureLock,
+            index: None,
         };
     }
 }
@@ -155,17 +129,17 @@ pub enum FrameCommand {
 
     /* Single Fire Draw Commands */
 
-    DrawColor(PositionColor),
+    DrawColor(PositionColorRotation),
 
-    DrawFrame(FrameIndex,PositionUV),
-    DrawFrameColored(FrameIndex,PositionUVColor),
+    DrawFrame(FrameIndex,PositionUVRotation),
+    DrawFrameColored(FrameIndex,PositionUVColorRotation),
 
     /* Set Based Draw Commands */
 
-    DrawColorSet(Vec<PositionColor>),
+    DrawColorSet(Vec<PositionColorRotation>),
 
-    DrawFrameSet(FrameIndex,Vec<PositionUV>),
-    DrawFrameColoredSet(FrameIndex,Vec<PositionUVColor>),
+    DrawFrameSet(FrameIndex,Vec<PositionUVRotation>),
+    DrawFrameColoredSet(FrameIndex,Vec<PositionUVColorRotation>),
 
     /* Other */
 
@@ -184,20 +158,23 @@ pub enum FilterMode {
     Linear,
 }
 
-pub struct PositionColor {
+pub struct PositionColorRotation {
     pub position: Area,
-    pub color: Color
+    pub color: Color,
+    pub rotation: f32
 }
 
-pub struct PositionUV {
+pub struct PositionUVRotation {
     pub position: Area,
     pub uv: Area,
+    pub rotation: f32
 }
 
-pub struct PositionUVColor {
+pub struct PositionUVColorRotation {
     pub position: Area,
     pub uv: Area,
-    pub color: Color
+    pub color: Color,
+    pub rotation: f32
 }
 
 fn validate_size(size: (u32,u32)) {
@@ -214,22 +191,27 @@ impl Frame {
     fn validate_source_destination(&self,source: &Frame) -> SrcDstCmpResult {
         let destination = self;
 
-        if source.is_invalid() {
-            return SrcDstCmpResult::InvalidSource;
+        if source.usage == FrameType::Output {
+            return SrcDstCmpResult::OutputMisuse;
         }
 
-        /* These are redunant with Frame.finish(). */
-        if destination.is_invalid() {
-            return SrcDstCmpResult::InvalidDestination;
+        if match source.write_lock {
+            LockStatus::FutureUnlock => true,
+            LockStatus::FutureLock => true,
+            LockStatus::Unlocked => false,
+            LockStatus::Locked => false,
+        } {
+            return SrcDstCmpResult::EmptySource;
         }
+
         if !destination.is_writable() {
             return SrcDstCmpResult::ReadonlyDestination;
         }
-        /* - - - - - - - - - - - - - - - - - - - - */
 
         if ptr::eq::<Frame>(destination,source) {
             return SrcDstCmpResult::CircularReference;
         }
+
         return SrcDstCmpResult::Success;
     }
 
@@ -237,12 +219,12 @@ impl Frame {
         let result = self.validate_source_destination(frame);
         let valid = result == SrcDstCmpResult::Success;
         if !valid {
-            log::error!("Frame draw error: {}.",match result {
-                SrcDstCmpResult::ReadonlyDestination => "Destination frame is readonly",
-                SrcDstCmpResult::InvalidDestination => "Destination frame is null/invalid",
-                SrcDstCmpResult::InvalidSource => "Source frame is null/invalid",
-                SrcDstCmpResult::CircularReference => "Source frame is the same as the destination frame",
-                _ => "Unknown"
+            log::error!("Frame draw error: {}",match result {
+                SrcDstCmpResult::Success => "Success... but not?",
+                SrcDstCmpResult::CircularReference => "Source and destination are the same.",
+                SrcDstCmpResult::ReadonlyDestination => "Destination is readonly.",
+                SrcDstCmpResult::EmptySource => "Frame source is empty/unrendered.",
+                SrcDstCmpResult::OutputMisuse => "Cannot use the output frame as a rendering source.",
             });
         }
         return valid;
@@ -260,15 +242,15 @@ impl Frame {
 
     /* Draw Commands */
 
-    pub fn draw_color(&mut self,parameters: PositionColor) {
+    pub fn draw_color(&mut self,parameters: PositionColorRotation) {
         self.command_buffer.push_back(FrameCommand::DrawColor(parameters));
     }
 
-    pub fn draw_color_set(&mut self,parameters: Vec<PositionColor>) {
+    pub fn draw_color_set(&mut self,parameters: Vec<PositionColorRotation>) {
         self.command_buffer.push_back(FrameCommand::DrawColorSet(parameters));
     }
 
-    pub fn draw_frame(&mut self,frame: &Frame,parameters: PositionUV) {
+    pub fn draw_frame(&mut self,frame: &Frame,parameters: PositionUVRotation) {
         if !self.validate(frame) {
             return;
         }
@@ -277,16 +259,16 @@ impl Frame {
         }
     }
 
-    pub fn draw_frame_set(&mut self,frame: &Frame,parameters: Vec<PositionUV>) {
+    pub fn draw_frame_set(&mut self,frame: &Frame,parameters: Vec<PositionUVRotation>) {
         if !self.validate(frame) {
             return;
         }
-        if let Some(index) = self.index {            
+        if let Some(index) = self.index {
             self.command_buffer.push_back(FrameCommand::DrawFrameSet(index,parameters));
         }
     }
 
-    pub fn draw_frame_colored(&mut self,frame: &Frame,parameters: PositionUVColor) {
+    pub fn draw_frame_colored(&mut self,frame: &Frame,parameters: PositionUVColorRotation) {
         if !self.validate(frame) {
             return;
         }
@@ -295,7 +277,7 @@ impl Frame {
         }
     }
 
-    pub fn draw_frame_colored_set(&mut self,frame: &Frame,parameters: Vec<PositionUVColor>) {
+    pub fn draw_frame_colored_set(&mut self,frame: &Frame,parameters: Vec<PositionUVColorRotation>) {
         if !self.validate(frame) {
             return;
         }
@@ -306,32 +288,23 @@ impl Frame {
 
     /* Output & Interop */
 
-    pub fn finish(
-        &mut self,
-        wgpu_interface: &impl WGPUInterface,
-        pipeline: &mut Pipeline,
-    ) -> Frame {
-        let invalid = self.is_invalid();
-        if invalid || !self.is_writable() {
-            log::error!("Frame render error: Can't render to a {} destination frame.",match invalid {
-                true => "null/invalid",
-                false => "read-only"
-            });
+    pub fn finish(&mut self,wgpu_interface: &impl WGPUInterface,pipeline: &mut Pipeline) {
+        if !self.is_writable() {
+            log::error!("Frame is readonly!");
             self.command_buffer.clear();
-            return Frame::create_null();
+            return;
         }
         if self.command_buffer.is_empty() {
             log::warn!("Frame command buffer is empty!");
-        }
-        let size = self.size();
-        let frame = frame_processor::render_frame(&self,wgpu_interface,pipeline);
+        }        
+        frame_processor::render_frame(&self,wgpu_interface,pipeline);
 
-        if self.usage == FrameType::Output {
-            self.usage = FrameType::Invalid;
+        match self.write_lock {
+            LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,
+            LockStatus::FutureLock => self.write_lock = LockStatus::Locked,
+            _ => {}
         }
         self.command_buffer.clear();
-
-        return frame;
     }
 
     /* Size Getters */

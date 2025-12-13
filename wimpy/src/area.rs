@@ -1,3 +1,5 @@
+#![allow(dead_code,unused_variables)]
+
 pub struct Area {
     pub top:    f32,
     pub left:   f32,

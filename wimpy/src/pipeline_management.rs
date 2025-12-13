@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::{
     HashMap,
     VecDeque
@@ -8,28 +9,16 @@ use bytemuck::{
     Zeroable
 };
 
-use generational_arena::{
-    Arena,
-    Index
-};
+use generational_arena::{Arena, Index};
 
 use image::{
-    DynamicImage,
     EncodableLayout,
     ImageError,
     ImageReader
 };
 
 use wgpu::{
-    BindGroup,
-    BindGroupLayout,
-    BindGroupLayoutDescriptor,
-    Buffer,
-    BufferDescriptor,
-    BufferUsages,
-    IndexFormat,
-    RenderPipeline,
-    util::{
+    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPipeline, util::{
         BufferInitDescriptor,
         DeviceExt
     }
@@ -37,8 +26,7 @@ use wgpu::{
 
 use crate::{
     frame::{
-        Frame,
-        FrameInternal
+        Frame, FrameCreationOptions, FrameInternal
     },
     lease_arena::LeaseArena,
     texture_container::TextureContainer,
@@ -46,7 +34,7 @@ use crate::{
 };
 
 pub struct Pipeline {
-    pipeline: RenderPipeline,
+    render_pipeline: RenderPipeline,
 
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -59,7 +47,10 @@ pub struct Pipeline {
     instance_buffer_counter: usize,
     uniform_buffer_counter: usize,
 
-    frame_cache: FrameCache
+    frame_cache: FrameCache,
+
+    active: bool,
+    encoder: Option<CommandEncoder>
 }
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
@@ -67,159 +58,147 @@ type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
 pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
+struct FrameCacheConfig<'a> {
+    sizes: &'a[(u32,u32)],
+    instances: usize
+}
+
 impl Pipeline {
+    pub fn create(
+        wgpu_interface: &impl WGPUInterface,
+        quad_instance_capacity: usize,
+        uniform_capacity: usize
+    ) -> Self {
+        return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,None);
+    }
 
     pub fn create_with_buffer_frames(
         wgpu_interface: &impl WGPUInterface,
         quad_instance_capacity: usize,
         uniform_capacity: usize,
         cache_sizes: &[(u32,u32)],
-        cache_size_instances: usize
+        cache_instances: usize
     ) -> Self {
-        return create_pipeline(
-            wgpu_interface,
-            quad_instance_capacity,
-            uniform_capacity,
-            create_frame_cache_init(
-                wgpu_interface,
-                cache_sizes,
-                cache_size_instances
-            )
-        );
+        return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,Some(FrameCacheConfig {
+            sizes: cache_sizes,
+            instances: cache_instances
+        }));
     }
 
-    pub fn create(
-        wgpu_interface: &impl WGPUInterface,
-        quad_instance_capacity: usize,
-        uniform_capacity: usize
-    ) -> Self {
-        return create_pipeline(
-            wgpu_interface,
-            quad_instance_capacity,
-            uniform_capacity,
-            FrameCache::default()
-        );
-    }
+    pub fn start(&mut self,wgpu_interface: &mut impl WGPUInterface) -> Frame {
+        if self.active {
+            panic!("Pipeline is already started. There is already a command encoder active.");
+        }
+     
+        self.encoder = Some(wgpu_interface.get_device().create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("Render Encoder")
+        }));
+        self.active = true;
 
-    pub fn start(&self,wgpu_interface: &mut impl WGPUInterface) -> Frame {
-        wgpu_interface.start_encoding();
         return self.get_output_frame(wgpu_interface);
     }
 
     pub fn finish(&mut self,wgpu_interface: &mut impl WGPUInterface) {
-        self.instance_buffer_counter = 0;
-        self.uniform_buffer_counter = 0;
-        wgpu_interface.finish_encoding();
-    }
-}
+        if !self.active {
+            panic!("Pipeline was not started. There is no active command encoder.");
+        }
+        if let Some(encoder) = self.encoder.take() {
+            wgpu_interface.get_queue().submit(std::iter::once(encoder.finish()));
 
-pub trait PipelineResourceManagement {
-    fn get_texture_bind_group_layout(&self) -> BindGroupLayout;
-    fn get_uniform_bind_group_layout(&self) -> BindGroupLayout;
-    fn request_instance_buffer_start(&mut self,size: usize) -> usize;
-    fn request_uniform_buffer_start(&mut self,size: usize) -> usize;
-}
+            self.frame_cache.end_all_leases();
 
-impl PipelineResourceManagement for Pipeline {
-    fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
-        return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
-    }
+            self.instance_buffer_counter = 0;
+            self.uniform_buffer_counter = 0;
 
-    fn get_uniform_bind_group_layout(&self) -> BindGroupLayout {
-        return self.pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX);
+            self.encoder = None;
+            self.active = false;
+        } else {
+            panic!("Encoder not found. Did a caller forget to return it?");
+        }
     }
 
-    fn request_instance_buffer_start(&mut self,size: usize) -> usize {
+    pub fn try_borrow_encoder(&mut self) -> Option<CommandEncoder> {
+        if let Some(encoder) = self.encoder.take() {
+            return Some(encoder);
+        } else {
+            return None;
+        }
+    }
+
+    pub fn return_encoder(&mut self,encoder: CommandEncoder) {
+        if !self.active {
+            panic!("Pipeline was not started. There is no active command encoder.");
+        }
+        if self.encoder.is_some() {
+            panic!("Pipeline already has a command encoder in place.");
+        }
+        self.encoder = Some(encoder);
+    }
+
+    pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
+        return self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
+    }
+
+    pub fn request_instance_buffer_start(&mut self,size: usize) -> usize {
         let index = self.instance_buffer_counter;
         self.instance_buffer_counter += size;
         return index;
     }
 
-    fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
+    pub fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
         let index = self.uniform_buffer_counter;
         self.uniform_buffer_counter += size;
         return index;
     }
-}
 
-pub fn create_frame_cache_init(wgpu_interface: &impl WGPUInterface,cache_sizes: &[(u32,u32)],cache_size_instances: usize) -> FrameCache {
-
-    let capacity = cache_sizes.len();
-
-    let mut textures = Arena::with_capacity(capacity);
-    let mut mutable_textures = HashMap::with_capacity(capacity);
-
-    for size in cache_sizes.iter() {
-        let mut queue = VecDeque::with_capacity(cache_size_instances);
-
-        for _ in 0..cache_size_instances {
-            let mutable_texture = TextureContainer::create_mutable(*size,wgpu_interface);
-            let index = textures.insert(mutable_texture);
-            queue.push_back(index);
-        }
-
-        mutable_textures.insert(*size,queue);
-    }
-
-    let frames = LeaseArena::create_with_values(textures,mutable_textures);
-
-    return frames;
-}
-
-pub trait FrameCacheManagement {
-    fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame;
-    fn create_frame_static(&self,size: (u32,u32),readonly_after_render: bool) -> Frame;
-    fn get_mutable_texture_lease(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32)) -> Index;
-    fn return_mutable_texture_lease(&mut self,lease: Index);
-    fn get_texture(&self,reference: Index) -> &TextureContainer;
-    fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame;
-    fn create_texture_frame(&mut self,name: &str,wgpu_interface: &impl WGPUInterface) -> Result<Frame,ImageError>;
-    fn create_texture_frame_debug(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame;
-}
-
-impl FrameCacheManagement for Pipeline {
-    fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame {
+    pub fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame {
         return FrameInternal::create_output(wgpu_interface);
     }
 
-    /* Non-statics do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
-    fn create_frame_static(&self,size: (u32,u32),readonly_after_render: bool) -> Frame {
-        return match readonly_after_render {
-            true => FrameInternal::create_immutable(size,true),
-            false => FrameInternal::create_mutable(size),
+    /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
+    pub fn get_persistent_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+        let frame = TextureContainer::create_mutable(
+            wgpu_interface,
+            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+            size
+        );
+        let index = self.frame_cache.insert_keyless(frame);
+        return FrameInternal::create(size,FrameCreationOptions {
+            persistent: true,
+            index,
+            write_once
+        });
+    }
+
+    pub fn get_temp_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+        if let Some(index) = self.frame_cache.try_request_lease(size) {
+            return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
+        } else {
+            let new_texture = TextureContainer::create_mutable(
+                wgpu_interface,
+                &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+                size
+            );
+            let index = self.frame_cache.insert_leasable_and_take(size,new_texture);
+            return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
         }
     }
 
-    fn get_mutable_texture_lease(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32)) -> Index {
-        return self.frame_cache.start_lease(size,||TextureContainer::create_mutable(size,wgpu_interface));
-    }
-  
-    fn return_mutable_texture_lease(&mut self,lease: Index) {
-        self.frame_cache.end_lease(lease);
-    }
-
-    fn get_texture(&self,reference: Index) -> &TextureContainer {
+    pub fn get_texture_container(&self,reference: Index) -> &TextureContainer {
         return self.frame_cache.get(reference);
     }
 
-    fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame {
-        let texture_container = TextureContainer::from_image(&image,wgpu_interface);
-        let size = texture_container.size();
-        let index = self.frame_cache.insert(size,texture_container);
-        return Frame::to_immutable(size,index);
-    }
-
-    fn create_texture_frame(&mut self,name: &str,wgpu_interface: &impl WGPUInterface) -> Result<Frame,ImageError> {
-        let image = ImageReader::open(name)?.decode()?;
-        let frame = self.create_finished_frame(&image,wgpu_interface);
-        return Ok(frame);
-    }
-
-    fn create_texture_frame_debug(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
-        let bytes = include_bytes!("../../content/images/null.png");
-        let image = image::load_from_memory(bytes).unwrap();
-        let frame = self.create_finished_frame(&image,wgpu_interface);
-        return frame;
+    pub fn load_texture(&mut self,wgpu_interface: &impl WGPUInterface,path: &str) -> Result<Frame,ImageError> {
+        let image = ImageReader::open(path)?.decode()?;
+        let texture_container = TextureContainer::from_image(
+            wgpu_interface,
+            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+            &image
+        );
+        return Ok(FrameInternal::create_texture(
+            texture_container.size(),
+            self.frame_cache.insert_keyless(texture_container)
+        ));
     }
 }
 
@@ -227,11 +206,11 @@ fn create_pipeline(
     wgpu_interface: &impl WGPUInterface,
     quad_instance_capacity: usize,
     uniform_capacity: usize,
-    frame_cache: FrameCache
+    cache_config: Option<FrameCacheConfig>
 ) -> Pipeline {
 
     let device = wgpu_interface.get_device();
-    let pipeline = create_wgpu_pipeline(wgpu_interface);
+    let render_pipeline = create_wgpu_pipeline(wgpu_interface);
 
 /*
 Triangle list should generate 0-1-2 2-1-3 in CCW
@@ -283,7 +262,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     });
 
     let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
+        layout: &render_pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform_buffer.as_entire_binding(),
@@ -291,14 +270,48 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         label: Some("View Projection Bind Group"),
     });
 
+    let frame_cache: FrameCache = match cache_config {
+        None => FrameCache::default(),
+        Some(config) => {
+            let capacity = config.sizes.len();
+
+            let mut textures = Arena::with_capacity(capacity);
+            let mut mutable_textures = HashMap::with_capacity(capacity);
+
+            let bind_group_layout = &render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
+
+            for size in config.sizes.iter() {
+                let mut queue = VecDeque::with_capacity(config.instances);
+
+                for _ in 0..config.instances {
+
+                    let mutable_texture = TextureContainer::create_mutable(
+                        wgpu_interface,
+                        bind_group_layout,
+                        *size
+                    );
+
+                    let index = textures.insert(mutable_texture);
+                    queue.push_back(index);
+                }
+
+                mutable_textures.insert(*size,queue);
+            }
+
+            FrameCache::create_with_values(textures,mutable_textures)
+        }
+    };
+
     return Pipeline {
-        pipeline,
+        render_pipeline,
         vertex_buffer,
         index_buffer,
         instance_buffer,
         uniform_buffer,
         uniform_bind_group,
         frame_cache,
+        encoder: None,
+        active: false,
         instance_buffer_counter: usize::MIN,
         uniform_buffer_counter: usize::MIN
     };
