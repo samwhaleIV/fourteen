@@ -1,36 +1,22 @@
-use core::panic;
 use std::collections::{HashMap, VecDeque};
 
 use generational_arena::{Arena, Index};
 use image::{DynamicImage, ImageError, ImageReader};
 
 use crate::frame::{FrameInternal, Frame};
-use crate::pipeline_management::{Pipeline, TextureContainer};
+use crate::lease_arena::LeaseArena;
+use crate::pipeline_management::TextureContainer;
+use crate::wgpu_interface::WGPUInterface;
 
+#[derive(Default)]
 pub struct FrameCache {
-    textures: Arena<TextureContainer>,
-    mutable_textures: HashMap<(u32,u32),VecDeque<Index>>,
-    leased_mutable_textures: HashMap<Index,(u32,u32)>
-}
-pub trait WGPUInterface {
-    fn get_device(&self) -> wgpu::Device;
-    fn get_queue(&self) -> wgpu::Queue;
-    fn get_output_format(&self) -> wgpu::TextureFormat;
-    fn get_pipeline(&self) -> &Pipeline;
-    fn get_output_size(&self) -> (u32,u32);
-    fn get_output_texture(&self) -> wgpu::TextureView;
-
-    fn start_encoding(&mut self);
-    fn get_encoder(&self) -> Option<&wgpu::CommandEncoder>;
-    fn finish_encoding(&mut self);
+    frames: LeaseArena<(u32,u32),TextureContainer>
 }
 
 impl FrameCache {
     pub fn create() -> Self {
         return Self {
-            textures: Default::default(),
-            mutable_textures: Default::default(),
-            leased_mutable_textures: Default::default()
+            frames: LeaseArena::default()
         }
     }
 
@@ -54,11 +40,9 @@ impl FrameCache {
             mutable_textures.insert(*size,queue);
         }
 
-        return Self {
-            textures,
-            mutable_textures,
-            leased_mutable_textures: Default::default()
-        }
+        let frames = LeaseArena::create_with_values(textures,mutable_textures);
+
+        return Self { frames };
     }
 
     pub fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame {
@@ -75,53 +59,22 @@ impl FrameCache {
 }
 
 impl FrameCache {
-    pub fn get_mutable_texture_reference(&mut self,size: (u32,u32),wgpu_interface: &impl WGPUInterface) -> Index {
-        /* A pool of the specified size. */
-        let mut pool = {
-            if let Some(value) = self.mutable_textures.remove(&size) {
-                value
-            } else {
-                VecDeque::<Index>::new()
-            }
-        };
-
-        let index = {
-            if let Some(index) = pool.pop_back() {
-                self.leased_mutable_textures.insert(index,size);
-                index
-            } else {
-                let mutable_texture = TextureContainer::create_mutable(size,wgpu_interface);
-                let index = self.textures.insert(mutable_texture);
-                index
-            }
-        };
-
-        self.mutable_textures.insert(size,pool);
-        self.leased_mutable_textures.insert(index,size);
-
-        return index;
+    pub fn get_mutable_texture_lease(&mut self,size: (u32,u32),wgpu_interface: &impl WGPUInterface) -> Index {
+        return self.frames.start_lease(size,||TextureContainer::create_mutable(size,wgpu_interface));
+    }
+  
+    pub fn return_mutable_texture_lease(&mut self,lease: Index) {
+        self.frames.end_lease(lease);
     }
 
-    pub fn get_mutable_texture(&self,reference: Index) -> &TextureContainer {
-        if !self.leased_mutable_textures.contains_key(&reference) {
-            panic!("Index reference not found in lease cache!");
-        }
-
-        if let Some(texture) = self.textures.get(reference) {
-            return texture;
-        }
-
-        panic!("Texture reference not found in cache!");
-    }
-
-    pub fn return_mutable_texture_reference(&mut self,reference: Index) {
-
+    pub fn get_texture(&self,reference: Index) -> &TextureContainer {
+        return self.frames.get(reference);
     }
 
     fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame {
         let texture_container = TextureContainer::from_image(&image,wgpu_interface);
         let size = texture_container.size();
-        let index = self.textures.insert(texture_container);
+        let index = self.frames.insert(size,texture_container);
         return Frame::to_immutable(size,index);
     }
 

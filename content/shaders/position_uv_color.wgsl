@@ -18,8 +18,7 @@ struct VertexOutput {
     @location(1) color: vec4<f32>,
 };
 
-@vertex
-fn vs_main(input: VertexInput) -> VertexOutput {
+@vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.color = input.color;
     out.uv = input.uv;
@@ -34,7 +33,6 @@ var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_diffuse,s_diffuse,in.uv) * in.color;
 }

@@ -1,11 +1,14 @@
 #![allow(dead_code,unused_variables)]
 
-use crate::{frame_cache::WGPUInterface, pipeline_management::Pipeline};
+use crate::{wgpu_interface::WGPUInterface, pipeline_management::Pipeline};
 
 pub mod frame;
 pub mod area;
 pub mod color;
 pub mod frame_cache;
+pub mod lease_arena;
+pub mod wgpu_interface;
+pub mod texture_container;
 mod pipeline_management;
 mod frame_processor;
 
@@ -51,14 +54,15 @@ impl WGPUInterface for VirtualWGPUProvider {
     }
 }
 
-const MAX_QUADS: u32 = 2000;
+const MAX_QUADS: usize = 1000;
+const MAX_UNIFORMS: usize = 100;
 
 fn test() {
 
     let mut wgpu_interface = VirtualWGPUProvider {
         //This is where the magic binding happens. Pretend it is here already.
     };
-    let mut pipeline = Pipeline::create(&wgpu_interface,MAX_QUADS);
+    let mut pipeline = Pipeline::create(&wgpu_interface,MAX_QUADS,MAX_UNIFORMS);
     let mut cache = frame_cache::FrameCache::create();
 
     let texture_frame = cache.create_texture_frame_debug(&wgpu_interface);

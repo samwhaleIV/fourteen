@@ -1,127 +1,64 @@
-use std::{collections::{VecDeque},u8};
+use bytemuck::{
+    Pod,
+    Zeroable
+};
+use image::{
+    DynamicImage,
+    EncodableLayout,
+    GenericImageView
+};
 
-use generational_arena::{Index,Arena};
-use image::{DynamicImage, EncodableLayout, GenericImageView};
-use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, IndexFormat, RenderPipeline, TextureUsages, TextureView, util::{BufferInitDescriptor, DeviceExt}};
-use crate::{frame::{FilterMode, WrapMode}, frame_cache::WGPUInterface};
+use wgpu::{
+    BindGroup,
+    BindGroupLayout,
+    BindGroupLayoutDescriptor,
+    Buffer,
+    BufferDescriptor,
+    BufferUsages,
+    IndexFormat,
+    RenderPipeline,
+    TextureUsages,
+    TextureView,
+    util::{
+        BufferInitDescriptor,
+        DeviceExt
+    }
+};
+
+use crate::{
+    frame::{
+        FilterMode,
+        WrapMode
+    },
+    wgpu_interface::WGPUInterface
+};
 
 pub struct Pipeline {
     pipeline: RenderPipeline,
-    index_buffer: Buffer,
-    vertex_buffer_quad_count: u32,
 
-    buffer_sets: Arena<RenderPassBufferSet>,
-    available_buffer_sets: VecDeque<Index>,
-}
-
-pub struct RenderPassBufferSet {
-    view_projection_bind_group: BindGroup,
-    view_projection_buffer: Buffer,
     vertex_buffer: Buffer,
+    index_buffer: Buffer,
+
+    instance_buffer: Buffer,
+    uniform_buffer: Buffer,
+
+    uniform_bind_group: BindGroup,
+
+    instance_buffer_counter: usize,
+    uniform_buffer_counter: usize
 }
 
-const INDICES_PER_QUAD: u32 = 5;
+pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 impl Pipeline {
-    pub fn create(wgpu_interface: &impl WGPUInterface,max_quads: u32) -> Self {
-
-        /* Range checking for u16 limits */
-        let (vertex_count,index_count) = {
-            const VERTEXES_IN_QUAD: u32 = 4;
-            let max = u16::MAX as u32 - 1; /* -1 to adjust for triangle strip primitive restart */
-            let vertex_count_estimation = max_quads * VERTEXES_IN_QUAD;
-            match vertex_count_estimation > max {
-                true => {
-                    let vertex_count = (max - VERTEXES_IN_QUAD) / VERTEXES_IN_QUAD;
-                    let index_count = vertex_count * VERTEXES_IN_QUAD * INDICES_PER_QUAD;
-                    log::warn!("Max quads exceeds u16 indexing limit; truncating request buffer capacity.");
-                    (vertex_count,index_count)
-                },
-                false => (vertex_count_estimation,max_quads * INDICES_PER_QUAD),
-            }
-        };
+    pub fn create(wgpu_interface: &impl WGPUInterface,quad_instance_capacity: usize,uniform_capacity: usize) -> Self {
 
         let device = wgpu_interface.get_device();
         let pipeline = create_pipeline(wgpu_interface);
 
-        let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&get_index_buffer_contents(max_quads)),
-            usage: wgpu::BufferUsages::INDEX
-        });
-
-        return Self {
-            pipeline,
-            vertex_buffer_quad_count: max_quads,
-            index_buffer,
-            buffer_sets: Default::default(),
-            available_buffer_sets: Default::default()
-        };
-    }
-
-    pub fn get_buffer_set_reference(&mut self,wgpu_interface: &impl WGPUInterface) -> Index {
-        /* Why pop_back? We may as well reuse the most recently returned buffers. Maybe the driver will optimize it.  */
-        if let Some(index) = self.available_buffer_sets.pop_back() {
-            return index;
-        }
-        let device = &wgpu_interface.get_device();
-        let vertex_buffer = create_vertex_buffer(self.vertex_buffer_quad_count,device);   
-        let (view_projection_buffer,view_projection_bind_group) = create_view_projection_buffer(device,&self.pipeline);
-        return self.buffer_sets.insert(RenderPassBufferSet {
-            view_projection_bind_group,
-            view_projection_buffer,
-            vertex_buffer
-        });
-    }
-
-    pub fn get_buffer_set(&self,reference: Index) -> &RenderPassBufferSet {
-        if let Some(value) = self.buffer_sets.get(reference) {
-            return value;
-        }
-        panic!("This reference does not exist in the pipeline buffer set cache.");
-    }
-
-    pub fn return_buffer_set_reference(&mut self,buffer_index: Index) {
-        if !self.buffer_sets.contains(buffer_index) {
-            panic!("This vertex buffer does not belong to this pipeline manager (as far as we can tell).");
-        }
-        self.available_buffer_sets.push_back(buffer_index);
-    }
-
-    pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
-        return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
-    }
-}
-
-fn create_view_projection_buffer(device: &wgpu::Device,render_pipeline: &wgpu::RenderPipeline) -> (Buffer,BindGroup) {
-    let buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("View Projection Buffer"),
-        contents: bytemuck::cast_slice(&ViewProjectionMatrix::default()),
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &render_pipeline.get_bind_group_layout(VIEW_PROJECTION_BIND_GROUP_INDEX),
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-        label: Some("View Projection Bind Group"),
-    });
-    return (buffer,bind_group);
-}
-
-fn create_vertex_buffer(max_quads: u32,device: &wgpu::Device) -> Buffer {
-    return device.create_buffer_init(&BufferInitDescriptor{
-        label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(&get_vertex_buffer_contents(max_quads)),
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-    });
-}
-
-fn get_index_buffer_contents(index_count: u32) -> Vec<u16> {
-    let mut indices: Vec<u16> = Vec::with_capacity(index_count as usize);
 /*
-  Triangle strip should generate 0-1-3 1-3-2 (CCW)
+  Triangle list should generate 0-1-2 2-1-3 in CCW
 
                     0---2
                     |  /|
@@ -129,83 +66,90 @@ fn get_index_buffer_contents(index_count: u32) -> Vec<u16> {
                     |/  |
                     1---3
 */
-    let length = index_count as u16;
 
-    for i in 0..length {
-        let index = i * 4;
-        indices.push(index + 0);
-        indices.push(index + 1);
-        indices.push(index + 3);
-        indices.push(index + 2);
-        indices.push(u16::MAX);
+        let vertices = vec![
+            0.0,0.0, //Top Left     0
+            0.0,1.0, //Bottom Left  1
+            1.0,0.0, //Top Right    2
+            1.0,1.0  //Bottom Right 3
+        ];
+
+        let indices = vec![
+            0,1,2, //First Triangle
+            2,1,3, //Second Triangle
+            u16::MAX
+        ];
+
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
+            label: Some("Index Buffer"),
+            contents: indices.as_bytes(),
+            usage: wgpu::BufferUsages::INDEX
+        });
+
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
+            label: Some("Vertex Buffer"),
+            contents: vertices.as_bytes(),
+            usage: wgpu::BufferUsages::VERTEX
+        });
+
+        let instance_buffer = device.create_buffer(&BufferDescriptor{
+            label: Some("Instance Buffer"),
+            size: (size_of::<QuadInstance>() * quad_instance_capacity) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let uniform_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("View Projection Buffer"),
+            size: (size_of::<ViewProjectionMatrix>() * uniform_capacity) as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false
+        });
+
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("View Projection Bind Group"),
+        });
+
+        return Self {
+            pipeline,
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            uniform_buffer,
+            uniform_bind_group,
+            instance_buffer_counter: usize::MIN,
+            uniform_buffer_counter: usize::MIN
+        };
     }
 
-    return indices;
-}
-
-fn get_vertex_buffer_contents(vertex_count: u32) -> Vec<Vertex> {
-    let size = vertex_count as usize;
-    let mut vertices: Vec<Vertex> = Vec::with_capacity(size);
-    vertices.resize_with(size,Default::default);
-    return vertices;
-}
-
-pub type ViewProjectionMatrix = [[f32;4];4];
-
-#[repr(C)]
-#[derive(Debug,Copy,Clone,bytemuck::Pod,bytemuck::Zeroable)]
-pub struct ViewProjection {
-    value: ViewProjectionMatrix,
-}
-
-impl ViewProjection {
-    pub fn create(matrix: ViewProjectionMatrix) -> Self {
-        return ViewProjection {
-            value: matrix
-        }
+    pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
+        return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
     }
-    pub fn get_bytes(&self) -> &[u8] {
-        return bytemuck::cast_slice(&self.value);
+
+    pub fn get_uniform_bind_group_layout(&self) -> BindGroupLayout {
+        return self.pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX);
     }
-}
 
-pub struct TextureContainer {
-    width: u32,
-    height: u32,
-    texture_view: TextureView,
-    bind_groups: Vec<BindGroup>
-}
-
-impl TextureContainer {
-    pub fn size(&self) -> (u32,u32) {
-        return (self.width,self.height);
+    pub fn request_instance_buffer_start(&mut self,size: usize) -> usize {
+        let index = self.instance_buffer_counter;
+        self.instance_buffer_counter += size;
+        return index;
     }
-}
 
-pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
-pub const VIEW_PROJECTION_BIND_GROUP_INDEX: u32 = 1;
+    pub fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
+        let index = self.uniform_buffer_counter;
+        self.uniform_buffer_counter += size;
+        return index;
+    }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
-pub struct Vertex {
-    pub position: [f32;2],
-    pub uv: [f32;2],
-    pub color: [f32;4],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute;3] = wgpu::vertex_attr_array![
-        0 => Float32x2, //Position
-        1 => Float32x3, //UV
-        2 => Float32x4, //Color
-    ];
-
-    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        return wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress * 4,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
-        }
+    pub fn reset_buffer_counters(&mut self) {
+        self.instance_buffer_counter = 0;
+        self.uniform_buffer_counter = 0;
     }
 }
 
@@ -237,7 +181,7 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
         ]
     });
 
-    let view_projection_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::VERTEX,
@@ -259,8 +203,8 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         bind_group_layouts: &[
-            &texture_bind_group_layout, //TEXTURE_BIND_GROUP_INDEX must = 0
-            &view_projection_bind_group_layout, //VIEW_PROJECTION_BIND_GROUP_INDEX must = 1
+            &texture_bind_group_layout,
+            &uniform_bind_group_layout,
         ],
         push_constant_ranges: &[]
     });
@@ -272,7 +216,10 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[Vertex::get_buffer_layout()]
+            buffers: &[
+                Vertex::get_buffer_layout(),
+                QuadInstance::get_buffer_layout()
+            ]
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
@@ -285,7 +232,7 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
             })]
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: Some(IndexFormat::Uint16),
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: None,
@@ -306,176 +253,72 @@ pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
     return pipeline;
 }
 
-pub enum SamplerMode {
-    NearestClamp = 0,
-    NearestRepeat = 1,
-    NearestMirrorRepeat = 2,
-    LinearClamp = 3,
-    LinearRepeat = 4,
-    LinearMirrorRepeat = 5
+
+#[repr(C)]
+#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
+pub struct Vertex {
+    pub position: [f32;2]
 }
 
-impl SamplerMode {
-    pub fn get_mode(filter_mode: FilterMode,wrap_mode: WrapMode) -> SamplerMode {
-        return match (filter_mode,wrap_mode) {
-            (FilterMode::Nearest,WrapMode::Clamp) => SamplerMode::NearestClamp,
-            (FilterMode::Nearest,WrapMode::Repeat) => SamplerMode::NearestRepeat,
-            (FilterMode::Nearest,WrapMode::MirrorRepeat) => SamplerMode::NearestMirrorRepeat,
-            (FilterMode::Linear,WrapMode::Clamp) => SamplerMode::LinearClamp,
-            (FilterMode::Linear,WrapMode::Repeat) => SamplerMode::LinearRepeat,
-            (FilterMode::Linear,WrapMode::MirrorRepeat) => SamplerMode::LinearMirrorRepeat,
-        };
+#[repr(C)]
+#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
+pub struct QuadInstance {
+    pub position: [f32;2],
+    pub size: [f32;2],
+    pub uv_position: [f32;2],
+    pub uv_size: [f32;2],
+    pub rotation: f32,
+    pub color: [f32;4],
+}
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute;1] = wgpu::vertex_attr_array![
+        0 => Float32x2,
+    ];
+
+    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        return wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
     }
 }
 
-fn get_bind_groups(texture_view: &TextureView,wgpu_interface: &impl WGPUInterface) -> Vec<BindGroup> {
-    let device = wgpu_interface.get_device();
+impl QuadInstance {
+    const ATTRIBS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
+        0 => Float32x2,
+        1 => Float32x2,
+        2 => Float32x2,
+        3 => Float32x2,
+        4 => Float32,
+        5 => Float32x4
+    ];
 
-    let bind_group_layout = &wgpu_interface
-        .get_pipeline()
-        .get_texture_bind_group_layout();
-
-    use wgpu::{FilterMode,AddressMode};
-    let bind_groups: Vec<BindGroup> = vec![
-        /* Must match index order of SamplerMode */
-        (FilterMode::Nearest,AddressMode::ClampToEdge),
-        (FilterMode::Nearest,AddressMode::Repeat),
-        (FilterMode::Nearest,AddressMode::MirrorRepeat),
-        (FilterMode::Linear,AddressMode::ClampToEdge),
-        (FilterMode::Linear,AddressMode::Repeat),
-        (FilterMode::Linear,AddressMode::MirrorRepeat),
-    ].iter().map(|(filter,address)|{
-        let (a,f) = (*address,*filter);
-        device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: a,
-            address_mode_v: a,
-            address_mode_w: a,
-            mag_filter: f,
-            min_filter: f,
-            mipmap_filter: f,
-            ..Default::default()
-        })
-    }).map(|sampler|device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            }
-        ],
-        label: None, //TODO: Make meaningful label
-    })).collect();
-    return bind_groups;
+    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        return wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::ATTRIBS,
+        }
+    }
 }
 
-fn validate_dimensions(dimensions: (u32,u32)) {
-    if dimensions.0 > 0 && dimensions.1 > 0 {
-        return;
-    }
+type ViewProjectionMatrix = [[f32;4];4];
 
-    //TODO: Validate max dimension size with WGPU capabilities
-
-    panic!("Invalid texture container dimensions. Dimensions must be greater than 0.");
+#[repr(C)]
+#[derive(Debug,Copy,Clone,bytemuck::Pod,bytemuck::Zeroable)]
+pub struct ViewProjection {
+    value: ViewProjectionMatrix,
 }
 
-struct TextureCreationParameters {
-    dimensions: (u32,u32),
-    mutable: bool
-}
-
-fn create_texture(
-    wgpu_interface: &impl WGPUInterface,
-    image_data: Option<&[u8]>,
-    parameters: TextureCreationParameters
-) -> TextureContainer {
-
-    let dimensions = parameters.dimensions;
-
-    validate_dimensions(dimensions);
-
-    let texture_size = wgpu::Extent3d {
-        width: dimensions.0,
-        height: dimensions.1,
-        depth_or_array_layers: 1,
-    };
-
-    let mut usage_flags = TextureUsages::TEXTURE_BINDING;
-
-    if image_data.is_some() {
-        usage_flags |= TextureUsages::COPY_DST;
+impl ViewProjection {
+    pub fn create(matrix: ViewProjectionMatrix) -> Self {
+        return ViewProjection {
+            value: matrix
+        }
     }
-
-    if parameters.mutable {
-        usage_flags |= TextureUsages::RENDER_ATTACHMENT;
-    }
-
-    let device = wgpu_interface.get_device();
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        size: texture_size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-
-        //Might want to make this sRGB. No idea what the fuck is going on behind the scenes with this
-        format: wgpu::TextureFormat::Rgba8Unorm,
-
-        usage: usage_flags,
-        label: None, //TODO: Add useful labels
-        view_formats: &[],
-    });
-
-    if let Some(data) = image_data {
-        wgpu_interface.get_queue().write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
-                bytes_per_row: Some(4*dimensions.0), 
-                rows_per_image: Some(dimensions.1),
-            },
-            texture_size,
-        );
-    }
-
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let bind_groups = get_bind_groups(&texture_view, wgpu_interface);
-
-    return TextureContainer {
-        width: dimensions.0,
-        height: dimensions.1,
-        texture_view,
-        bind_groups
-    };
-}
-
-impl TextureContainer {
-    pub fn create_mutable(dimensions: (u32,u32),wgpu_interface: &impl WGPUInterface) -> TextureContainer {
-        return create_texture(wgpu_interface,None,TextureCreationParameters {
-            dimensions,
-            mutable: true
-        });
-    }
-
-    pub fn from_image(image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> TextureContainer {
-        let dimensions = image.dimensions();
-
-        //TODO: Make sure alpha channel is premultiplied ... Somehow.
-        let image_data = image.to_rgba8();
-
-        return create_texture(wgpu_interface,Some(image_data.as_bytes()),TextureCreationParameters {
-            dimensions,
-            mutable: false
-        });
+    pub fn get_bytes(&self) -> &[u8] {
+        return bytemuck::cast_slice(&self.value);
     }
 }
