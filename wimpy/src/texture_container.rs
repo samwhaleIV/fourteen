@@ -19,7 +19,7 @@ use crate::{
 pub struct TextureContainer {
     width: u32,
     height: u32,
-    texture_view: TextureView,
+    view: TextureView,
     bind_groups: Vec<BindGroup>
 }
 
@@ -160,22 +160,22 @@ fn create_texture(
         );
     }
 
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let bind_groups = get_bind_groups(&texture_view,&device,bind_group_layout);
+    let bind_groups = get_bind_groups(&view,&device,bind_group_layout);
 
     return TextureContainer {
         width: dimensions.0,
         height: dimensions.1,
-        texture_view,
+        view,
         bind_groups
     };
 }
 
 impl TextureContainer {
 
-    pub fn get_texture_view(&self) -> &TextureView {
-        return &self.texture_view;
+    pub fn get_view(&self) -> &TextureView {
+        return &self.view;
     }
 
     pub fn create_mutable(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,dimensions: (u32,u32)) -> TextureContainer {
@@ -198,11 +198,11 @@ impl TextureContainer {
     }
 
     pub fn create_output(wgpu: &impl WGPUInterface) -> TextureContainer {
-        let (texture_view,size) = wgpu.get_output();
+        let (view,size) = wgpu.get_output();
         return TextureContainer {
             width: size.0,
             height: size.1,
-            texture_view,
+            view,
             bind_groups: Vec::with_capacity(0)
         };
     }

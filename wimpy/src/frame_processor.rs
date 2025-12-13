@@ -14,34 +14,35 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
     let device = wgpu_interface.get_device();
 
     if let Some(mut encoder) = pipeline.try_borrow_encoder() {
+        {
+            let operations = wgpu::Operations {
+                load: match frame.get_clear_color() {
+                    Some(color) => wgpu::LoadOp::Clear(color),
+                    None => wgpu::LoadOp::Load,
+                },
+                store: wgpu::StoreOp::Store,
+            };
 
-        //check if frame is output. then do stuff.
+            let view = pipeline.get_texture_container(frame.get_index()).get_view();
 
-        let operations = wgpu::Operations {
-            //TODO: Change these
-            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-            store: wgpu::StoreOp::Store,
-        };
+            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: operations,
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
-        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Output Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: pipeline.get_texture_container(frame.get_index()).get_texture_view(),
-                depth_slice: None,
-                resolve_target: None,
-                ops: operations,
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        todo!();
-
-
+            process_commands(frame,&render_pass);
+        }
         pipeline.return_encoder(encoder);
     } else {
-        panic!("Pipeline did not provide an encoder.");
+        panic!("Console did not provide an encoder!");
     }
 }
 

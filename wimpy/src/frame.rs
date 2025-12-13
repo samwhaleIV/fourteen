@@ -21,7 +21,7 @@ pub enum FrameType {
 type FrameIndex = generational_arena::Index;
 
 #[derive(PartialEq)]
-enum LockStatus {
+pub enum LockStatus {
     FutureUnlock,
     FutureLock,
     Unlocked,
@@ -42,6 +42,7 @@ pub trait FrameInternal {
     fn get_size(&self) -> (u32,u32);
     fn get_type(&self) -> FrameType;
 
+    fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_writable(&self) -> bool;
 
     fn create_output(size: (u32,u32),index: Index) -> Self;
@@ -67,6 +68,17 @@ pub struct FrameCreationOptions {
 }
 
 impl FrameInternal for Frame {
+
+    //TODO: Implement color selection
+    fn get_clear_color(&self) -> Option<wgpu::Color> {
+        return match self.write_lock {
+            LockStatus::FutureUnlock => Some(wgpu::Color::WHITE),
+            LockStatus::FutureLock => Some(wgpu::Color::WHITE),
+            LockStatus::Unlocked => None,
+            LockStatus::Locked => None,
+        }
+    }
+
     fn get_index(&self) -> Index {
         return self.index;
     }

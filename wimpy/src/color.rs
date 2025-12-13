@@ -16,6 +16,20 @@ impl Color {
         return Color { r, g, b, a };
     }
 
+    pub const BLACK: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: u8::MAX
+    };
+
+    pub const WHITE: Self = Self {
+        r: u8::MAX,
+        g: u8::MAX,
+        b: u8::MAX,
+        a: u8::MAX
+    };
+
     pub const RED: Self = Self {
         r: u8::MAX,
         g: 0,
