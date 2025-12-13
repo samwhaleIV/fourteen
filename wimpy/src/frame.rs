@@ -4,7 +4,6 @@ use std::{collections::VecDeque, ptr};
 use crate::{
     area::Area,
     color::Color,
-    frame_cache::FrameCache,
     frame_processor,
     pipeline_management::Pipeline,
     wgpu_interface::WGPUInterface
@@ -186,19 +185,19 @@ pub enum FilterMode {
 }
 
 pub struct PositionColor {
-    position: Area,
-    color: Color
+    pub position: Area,
+    pub color: Color
 }
 
 pub struct PositionUV {
-    position: Area,
-    uv: Area,
+    pub position: Area,
+    pub uv: Area,
 }
 
 pub struct PositionUVColor {
-    position: Area,
-    uv: Area,
-    color: Color
+    pub position: Area,
+    pub uv: Area,
+    pub color: Color
 }
 
 fn validate_size(size: (u32,u32)) {
@@ -309,9 +308,8 @@ impl Frame {
 
     pub fn finish(
         &mut self,
-        frame_cache: &mut FrameCache,
+        wgpu_interface: &impl WGPUInterface,
         pipeline: &mut Pipeline,
-        wgpu_interface: &impl WGPUInterface
     ) -> Frame {
         let invalid = self.is_invalid();
         if invalid || !self.is_writable() {
@@ -326,7 +324,7 @@ impl Frame {
             log::warn!("Frame command buffer is empty!");
         }
         let size = self.size();
-        let frame = frame_processor::render_frame(&self,frame_cache,wgpu_interface);
+        let frame = frame_processor::render_frame(&self,wgpu_interface,pipeline);
 
         if self.usage == FrameType::Output {
             self.usage = FrameType::Invalid;

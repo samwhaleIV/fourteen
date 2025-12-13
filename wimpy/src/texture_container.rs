@@ -14,8 +14,7 @@ use crate::{
     frame::{
         FilterMode,
         WrapMode,
-    },
-    wgpu_interface::WGPUInterface
+    }, pipeline_management::PipelineResourceManagement, wgpu_interface::WGPUInterface
 };
 
 pub struct TextureContainer {

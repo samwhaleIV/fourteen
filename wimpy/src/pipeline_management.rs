@@ -1,8 +1,24 @@
+use std::collections::{
+    HashMap,
+    VecDeque
+};
+
 use bytemuck::{
     Pod,
     Zeroable
 };
-use image::EncodableLayout;
+
+use generational_arena::{
+    Arena,
+    Index
+};
+
+use image::{
+    DynamicImage,
+    EncodableLayout,
+    ImageError,
+    ImageReader
+};
 
 use wgpu::{
     BindGroup,
@@ -19,7 +35,15 @@ use wgpu::{
     }
 };
 
-use crate::wgpu_interface::WGPUInterface;
+use crate::{
+    frame::{
+        Frame,
+        FrameInternal
+    },
+    lease_arena::LeaseArena,
+    texture_container::TextureContainer,
+    wgpu_interface::WGPUInterface
+};
 
 pub struct Pipeline {
     pipeline: RenderPipeline,
@@ -33,115 +57,254 @@ pub struct Pipeline {
     uniform_bind_group: BindGroup,
 
     instance_buffer_counter: usize,
-    uniform_buffer_counter: usize
+    uniform_buffer_counter: usize,
+
+    frame_cache: FrameCache
 }
+
+type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
 
 pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 impl Pipeline {
-    pub fn create(wgpu_interface: &impl WGPUInterface,quad_instance_capacity: usize,uniform_capacity: usize) -> Self {
 
-        let device = wgpu_interface.get_device();
-        let pipeline = create_pipeline(wgpu_interface);
-
-/*
-  Triangle list should generate 0-1-2 2-1-3 in CCW
-
-                    0---2
-                    |  /|
-                    | / |
-                    |/  |
-                    1---3
-*/
-
-        let vertices = vec![
-            0.0,0.0, //Top Left     0
-            0.0,1.0, //Bottom Left  1
-            1.0,0.0, //Top Right    2
-            1.0,1.0  //Bottom Right 3
-        ];
-
-        let indices = vec![
-            0,1,2, //First Triangle
-            2,1,3, //Second Triangle
-            u16::MAX
-        ];
-
-        let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Index Buffer"),
-            contents: indices.as_bytes(),
-            usage: wgpu::BufferUsages::INDEX
-        });
-
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Vertex Buffer"),
-            contents: vertices.as_bytes(),
-            usage: wgpu::BufferUsages::VERTEX
-        });
-
-        let instance_buffer = device.create_buffer(&BufferDescriptor{
-            label: Some("Instance Buffer"),
-            size: (size_of::<QuadInstance>() * quad_instance_capacity) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let uniform_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("View Projection Buffer"),
-            size: (size_of::<ViewProjectionMatrix>() * uniform_capacity) as u64,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false
-        });
-
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-            label: Some("View Projection Bind Group"),
-        });
-
-        return Self {
-            pipeline,
-            vertex_buffer,
-            index_buffer,
-            instance_buffer,
-            uniform_buffer,
-            uniform_bind_group,
-            instance_buffer_counter: usize::MIN,
-            uniform_buffer_counter: usize::MIN
-        };
+    pub fn create_with_buffer_frames(
+        wgpu_interface: &impl WGPUInterface,
+        quad_instance_capacity: usize,
+        uniform_capacity: usize,
+        cache_sizes: &[(u32,u32)],
+        cache_size_instances: usize
+    ) -> Self {
+        return create_pipeline(
+            wgpu_interface,
+            quad_instance_capacity,
+            uniform_capacity,
+            create_frame_cache_init(
+                wgpu_interface,
+                cache_sizes,
+                cache_size_instances
+            )
+        );
     }
 
-    pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
+    pub fn create(
+        wgpu_interface: &impl WGPUInterface,
+        quad_instance_capacity: usize,
+        uniform_capacity: usize
+    ) -> Self {
+        return create_pipeline(
+            wgpu_interface,
+            quad_instance_capacity,
+            uniform_capacity,
+            FrameCache::default()
+        );
+    }
+
+    pub fn start(&self,wgpu_interface: &mut impl WGPUInterface) -> Frame {
+        wgpu_interface.start_encoding();
+        return self.get_output_frame(wgpu_interface);
+    }
+
+    pub fn finish(&mut self,wgpu_interface: &mut impl WGPUInterface) {
+        self.instance_buffer_counter = 0;
+        self.uniform_buffer_counter = 0;
+        wgpu_interface.finish_encoding();
+    }
+}
+
+pub trait PipelineResourceManagement {
+    fn get_texture_bind_group_layout(&self) -> BindGroupLayout;
+    fn get_uniform_bind_group_layout(&self) -> BindGroupLayout;
+    fn request_instance_buffer_start(&mut self,size: usize) -> usize;
+    fn request_uniform_buffer_start(&mut self,size: usize) -> usize;
+}
+
+impl PipelineResourceManagement for Pipeline {
+    fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
         return self.pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
     }
 
-    pub fn get_uniform_bind_group_layout(&self) -> BindGroupLayout {
+    fn get_uniform_bind_group_layout(&self) -> BindGroupLayout {
         return self.pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX);
     }
 
-    pub fn request_instance_buffer_start(&mut self,size: usize) -> usize {
+    fn request_instance_buffer_start(&mut self,size: usize) -> usize {
         let index = self.instance_buffer_counter;
         self.instance_buffer_counter += size;
         return index;
     }
 
-    pub fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
+    fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
         let index = self.uniform_buffer_counter;
         self.uniform_buffer_counter += size;
         return index;
     }
+}
 
-    pub fn reset_buffer_counters(&mut self) {
-        self.instance_buffer_counter = 0;
-        self.uniform_buffer_counter = 0;
+pub fn create_frame_cache_init(wgpu_interface: &impl WGPUInterface,cache_sizes: &[(u32,u32)],cache_size_instances: usize) -> FrameCache {
+
+    let capacity = cache_sizes.len();
+
+    let mut textures = Arena::with_capacity(capacity);
+    let mut mutable_textures = HashMap::with_capacity(capacity);
+
+    for size in cache_sizes.iter() {
+        let mut queue = VecDeque::with_capacity(cache_size_instances);
+
+        for _ in 0..cache_size_instances {
+            let mutable_texture = TextureContainer::create_mutable(*size,wgpu_interface);
+            let index = textures.insert(mutable_texture);
+            queue.push_back(index);
+        }
+
+        mutable_textures.insert(*size,queue);
+    }
+
+    let frames = LeaseArena::create_with_values(textures,mutable_textures);
+
+    return frames;
+}
+
+pub trait FrameCacheManagement {
+    fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame;
+    fn create_frame_static(&self,size: (u32,u32),readonly_after_render: bool) -> Frame;
+    fn get_mutable_texture_lease(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32)) -> Index;
+    fn return_mutable_texture_lease(&mut self,lease: Index);
+    fn get_texture(&self,reference: Index) -> &TextureContainer;
+    fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame;
+    fn create_texture_frame(&mut self,name: &str,wgpu_interface: &impl WGPUInterface) -> Result<Frame,ImageError>;
+    fn create_texture_frame_debug(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame;
+}
+
+impl FrameCacheManagement for Pipeline {
+    fn get_output_frame(&self,wgpu_interface: &impl WGPUInterface) -> Frame {
+        return FrameInternal::create_output(wgpu_interface);
+    }
+
+    /* Non-statics do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
+    fn create_frame_static(&self,size: (u32,u32),readonly_after_render: bool) -> Frame {
+        return match readonly_after_render {
+            true => FrameInternal::create_immutable(size,true),
+            false => FrameInternal::create_mutable(size),
+        }
+    }
+
+    fn get_mutable_texture_lease(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32)) -> Index {
+        return self.frame_cache.start_lease(size,||TextureContainer::create_mutable(size,wgpu_interface));
+    }
+  
+    fn return_mutable_texture_lease(&mut self,lease: Index) {
+        self.frame_cache.end_lease(lease);
+    }
+
+    fn get_texture(&self,reference: Index) -> &TextureContainer {
+        return self.frame_cache.get(reference);
+    }
+
+    fn create_finished_frame(&mut self,image: &DynamicImage,wgpu_interface: &impl WGPUInterface) -> Frame {
+        let texture_container = TextureContainer::from_image(&image,wgpu_interface);
+        let size = texture_container.size();
+        let index = self.frame_cache.insert(size,texture_container);
+        return Frame::to_immutable(size,index);
+    }
+
+    fn create_texture_frame(&mut self,name: &str,wgpu_interface: &impl WGPUInterface) -> Result<Frame,ImageError> {
+        let image = ImageReader::open(name)?.decode()?;
+        let frame = self.create_finished_frame(&image,wgpu_interface);
+        return Ok(frame);
+    }
+
+    fn create_texture_frame_debug(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
+        let bytes = include_bytes!("../../content/images/null.png");
+        let image = image::load_from_memory(bytes).unwrap();
+        let frame = self.create_finished_frame(&image,wgpu_interface);
+        return frame;
     }
 }
 
-pub fn create_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
+fn create_pipeline(
+    wgpu_interface: &impl WGPUInterface,
+    quad_instance_capacity: usize,
+    uniform_capacity: usize,
+    frame_cache: FrameCache
+) -> Pipeline {
+
+    let device = wgpu_interface.get_device();
+    let pipeline = create_wgpu_pipeline(wgpu_interface);
+
+/*
+Triangle list should generate 0-1-2 2-1-3 in CCW
+
+                0---2
+                |  /|
+                | / |
+                |/  |
+                1---3
+*/
+
+    let vertices = vec![
+        0.0,0.0, //Top Left     0
+        0.0,1.0, //Bottom Left  1
+        1.0,0.0, //Top Right    2
+        1.0,1.0  //Bottom Right 3
+    ];
+
+    let indices = vec![
+        0,1,2, //First Triangle
+        2,1,3, //Second Triangle
+        u16::MAX
+    ];
+
+    let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
+        label: Some("Index Buffer"),
+        contents: indices.as_bytes(),
+        usage: wgpu::BufferUsages::INDEX
+    });
+
+    let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
+        label: Some("Vertex Buffer"),
+        contents: vertices.as_bytes(),
+        usage: wgpu::BufferUsages::VERTEX
+    });
+
+    let instance_buffer = device.create_buffer(&BufferDescriptor{
+        label: Some("Instance Buffer"),
+        size: (size_of::<QuadInstance>() * quad_instance_capacity) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let uniform_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("View Projection Buffer"),
+        size: (size_of::<ViewProjectionMatrix>() * uniform_capacity) as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false
+    });
+
+    let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+        label: Some("View Projection Bind Group"),
+    });
+
+    return Pipeline {
+        pipeline,
+        vertex_buffer,
+        index_buffer,
+        instance_buffer,
+        uniform_buffer,
+        uniform_bind_group,
+        frame_cache,
+        instance_buffer_counter: usize::MIN,
+        uniform_buffer_counter: usize::MIN
+    };
+}
+
+pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
 
     let device = wgpu_interface.get_device();
 

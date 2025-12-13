@@ -6,19 +6,17 @@ use crate::{
         FrameCommand,
         FrameInternal,
         FrameType
-    },
-    frame_cache::FrameCache,
-    wgpu_interface::WGPUInterface
+    }, pipeline_management::Pipeline, wgpu_interface::WGPUInterface
 };
 
-pub fn render_frame(frame: &Frame,frame_cache: &FrameCache,wgpu_interface: &impl WGPUInterface) -> Frame {
+pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: &Pipeline) -> Frame {
     let device = wgpu_interface.get_device();
 
     if let Some(encoder) = wgpu_interface.get_encoder() {
         return match frame.get_type() {
-            FrameType::Output => render_output_frame(frame,frame_cache,encoder),
-            FrameType::Mutable => render_mutable_frame(frame,frame_cache,encoder),
-            FrameType::Immutable => render_immutable_frame(frame,frame_cache,encoder),
+            FrameType::Output => render_output_frame(frame,pipeline,encoder),
+            FrameType::Mutable => render_mutable_frame(frame,pipeline,encoder),
+            FrameType::Immutable => render_immutable_frame(frame,pipeline,encoder),
             FrameType::Invalid => panic!("Can't render invalid frame. Another layer of validation should have prevented this panic."),
         };
     } else {
@@ -27,15 +25,15 @@ pub fn render_frame(frame: &Frame,frame_cache: &FrameCache,wgpu_interface: &impl
     }
 }
 
-fn render_output_frame(frame: &Frame,frame_cache: &FrameCache,encoder: &CommandEncoder) -> Frame {
+fn render_output_frame(frame: &Frame,pipeline: &Pipeline,encoder: &CommandEncoder) -> Frame {
     todo!();
 }
 
-fn render_mutable_frame(frame: &Frame,frame_cache: &FrameCache,encoder: &CommandEncoder) -> Frame {
+fn render_mutable_frame(frame: &Frame,pipeline: &Pipeline,encoder: &CommandEncoder) -> Frame {
     todo!();
 }
 
-fn render_immutable_frame(frame: &Frame,frame_cache: &FrameCache,encoder: &CommandEncoder) -> Frame {
+fn render_immutable_frame(frame: &Frame,pipeline: &Pipeline,encoder: &CommandEncoder) -> Frame {
     todo!();
 }
 

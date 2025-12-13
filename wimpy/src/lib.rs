@@ -1,14 +1,15 @@
 #![allow(dead_code,unused_variables)]
 
-use crate::{wgpu_interface::WGPUInterface, pipeline_management::Pipeline};
+use crate::{
+    area::Area, frame::PositionUV, pipeline_management::{FrameCacheManagement, Pipeline}, wgpu_interface::WGPUInterface
+};
 
-pub mod frame;
-pub mod area;
-pub mod color;
-pub mod frame_cache;
-pub mod lease_arena;
-pub mod wgpu_interface;
-pub mod texture_container;
+mod frame;
+mod area;
+mod color;
+mod lease_arena;
+mod wgpu_interface;
+mod texture_container;
 mod pipeline_management;
 mod frame_processor;
 
@@ -59,23 +60,28 @@ const MAX_UNIFORMS: usize = 100;
 
 fn test() {
 
-    let mut wgpu_interface = VirtualWGPUProvider {
+    let mut w = VirtualWGPUProvider {
         //This is where the magic binding happens. Pretend it is here already.
     };
-    let mut pipeline = Pipeline::create(&wgpu_interface,MAX_QUADS,MAX_UNIFORMS);
-    let mut cache = frame_cache::FrameCache::create();
+    let mut pipeline = Pipeline::create_with_buffer_frames(
+        &w,MAX_QUADS,MAX_UNIFORMS,&vec![(64,64)],4
+    );
 
-    let texture_frame = cache.create_texture_frame_debug(&wgpu_interface);
+    let texture_frame = pipeline.create_texture_frame_debug(&w);
 
-    let mut output_frame = cache.get_output_frame(&wgpu_interface);
-
-    wgpu_interface.start_encoding();
-
+    let mut output_frame = pipeline.start(&mut w);
 
     output_frame.set_texture_filter(frame::FilterMode::Nearest);
     output_frame.set_texture_wrap(frame::WrapMode::Clamp);
-    output_frame.finish(&mut cache,&mut pipeline,&wgpu_interface);
 
+    output_frame.draw_frame(&texture_frame,PositionUV {
+        position: Area::NORMAL,
+        uv: Area::NORMAL,
+    });
+    
 
-    wgpu_interface.finish_encoding();
+    output_frame.finish(&w,&mut pipeline);
+
+    pipeline.finish(&mut w);
+
 }
