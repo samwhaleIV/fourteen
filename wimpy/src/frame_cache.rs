@@ -5,7 +5,7 @@ use image::{DynamicImage, ImageError, ImageReader};
 
 use crate::frame::{FrameInternal, Frame};
 use crate::lease_arena::LeaseArena;
-use crate::pipeline_management::TextureContainer;
+use crate::texture_container::TextureContainer;
 use crate::wgpu_interface::WGPUInterface;
 
 #[derive(Default)]

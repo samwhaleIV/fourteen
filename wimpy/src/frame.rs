@@ -1,7 +1,14 @@
 //#![allow(dead_code,unused_variables)]
 
 use std::{collections::VecDeque, ptr};
-use crate::{area::Area, color::Color, frame_cache::{FrameCache, WGPUInterface}, frame_processor, pipeline_management::Pipeline};
+use crate::{
+    area::Area,
+    color::Color,
+    frame_cache::FrameCache,
+    frame_processor,
+    pipeline_management::Pipeline,
+    wgpu_interface::WGPUInterface
+};
 
 #[derive(Clone,Copy,PartialEq)]
 pub enum FrameType {

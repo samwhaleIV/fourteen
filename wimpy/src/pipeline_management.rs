@@ -2,11 +2,7 @@ use bytemuck::{
     Pod,
     Zeroable
 };
-use image::{
-    DynamicImage,
-    EncodableLayout,
-    GenericImageView
-};
+use image::EncodableLayout;
 
 use wgpu::{
     BindGroup,
@@ -17,21 +13,13 @@ use wgpu::{
     BufferUsages,
     IndexFormat,
     RenderPipeline,
-    TextureUsages,
-    TextureView,
     util::{
         BufferInitDescriptor,
         DeviceExt
     }
 };
 
-use crate::{
-    frame::{
-        FilterMode,
-        WrapMode
-    },
-    wgpu_interface::WGPUInterface
-};
+use crate::wgpu_interface::WGPUInterface;
 
 pub struct Pipeline {
     pipeline: RenderPipeline,

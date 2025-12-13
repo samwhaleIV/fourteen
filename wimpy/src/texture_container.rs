@@ -1,4 +1,8 @@
-use image::DynamicImage;
+use image::{
+    DynamicImage,
+    EncodableLayout,
+    GenericImageView
+};
 
 use wgpu::{
     BindGroup,

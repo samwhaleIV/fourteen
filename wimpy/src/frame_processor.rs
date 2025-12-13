@@ -1,6 +1,15 @@
 use wgpu::{CommandEncoder, RenderPass};
 
-use crate::{frame::{Frame, FrameCommand, FrameInternal, FrameType}, frame_cache::{FrameCache, WGPUInterface}};
+use crate::{
+    frame::{
+        Frame,
+        FrameCommand,
+        FrameInternal,
+        FrameType
+    },
+    frame_cache::FrameCache,
+    wgpu_interface::WGPUInterface
+};
 
 pub fn render_frame(frame: &Frame,frame_cache: &FrameCache,wgpu_interface: &impl WGPUInterface) -> Frame {
     let device = wgpu_interface.get_device();
