@@ -7,7 +7,7 @@ use crate::{
     area::Area,
     color::Color,
     frame_processor,
-    pipeline_management::Pipeline,
+    pipeline_management::{Pipeline,QuadInstance},
     wgpu_interface::WGPUInterface
 };
 
@@ -142,21 +142,15 @@ impl FrameInternal for Frame {
     }
 }
 
+ //Conveniently enough, 64 bytes wide.
 pub enum FrameCommand {
-
     /* Single Fire Draw Commands */
 
-    DrawColor(PositionColorRotation),
-
-    DrawFrame(FrameIndex,PositionUVRotation),
-    DrawFrameColored(FrameIndex,PositionUVColorRotation),
+    DrawFrame(FrameIndex,DrawData),
 
     /* Set Based Draw Commands */
 
-    DrawColorSet(Vec<PositionColorRotation>),
-
-    DrawFrameSet(FrameIndex,Vec<PositionUVRotation>),
-    DrawFrameColoredSet(FrameIndex,Vec<PositionUVColorRotation>),
+    DrawFrameSet(FrameIndex,Vec<DrawData>),
 
     /* Other */
 
@@ -164,34 +158,51 @@ pub enum FrameCommand {
     SetTextureWrap(WrapMode),
 }
 
+#[derive(Copy,Clone,PartialEq)]
 pub enum WrapMode {
     Clamp,
     Repeat,
     MirrorRepeat
 }
 
+#[derive(Copy,Clone,PartialEq)]
 pub enum FilterMode {
     Nearest,
     Linear,
 }
 
-pub struct PositionColorRotation {
-    pub position: Area,
+pub struct DrawData {
+    pub area: Area,
+    pub uv: Area,
     pub color: Color,
     pub rotation: f32
 }
 
-pub struct PositionUVRotation {
-    pub position: Area,
-    pub uv: Area,
-    pub rotation: f32
-}
-
-pub struct PositionUVColorRotation {
-    pub position: Area,
-    pub uv: Area,
-    pub color: Color,
-    pub rotation: f32
+impl DrawData {
+    pub fn to_quad_instance(&self) -> QuadInstance {
+        let area = self.area.to_center_encoded();
+        return QuadInstance {
+            position: [
+                area.x,
+                area.y,
+            ],
+            size: [
+                area.width,
+                area.height,
+            ],
+            uv_position: [
+                self.uv.x,
+                self.uv.y,
+            ],
+            uv_size: [
+                self.uv.width,
+                self.uv.height,
+            ],
+            color: self.color.to_float_array(),
+            rotation: self.rotation,
+            _padding: [f32::NAN,f32::NAN,f32::NAN],
+        }
+    }
 }
 
 fn validate_size(size: (u32,u32)) {
@@ -258,41 +269,18 @@ impl Frame {
     }
 
     /* Draw Commands */
-
-    pub fn draw_color(&mut self,parameters: PositionColorRotation) {
-        self.command_buffer.push_back(FrameCommand::DrawColor(parameters));
-    }
-
-    pub fn draw_color_set(&mut self,parameters: Vec<PositionColorRotation>) {
-        self.command_buffer.push_back(FrameCommand::DrawColorSet(parameters));
-    }
-
-    pub fn draw_frame(&mut self,frame: &Frame,parameters: PositionUVRotation) {
+    pub fn draw_frame(&mut self,frame: &Frame,draw_data: DrawData) {
         if !self.validate(frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrame(self.index,parameters));
+        self.command_buffer.push_back(FrameCommand::DrawFrame(self.index,draw_data));
     }
 
-    pub fn draw_frame_set(&mut self,frame: &Frame,parameters: Vec<PositionUVRotation>) {
+    pub fn draw_frame_set(&mut self,frame: &Frame,draw_data: Vec<DrawData>) {
         if !self.validate(frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrameSet(self.index,parameters));
-    }
-
-    pub fn draw_frame_colored(&mut self,frame: &Frame,parameters: PositionUVColorRotation) {
-        if !self.validate(frame) {
-            return;
-        }
-        self.command_buffer.push_back(FrameCommand::DrawFrameColored(self.index,parameters));
-    }
-
-    pub fn draw_frame_colored_set(&mut self,frame: &Frame,parameters: Vec<PositionUVColorRotation>) {
-        if !self.validate(frame) {
-            return;
-        }
-        self.command_buffer.push_back(FrameCommand::DrawFrameColoredSet(self.index,parameters));
+        self.command_buffer.push_back(FrameCommand::DrawFrameSet(self.index,draw_data));
     }
 
     /* Output & Interop */

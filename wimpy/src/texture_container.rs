@@ -213,5 +213,13 @@ impl TextureContainer {
         return (self.width,self.height);
     }
 
+    pub fn get_bind_group(&self,sampler_mode: SamplerMode) -> &BindGroup {
+        if let Some(bind_group) = self.bind_groups.get(sampler_mode as usize) {
+            return bind_group;
+        } else {
+            panic!("Bind group not found for this sampler mode.");
+        }
+    }
+
     //TODO
 }

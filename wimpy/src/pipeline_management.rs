@@ -18,7 +18,7 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPipeline, util::{
+    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPass, RenderPipeline, util::{
         BufferInitDescriptor,
         DeviceExt
     }
@@ -26,12 +26,14 @@ use wgpu::{
 
 use crate::{
     frame::{
-        Frame, FrameCreationOptions, FrameInternal
+        DrawData, Frame, FrameCreationOptions, FrameInternal
     },
     lease_arena::LeaseArena,
     texture_container::TextureContainer,
     wgpu_interface::WGPUInterface
 };
+
+const UNIFORM_BUFFER_ALIGNMENT: u32 = 256;
 
 pub struct Pipeline {
     render_pipeline: RenderPipeline,
@@ -44,8 +46,8 @@ pub struct Pipeline {
 
     uniform_bind_group: BindGroup,
 
-    instance_buffer_counter: usize,
-    uniform_buffer_counter: usize,
+    instance_buffer_counter: u32,
+    uniform_buffer_counter: u32,
 
     frame_cache: FrameCache,
 
@@ -56,29 +58,30 @@ pub struct Pipeline {
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
 
-pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
-pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
-
 struct FrameCacheConfig<'a> {
     sizes: &'a[(u32,u32)],
-    instances: usize
+    instances: u32
 }
 
 impl Pipeline {
+
+    pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+    pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+
     pub fn create(
         wgpu_interface: &impl WGPUInterface,
-        quad_instance_capacity: usize,
-        uniform_capacity: usize
+        quad_instance_capacity: u32,
+        uniform_capacity: u32
     ) -> Self {
         return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,None);
     }
 
     pub fn create_with_buffer_frames(
         wgpu_interface: &impl WGPUInterface,
-        quad_instance_capacity: usize,
-        uniform_capacity: usize,
+        quad_instance_capacity: u32,
+        uniform_capacity: u32,
         cache_sizes: &[(u32,u32)],
-        cache_instances: usize
+        cache_instances: u32
     ) -> Self {
         return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,Some(FrameCacheConfig {
             sizes: cache_sizes,
@@ -143,19 +146,42 @@ impl Pipeline {
     }
 
     pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
-        return self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
+        return self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX);
     }
 
-    pub fn request_instance_buffer_start(&mut self,size: usize) -> usize {
+    fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
         let index = self.instance_buffer_counter;
-        self.instance_buffer_counter += size;
+        self.instance_buffer_counter += quad_count * size_of::<QuadInstance>() as u32;
         return index;
     }
 
-    pub fn request_uniform_buffer_start(&mut self,size: usize) -> usize {
+    fn request_uniform_buffer_start(&mut self) -> u32 {
         let index = self.uniform_buffer_counter;
-        self.uniform_buffer_counter += size;
+        self.uniform_buffer_counter += UNIFORM_BUFFER_ALIGNMENT;
         return index;
+    }
+
+    pub fn write_quad(&mut self,queue: &wgpu::Queue,draw_data: &DrawData) {
+        let quad_instance = &draw_data.to_quad_instance();
+        let index = self.request_instance_buffer_start(1);
+        queue.write_buffer(
+            &self.instance_buffer,
+            index as u64,
+            bytemuck::bytes_of(quad_instance)
+        );
+    }
+
+    pub fn write_quad_set(&mut self,queue: &wgpu::Queue,draw_data: &[DrawData]) {
+        let mut quad_instances = Vec::with_capacity(draw_data.len());
+        quad_instances.extend(draw_data.iter().map(|d|d.to_quad_instance()));
+
+        let index = self.request_instance_buffer_start(draw_data.len() as u32);
+
+        queue.write_buffer(
+            &self.instance_buffer,
+            index as u64,
+            bytemuck::cast_slice(&quad_instances)
+        );
     }
 
     fn get_output_frame(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
@@ -176,7 +202,7 @@ impl Pipeline {
     pub fn get_persistent_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
         let frame = TextureContainer::create_mutable(
             wgpu_interface,
-            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
             size
         );
         let index = self.frame_cache.insert_keyless(frame);
@@ -193,7 +219,7 @@ impl Pipeline {
         } else {
             let new_texture = TextureContainer::create_mutable(
                 wgpu_interface,
-                &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+                &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
                 size
             );
             let index = self.frame_cache.insert_leasable_and_take(size,new_texture);
@@ -209,7 +235,7 @@ impl Pipeline {
         let image = ImageReader::open(path)?.decode()?;
         let texture_container = TextureContainer::from_image(
             wgpu_interface,
-            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
             &image
         );
         return Ok(FrameInternal::create_texture(
@@ -217,12 +243,58 @@ impl Pipeline {
             self.frame_cache.insert_keyless(texture_container)
         ));
     }
+
+    pub fn config_render_pass<'a>(
+        
+        &mut self,wgpu_interface: &impl WGPUInterface,
+        size: (u32,u32),
+        mut render_pass: RenderPass<'a>
+
+    ) -> RenderPass<'a> {
+        //render_pass.set_bind_group(index, bind_group, offsets);
+
+        let buffer_start: u32 = self.request_uniform_buffer_start();
+
+        wgpu_interface.get_queue().write_buffer(
+            &self.uniform_buffer,
+            buffer_start as u64,
+            bytemuck::bytes_of(&get_ortho_matrix(size))
+        );
+
+        render_pass.set_bind_group(
+            Pipeline::UNIFORM_BIND_GROUP_INDEX,
+            &self.uniform_bind_group,
+            &[buffer_start]
+        );
+
+        render_pass.set_index_buffer(
+            self.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint32
+        );
+
+        render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..));
+
+        return render_pass;
+    }
+}
+
+fn get_ortho_matrix(size: (u32,u32)) -> ViewProjectionMatrix {
+    let (width,height) = size;
+    let matrix = cgmath::ortho(
+        0.0, //Left
+        width as f32, //Right
+        height as f32, //Bottom
+        0.0, //Top
+        -1.0, //Near
+        1.0, //Far
+    ).into();
+    return matrix;
 }
 
 fn create_pipeline(
     wgpu_interface: &impl WGPUInterface,
-    quad_instance_capacity: usize,
-    uniform_capacity: usize,
+    quad_instance_capacity: u32,
+    uniform_capacity: u32,
     cache_config: Option<FrameCacheConfig>
 ) -> Pipeline {
 
@@ -266,20 +338,21 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
 
     let instance_buffer = device.create_buffer(&BufferDescriptor{
         label: Some("Instance Buffer"),
-        size: (size_of::<QuadInstance>() * quad_instance_capacity) as u64,
+        size: (size_of::<QuadInstance>() * quad_instance_capacity as usize) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
 
     let uniform_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("View Projection Buffer"),
-        size: (size_of::<ViewProjectionMatrix>() * uniform_capacity) as u64,
+        //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
+        size: (UNIFORM_BUFFER_ALIGNMENT * uniform_capacity) as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false
     });
 
     let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &render_pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
+        layout: &render_pipeline.get_bind_group_layout(Pipeline::UNIFORM_BIND_GROUP_INDEX),
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform_buffer.as_entire_binding(),
@@ -295,10 +368,10 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
             let mut textures = Arena::with_capacity(capacity);
             let mut mutable_textures = HashMap::with_capacity(capacity);
 
-            let bind_group_layout = &render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
+            let bind_group_layout = &render_pipeline.get_bind_group_layout(Pipeline::TEXTURE_BIND_GROUP_INDEX);
 
             for size in config.sizes.iter() {
-                let mut queue = VecDeque::with_capacity(config.instances);
+                let mut queue = VecDeque::with_capacity(config.instances as usize);
 
                 for _ in 0..config.instances {
 
@@ -330,8 +403,8 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         encoder: None,
         active: false,
         output_frame_index: None,
-        instance_buffer_counter: usize::MIN,
-        uniform_buffer_counter: usize::MIN
+        instance_buffer_counter: 0,
+        uniform_buffer_counter: 0
     };
 }
 
@@ -369,7 +442,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
             visibility: wgpu::ShaderStages::VERTEX,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false, //TODO: Investigate
+                has_dynamic_offset: true,
                 min_binding_size: None,
             },
             count: None,
@@ -415,7 +488,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
         }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: Some(IndexFormat::Uint16),
+            strip_index_format: Some(IndexFormat::Uint32),
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
@@ -435,22 +508,23 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
     return pipeline;
 }
 
-
-#[repr(C)] //TODO: Might need align(256) ????
+#[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct Vertex {
-    pub position: [f32;2]
+pub struct Vertex { // Aligned to 16
+    pub position: [f32;2],
+    _padding: [f32;2]
 }
 
-#[repr(C)] //TODO: Might need align(256) ????
+#[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct QuadInstance {
+pub struct QuadInstance { //Aligned to 64
     pub position: [f32;2],
     pub size: [f32;2],
     pub uv_position: [f32;2],
     pub uv_size: [f32;2],
+    pub color: [f32;4],
     pub rotation: f32,
-    pub color: u32,
+    pub _padding: [f32;3]
 }
 
 #[non_exhaustive]
@@ -462,8 +536,8 @@ impl ATTR {
     pub const SIZE: u32 = 2;
     pub const UV_POS: u32 = 3;
     pub const UV_SIZE: u32 = 4;
-    pub const ROTATION: u32 = 5;
-    pub const COLOR: u32 = 6;
+    pub const COLOR: u32 = 5;
+    pub const ROTATION: u32 = 6;
 }
 
 impl Vertex {
@@ -486,8 +560,8 @@ impl QuadInstance {
         ATTR::SIZE => Float32x2,
         ATTR::UV_POS => Float32x2,
         ATTR::UV_SIZE => Float32x2,
+        ATTR::COLOR => Float32x4,
         ATTR::ROTATION => Float32,
-        ATTR::COLOR => Uint32
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {

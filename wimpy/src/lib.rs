@@ -3,10 +3,7 @@
 use image::ImageError;
 
 use crate::{
-    area::Area,
-    frame::PositionUVRotation,
-    pipeline_management::Pipeline,
-    wgpu_interface::WGPUInterface
+    area::Area, color::Color, frame::DrawData, pipeline_management::Pipeline, wgpu_interface::WGPUInterface
 };
 
 mod frame;
@@ -40,8 +37,8 @@ impl WGPUInterface for VirtualWGPUProvider {
     }
 }
 
-const MAX_QUADS: usize = 1000;
-const MAX_UNIFORMS: usize = 100;
+const MAX_QUADS: u32 = 1000;
+const MAX_UNIFORMS: u32 = 100;
 
 fn test() -> Result<(),ImageError> {
 
@@ -59,10 +56,11 @@ fn test() -> Result<(),ImageError> {
     f.set_texture_filter(frame::FilterMode::Nearest);
     f.set_texture_wrap(frame::WrapMode::Clamp);
 
-    f.draw_frame(&texture_frame,PositionUVRotation {
-        position: Area::NORMAL,
-        uv: Area::NORMAL,
-        rotation: 0.0
+    f.draw_frame(&texture_frame,DrawData {
+        area: Area::one(),
+        uv: Area::one(),
+        rotation: 0.0,
+        color: Color::BLACK,
     });
 
     f.finish(&w,&mut pipeline);

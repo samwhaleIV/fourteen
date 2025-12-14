@@ -13,8 +13,8 @@ struct InstanceInput {
     @location(2) scale: vec2<f32>,
     @location(3) uv_offset: vec2<f32>,
     @location(4) uv_scale: vec2<f32>,
-    @location(5) rotation: f32,
-    @location(6) color: u32,
+    @location(5) color: vec4<f32>,
+    @location(6) rotation: f32,
 }
 
 struct VertexOutput {
@@ -22,15 +22,6 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
 };
-
-fn unpack_rgba8(color: u32) -> vec4<f32> {
-    return vec4<f32>(
-        f32((color >> 24u) & 0xFFu),
-        f32((color >> 16u) & 0xFFu),
-        f32((color >>  8u) & 0xFFu),
-        f32(color & 0xFFu)
-    ) / 255.0;
-}
 
 fn rotate(rotation: f32) -> mat2x2<f32> {
     let c = cos(rotation);
@@ -49,7 +40,7 @@ fn rotate(rotation: f32) -> mat2x2<f32> {
     out.clip_position = camera.view_projection * vec4<f32>(world_position,0.0,1.0);
     out.uv = (vertex.position + vec2<f32>(0.5)) * instance.uv_scale + instance.uv_offset;
 
-    out.color = unpack_rgba8(instance.color);
+    out.color = instance.color;
     return out;
 }
 

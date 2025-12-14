@@ -14,7 +14,22 @@ pub struct Area {
     pub height: Unit
 }
 
+impl Default for Area {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0
+        }
+    }
+}
+
 impl Area {
+    pub fn one() -> Self {
+        return Self::default()
+    }
+
     pub fn to_center_encoded(&self) -> Self {
         return Self {
             x: self.x + (self.width * -0.5),

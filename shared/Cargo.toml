@@ -9,7 +9,7 @@ winit = { workspace = true }
 image = { workspace = true }
 collections = { path = "../collections" }
 bytemuck =  { workspace = true }
-cgmath = "0.18.0"
+cgmath = { workspace = true }
 log = { workspace = true }
 pollster = "0.4.0"
 wgpu = { workspace = true }
