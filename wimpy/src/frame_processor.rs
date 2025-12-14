@@ -20,33 +20,10 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
     /* This is not where the encoder is created. Only 1 encoder is created for the master, output frame. */
     if let Some(mut encoder) = pipeline.try_borrow_encoder() {
         {
-            let operations = wgpu::Operations {
-                load: match frame.get_clear_color() {
-                    Some(color) => wgpu::LoadOp::Clear(color),
-                    None => wgpu::LoadOp::Load,
-                },
-                store: wgpu::StoreOp::Store,
-            };
+            let mut render_pass = pipeline.create_render_pass(wgpu_interface,frame,&mut encoder);
 
-            let view = pipeline.get_texture_container(frame.get_index()).get_view();
-
-            let mut render_pass = pipeline.config_render_pass(
-                wgpu_interface,
-                frame.size(),
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: operations,
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            }));
-
-            process_commands(frame,&mut render_pass,pipeline,wgpu_interface.get_queue());
+            let queue = wgpu_interface.get_queue();
+            process_commands(&mut render_pass,frame,pipeline,queue);
         }
         pipeline.return_encoder(encoder);
     } else {
@@ -54,7 +31,7 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
     }
 }
 
-fn process_commands(frame: &Frame,render_pass: &mut RenderPass,pipeline: &mut Pipeline,queue: &wgpu::Queue) {
+fn process_commands(render_pass: &mut RenderPass,frame: &Frame,pipeline: &mut Pipeline,queue: &wgpu::Queue) {
 
     let mut needs_sampler_update: bool = true;
 
@@ -101,9 +78,13 @@ fn process_commands(frame: &Frame,render_pass: &mut RenderPass,pipeline: &mut Pi
                 }
             },
 
-            FrameCommand::DrawFrame(_,draw_data) => pipeline.write_quad(queue,draw_data),
+            FrameCommand::DrawFrame(_,draw_data) => {
+                pipeline.write_quad(render_pass,queue,draw_data);
+            },
 
-            FrameCommand::DrawFrameSet(_,draw_data_set) => pipeline.write_quad_set(queue,&draw_data_set),
+            FrameCommand::DrawFrameSet(_,draw_data_set) => {
+                pipeline.write_quad_set(render_pass,queue,&draw_data_set);
+            },
         }
     }
 }

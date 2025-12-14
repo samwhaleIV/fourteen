@@ -12,13 +12,22 @@ use bytemuck::{
 use generational_arena::{Arena, Index};
 
 use image::{
-    EncodableLayout,
     ImageError,
     ImageReader
 };
 
 use wgpu::{
-    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPass, RenderPipeline, util::{
+    BindGroup,
+    BindGroupLayout,
+    BindGroupLayoutDescriptor,
+    Buffer, BufferDescriptor,
+    BufferUsages,
+    CommandEncoder,
+    CommandEncoderDescriptor,
+    IndexFormat,
+    RenderPass,
+    RenderPipeline,
+    util::{
         BufferInitDescriptor,
         DeviceExt
     }
@@ -161,7 +170,7 @@ impl Pipeline {
         return index;
     }
 
-    pub fn write_quad(&mut self,queue: &wgpu::Queue,draw_data: &DrawData) {
+    pub fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData) {
         let quad_instance = &draw_data.to_quad_instance();
         let index = self.request_instance_buffer_start(1);
         queue.write_buffer(
@@ -169,9 +178,11 @@ impl Pipeline {
             index as u64,
             bytemuck::bytes_of(quad_instance)
         );
+
+        render_pass.draw_indexed(0..6,0,0..1);
     }
 
-    pub fn write_quad_set(&mut self,queue: &wgpu::Queue,draw_data: &[DrawData]) {
+    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]) {
         let mut quad_instances = Vec::with_capacity(draw_data.len());
         quad_instances.extend(draw_data.iter().map(|d|d.to_quad_instance()));
 
@@ -182,6 +193,8 @@ impl Pipeline {
             index as u64,
             bytemuck::cast_slice(&quad_instances)
         );
+
+        render_pass.draw_indexed(0..6,0,0..draw_data.len() as u32);
     }
 
     fn get_output_frame(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
@@ -244,13 +257,31 @@ impl Pipeline {
         ));
     }
 
-    pub fn config_render_pass<'a>(
-        
-        &mut self,wgpu_interface: &impl WGPUInterface,
-        size: (u32,u32),
-        mut render_pass: RenderPass<'a>
-
+    pub fn create_render_pass<'a>(
+        &mut self,
+        wgpu_interface: &impl WGPUInterface,
+        frame: &Frame,
+        encoder: &'a mut CommandEncoder,
     ) -> RenderPass<'a> {
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: self.get_texture_container(frame.get_index()).get_view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: match frame.get_clear_color() {
+                        Some(color) => wgpu::LoadOp::Clear(color),
+                        None => wgpu::LoadOp::Load,
+                    },
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
         //render_pass.set_bind_group(index, bind_group, offsets);
 
         let buffer_start: u32 = self.request_uniform_buffer_start();
@@ -258,7 +289,7 @@ impl Pipeline {
         wgpu_interface.get_queue().write_buffer(
             &self.uniform_buffer,
             buffer_start as u64,
-            bytemuck::bytes_of(&get_ortho_matrix(size))
+            bytemuck::bytes_of(&get_ortho_matrix(frame.size()))
         );
 
         render_pass.set_bind_group(
@@ -273,6 +304,7 @@ impl Pipeline {
         );
 
         render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1,self.instance_buffer.slice(..));
 
         return render_pass;
     }
@@ -311,28 +343,27 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
                 1---3
 */
 
-    let vertices = vec![
+    let vertices = [
         -0.5,-0.5, //Top Left     0
         -0.5, 0.5, //Bottom Left  1
          0.5,-0.5, //Top Right    2
          0.5, 0.5  //Bottom Right 3
     ];
 
-    let indices = vec![
-        0,1,2, //First Triangle
-        2,1,3, //Second Triangle
-        u16::MAX
+    let indices: [u32;6] = [
+        0,1,2,
+        2,1,3
     ];
 
     let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
         label: Some("Index Buffer"),
-        contents: indices.as_bytes(),
+        contents: bytemuck::cast_slice(&indices),
         usage: wgpu::BufferUsages::INDEX
     });
 
     let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
         label: Some("Vertex Buffer"),
-        contents: vertices.as_bytes(),
+        contents: bytemuck::cast_slice(&vertices),
         usage: wgpu::BufferUsages::VERTEX
     });
 
