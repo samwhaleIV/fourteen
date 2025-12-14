@@ -38,7 +38,7 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
                 timestamp_writes: None,
             });
 
-            process_commands(frame,&render_pass);
+            process_commands(frame,&render_pass,pipeline);
         }
         pipeline.return_encoder(encoder);
     } else {
@@ -46,7 +46,7 @@ pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: 
     }
 }
 
-fn process_commands(frame: &Frame,render_pass: &RenderPass) {
+fn process_commands(frame: &Frame,render_pass: &RenderPass,pipeline: &mut Pipeline) {
     /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
     for command in frame.get_command_buffer().iter() {
         match command {

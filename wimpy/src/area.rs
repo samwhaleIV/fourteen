@@ -1,86 +1,154 @@
 #![allow(dead_code,unused_variables)]
 
+type Unit = f32;
+
+pub struct Layout {
+    pub x: LayoutDimension,
+    pub y: LayoutDimension
+}
+
 pub struct Area {
-    pub top:    f32,
-    pub left:   f32,
-    pub right:  f32,
-    pub bottom: f32,
+    pub x: Unit,
+    pub y: Unit,
+    pub width: Unit,
+    pub height: Unit
 }
 
 impl Area {
-
-    pub const NORMAL: Self = Self {
-        top:    0.0,
-        left:   0.0,
-        right:  1.0,
-        bottom: 1.0,
-    };
-
-    pub const INVERT_X: Self = Self {
-        top:    0.0,
-        left:   1.0,
-        right:  0.0,
-        bottom: 1.0,
-    };
-
-    pub const INVERT_Y: Self = Self {
-        top:    1.0,
-        left:   0.0,
-        right:  1.0,
-        bottom: 0.0,
-    };
-
-    pub const INVERT_XY: Self = Self {
-        top:    1.0,
-        left:   1.0,
-        right:  0.0,
-        bottom: 0.0,
-    };
-
-    pub fn centered_on(x: f32,y: f32,width: f32,height: f32) -> Area {
-        let half_width = width * 0.5;
-        let half_height = height * 0.5;
-        return Area {
-            top: y - half_height,
-            left: x - half_width,
-            right: x + half_width,
-            bottom: y + half_height
-        };
+    pub fn to_center_encoded(&self) -> Self {
+        return Self {
+            x: self.x + (self.width * -0.5),
+            y: self.y + (self.height * -0.5),
+            width: self.width,
+            height: self.height
+        }
     }
-
-    pub fn width(&self) -> f32 {
-        return self.right - self.left;
+    pub fn to_top_left_encoded(&self) -> Self {
+        return Self {
+            x: self.x + (self.width * -0.5),
+            y: self.y + (self.height * -0.5),
+            width: self.width,
+            height: self.height
+        }
     }
+}
 
-    pub fn height(&self) -> f32 {
-        return self.bottom - self.top;
+#[derive(Copy,Clone)]
+pub enum Alignment {
+    LeftToRight,
+    RightToLeft,
+    Center,
+    CenterLeftToRight,
+    CenterRightToLeft,
+    Absolute
+}
+
+#[derive(Copy,Clone)]
+pub enum SizeMode {
+    Absolute,
+    Relative
+}
+
+#[derive(Copy,Clone)]
+pub struct Position {
+    pub value: Size,
+    pub alignment: Alignment
+}
+
+#[derive(Copy,Clone)]
+pub struct Size {
+    pub value: Unit,
+    pub mode: SizeMode
+}
+
+#[derive(Copy,Clone)]
+pub struct LayoutDimension {
+    pub position: Position,
+    pub size: Size,
+    pub size_offset: Size,
+}
+
+impl Layout {
+    //Top Left Encoded
+    pub fn to_area(&self,parent: &Area) -> Area {  
+        let (x,width) = calculate_area_dimension(parent.x,parent.width,self.x);
+        let (y,height) = calculate_area_dimension(parent.y,parent.height,self.y);
+        return Area { x, y, width, height };
     }
+}
 
-    pub fn size(&self) -> (f32,f32) {
-        return (self.width(),self.height());
+fn calculate_area_dimension(parent_position: Unit,parent_size: Unit,child: LayoutDimension) -> (Unit,Unit) {
+    let mut size = dimension(parent_size,child.size);
+    let mut position = position(parent_position,parent_size,size,child.position);
+
+    /* Applies after all other layout calculation. */
+    let size_offset = dimension(parent_size,child.size_offset);
+
+    /* Inset or outset position based on the size change */
+    position += size_offset * -0.5;
+
+    size += size_offset;
+
+    return (position,size);
+}
+
+fn dimension(parent_value: Unit,child: Size) -> Unit {
+    return match child.mode {
+        SizeMode::Absolute => child.value,
+        SizeMode::Relative => parent_value * child.value,
     }
+}
 
-    pub fn center(&self) -> (f32,f32) {
-        let (width,height) = self.size();
-        let x = self.left + width * 0.5;
-        let y = self.top + height * 0.5;
-        return (x,y);
-    }
+fn position(parent_position: Unit,parent_size: Unit,child_size: Unit,child_position: Position) -> Unit {
 
-    pub fn top_left(&self) -> (f32,f32) {
-        return (self.left,self.top);
-    }
+    let position_offset = dimension(parent_size,child_position.value);
 
-    pub fn bottom_right(&self) -> (f32,f32) {
-        return (self.right,self.bottom);
-    }
+    return match child_position.alignment {
+        Alignment::Center => {
+            //Translate to center of parent
+            (parent_position + parent_size * 0.5) +
+            //Align child on axis line
+            (child_size * -0.5) +
+            //Apply offset in regular LTR
+            position_offset
+        },
+        
+        Alignment::CenterLeftToRight => {
+            //Translate to center of parent
+            (parent_position + parent_size * 0.5) +
+            //Apply offset in regular LTR
+            position_offset
+        },
 
-    pub fn from_size(x: f32,y: f32,width: f32,height: f32) -> Area {
-        return Area {
-            top: y,
-            left: x,
-            right: x + width,
-            bottom: y + height
-        };
+        Alignment::CenterRightToLeft => {
+            //Center of parent
+            (parent_position + parent_size * 0.5) +
+            //Push right edge to axis line
+            (child_size * -1.0) +
+            //Apply offset inverted because of RTL
+            (position_offset * -1.0)
+        },
+
+        Alignment::LeftToRight => {
+            //Parent position, which we inherit
+            parent_position +
+            //Apply offset in regular LTR
+            position_offset
+        },
+
+        Alignment::RightToLeft => {
+            //Translate to center of parent
+            (parent_position + parent_size) +
+            //Push right edge to axis line
+            (child_size * -1.0) +
+            //Apply offset inverted because of RTL
+            (position_offset * -1.0)
+        },
+
+        /* Position is absolute, but the value itself can be parent size relative. */
+        Alignment::Absolute => {
+            //Apply offset in regular LTR. No constraint to parent bound
+            position_offset
+        },
     }
 }
