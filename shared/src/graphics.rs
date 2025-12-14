@@ -385,7 +385,7 @@ fn create_basic_pipeline(device: &wgpu::Device,fragment_format: wgpu::TextureFor
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/position_uv_color.wgsl").into())
+        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/quads.wgsl").into())
     });
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

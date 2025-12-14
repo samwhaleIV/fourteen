@@ -240,10 +240,10 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
 */
 
     let vertices = vec![
-        0.0,0.0, //Top Left     0
-        0.0,1.0, //Bottom Left  1
-        1.0,0.0, //Top Right    2
-        1.0,1.0  //Bottom Right 3
+        -0.5,-0.5, //Top Left     0
+        -0.5, 0.5, //Bottom Left  1
+         0.5,-0.5, //Top Right    2
+         0.5, 0.5  //Bottom Right 3
     ];
 
     let indices = vec![
@@ -369,7 +369,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
             visibility: wgpu::ShaderStages::VERTEX,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
+                has_dynamic_offset: false, //TODO: Investigate
                 min_binding_size: None,
             },
             count: None,
@@ -379,7 +379,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/position_uv_color.wgsl").into())
+        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/quads.wgsl").into())
     });
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -436,13 +436,13 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
 }
 
 
-#[repr(C)]
+#[repr(C)] //TODO: Might need align(256) ????
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct Vertex {
     pub position: [f32;2]
 }
 
-#[repr(C)]
+#[repr(C)] //TODO: Might need align(256) ????
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct QuadInstance {
     pub position: [f32;2],
@@ -450,38 +450,51 @@ pub struct QuadInstance {
     pub uv_position: [f32;2],
     pub uv_size: [f32;2],
     pub rotation: f32,
-    pub color: [f32;4],
+    pub color: u32,
+}
+
+#[non_exhaustive]
+struct ATTR;
+
+impl ATTR {
+    pub const VERTEX_POSITION: u32 = 0;
+    pub const INSTANCE_POSITION: u32 = 1;
+    pub const SIZE: u32 = 2;
+    pub const UV_POS: u32 = 3;
+    pub const UV_SIZE: u32 = 4;
+    pub const ROTATION: u32 = 5;
+    pub const COLOR: u32 = 6;
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute;1] = wgpu::vertex_attr_array![
-        0 => Float32x2,
+    const ATTRS: [wgpu::VertexAttribute;1] = wgpu::vertex_attr_array![
+        ATTR::VERTEX_POSITION => Float32x2,
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         return wgpu::VertexBufferLayout {
             array_stride: size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
+            attributes: &Self::ATTRS,
         }
     }
 }
 
 impl QuadInstance {
-    const ATTRIBS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
-        0 => Float32x2,
-        1 => Float32x2,
-        2 => Float32x2,
-        3 => Float32x2,
-        4 => Float32,
-        5 => Float32x4
+    const ATTRS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
+        ATTR::INSTANCE_POSITION => Float32x2,
+        ATTR::SIZE => Float32x2,
+        ATTR::UV_POS => Float32x2,
+        ATTR::UV_SIZE => Float32x2,
+        ATTR::ROTATION => Float32,
+        ATTR::COLOR => Uint32
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         return wgpu::VertexBufferLayout {
             array_stride: size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
+            attributes: &Self::ATTRS,
         }
     }
 }
