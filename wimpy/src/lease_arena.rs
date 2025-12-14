@@ -1,5 +1,4 @@
 use std::{collections::{HashMap, VecDeque}, hash::Hash};
-
 use generational_arena::{Arena, Index};
 
 pub struct LeaseArena<TKey,TValue> {
@@ -18,6 +17,7 @@ impl<TKey: Hash + Eq + Copy,TValue> Default for LeaseArena<TKey,TValue> {
     }
 }
 
+#[allow(dead_code)]
 impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
 
     pub fn create_with_values(

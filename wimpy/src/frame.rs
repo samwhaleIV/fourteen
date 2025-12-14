@@ -1,5 +1,3 @@
-//#![allow(dead_code,unused_variables)]
-
 use std::{collections::VecDeque, ptr};
 use generational_arena::Index;
 
@@ -39,9 +37,6 @@ pub struct Frame {
 
 pub trait FrameInternal {
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand>;
-    fn get_size(&self) -> (u32,u32);
-    fn get_type(&self) -> FrameType;
-
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_writable(&self) -> bool;
 
@@ -85,14 +80,6 @@ impl FrameInternal for Frame {
 
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand> {
         return &self.command_buffer;
-    }
-
-    fn get_size(&self) -> (u32,u32) {
-        return (self.width,self.height);
-    }
-
-    fn get_type(&self) -> FrameType {
-        return self.usage;
     }
 
     fn is_writable(&self) -> bool {
@@ -143,6 +130,7 @@ impl FrameInternal for Frame {
 }
 
  //Conveniently enough, 64 bytes wide.
+ #[allow(dead_code)]
 pub enum FrameCommand {
     /* Single Fire Draw Commands */
 
@@ -159,6 +147,7 @@ pub enum FrameCommand {
 }
 
 #[derive(Copy,Clone,PartialEq)]
+#[allow(dead_code)]
 pub enum WrapMode {
     Clamp,
     Repeat,
@@ -166,6 +155,7 @@ pub enum WrapMode {
 }
 
 #[derive(Copy,Clone,PartialEq)]
+#[allow(dead_code)]
 pub enum FilterMode {
     Nearest,
     Linear,
@@ -212,53 +202,48 @@ fn validate_size(size: (u32,u32)) {
     panic!("Invalid frame size. Width and height must be greater than 1.");
 }
 
+fn get_src_dst_cmp_result(destination: &Frame,source: &Frame) -> SrcDstCmpResult {
+    if source.usage == FrameType::Output {
+        return SrcDstCmpResult::OutputMisuse;
+    }
+
+    if match source.write_lock {
+        LockStatus::FutureUnlock => true,
+        LockStatus::FutureLock => true,
+        LockStatus::Unlocked => false,
+        LockStatus::Locked => false,
+    } {
+        return SrcDstCmpResult::EmptySource;
+    }
+
+    if !destination.is_writable() {
+        return SrcDstCmpResult::ReadonlyDestination;
+    }
+
+    if ptr::eq::<Frame>(destination,source) {
+        return SrcDstCmpResult::CircularReference;
+    }
+
+    return SrcDstCmpResult::Success;
+}
+
+fn validate_src_dst_op(destination: &Frame,source: &Frame) -> bool {
+    let result = get_src_dst_cmp_result(destination,source);
+    let valid = result == SrcDstCmpResult::Success;
+    if !valid {
+        log::error!("Frame draw error: {}",match result {
+            SrcDstCmpResult::Success => "Success... but not?",
+            SrcDstCmpResult::CircularReference => "Source and destination are the same.",
+            SrcDstCmpResult::ReadonlyDestination => "Destination is readonly.",
+            SrcDstCmpResult::EmptySource => "Frame source is empty/unrendered.",
+            SrcDstCmpResult::OutputMisuse => "Cannot use the output frame as a rendering source.",
+        });
+    }
+    return valid;
+}
+
+#[allow(dead_code)]
 impl Frame {
-
-    /* Internal */
-
-    fn validate_source_destination(&self,source: &Frame) -> SrcDstCmpResult {
-        let destination = self;
-
-        if source.usage == FrameType::Output {
-            return SrcDstCmpResult::OutputMisuse;
-        }
-
-        if match source.write_lock {
-            LockStatus::FutureUnlock => true,
-            LockStatus::FutureLock => true,
-            LockStatus::Unlocked => false,
-            LockStatus::Locked => false,
-        } {
-            return SrcDstCmpResult::EmptySource;
-        }
-
-        if !destination.is_writable() {
-            return SrcDstCmpResult::ReadonlyDestination;
-        }
-
-        if ptr::eq::<Frame>(destination,source) {
-            return SrcDstCmpResult::CircularReference;
-        }
-
-        return SrcDstCmpResult::Success;
-    }
-
-    fn validate(&self,frame: &Frame) -> bool {
-        let result = self.validate_source_destination(frame);
-        let valid = result == SrcDstCmpResult::Success;
-        if !valid {
-            log::error!("Frame draw error: {}",match result {
-                SrcDstCmpResult::Success => "Success... but not?",
-                SrcDstCmpResult::CircularReference => "Source and destination are the same.",
-                SrcDstCmpResult::ReadonlyDestination => "Destination is readonly.",
-                SrcDstCmpResult::EmptySource => "Frame source is empty/unrendered.",
-                SrcDstCmpResult::OutputMisuse => "Cannot use the output frame as a rendering source.",
-            });
-        }
-        return valid;
-    }
-
-    /* Draw Related Commands */
 
     pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
         self.command_buffer.push_back(FrameCommand::SetTextureFilter(filter_mode));
@@ -270,14 +255,14 @@ impl Frame {
 
     /* Draw Commands */
     pub fn draw_frame(&mut self,frame: &Frame,draw_data: DrawData) {
-        if !self.validate(frame) {
+        if !validate_src_dst_op(self,frame) {
             return;
         }
         self.command_buffer.push_back(FrameCommand::DrawFrame(self.index,draw_data));
     }
 
     pub fn draw_frame_set(&mut self,frame: &Frame,draw_data: Vec<DrawData>) {
-        if !self.validate(frame) {
+        if !validate_src_dst_op(self,frame) {
             return;
         }
         self.command_buffer.push_back(FrameCommand::DrawFrameSet(self.index,draw_data));
@@ -305,15 +290,6 @@ impl Frame {
     }
 
     /* Size Getters */
-    
-    pub fn width(&self) -> u32 {
-        return self.width;
-    }
-
-    pub fn height(&self) -> u32 {
-        return self.height;
-    }
-
     pub fn size(&self) -> (u32,u32) {
         return (self.width,self.height);
     }

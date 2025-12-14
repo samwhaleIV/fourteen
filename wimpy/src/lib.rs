@@ -1,4 +1,4 @@
-#![allow(dead_code,unused_variables)]
+//#![allow(dead_code,unused_variables)]
 
 use image::ImageError;
 
@@ -40,6 +40,7 @@ impl WGPUInterface for VirtualWGPUProvider {
 const MAX_QUADS: u32 = 1000;
 const MAX_UNIFORMS: u32 = 100;
 
+#[allow(dead_code)]
 fn test() -> Result<(),ImageError> {
 
     let mut w = VirtualWGPUProvider {

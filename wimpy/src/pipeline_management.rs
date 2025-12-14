@@ -18,7 +18,6 @@ use image::{
 
 use wgpu::{
     BindGroup,
-    BindGroupLayout,
     BindGroupLayoutDescriptor,
     Buffer, BufferDescriptor,
     BufferUsages,
@@ -72,6 +71,9 @@ struct FrameCacheConfig<'a> {
     instances: u32
 }
 
+
+#[allow(dead_code)]
+
 impl Pipeline {
 
     pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
@@ -108,7 +110,17 @@ impl Pipeline {
         }));
         self.active = true;
 
-        return self.get_output_frame(wgpu_interface);
+        if self.output_frame_index.is_some() {
+            panic!("Output frame already exists!");
+        }
+        let texture_container = TextureContainer::create_output(wgpu_interface);
+        let size = texture_container.size();
+
+        let index = self.frame_cache.insert_keyless(texture_container);
+
+        self.output_frame_index = Some(index);
+
+        return FrameInternal::create_output(size,index);
     }
 
     pub fn finish(&mut self,wgpu_interface: &mut impl WGPUInterface) {
@@ -134,81 +146,6 @@ impl Pipeline {
         } else {
             panic!("Encoder not found. Did a caller forget to return it?");
         }
-    }
-
-    pub fn try_borrow_encoder(&mut self) -> Option<CommandEncoder> {
-        if let Some(encoder) = self.encoder.take() {
-            return Some(encoder);
-        } else {
-            return None;
-        }
-    }
-
-    pub fn return_encoder(&mut self,encoder: CommandEncoder) {
-        if !self.active {
-            panic!("Pipeline was not started. There is no active command encoder.");
-        }
-        if self.encoder.is_some() {
-            panic!("Pipeline already has a command encoder in place.");
-        }
-        self.encoder = Some(encoder);
-    }
-
-    pub fn get_texture_bind_group_layout(&self) -> BindGroupLayout {
-        return self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX);
-    }
-
-    fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
-        let index = self.instance_buffer_counter;
-        self.instance_buffer_counter += quad_count * size_of::<QuadInstance>() as u32;
-        return index;
-    }
-
-    fn request_uniform_buffer_start(&mut self) -> u32 {
-        let index = self.uniform_buffer_counter;
-        self.uniform_buffer_counter += UNIFORM_BUFFER_ALIGNMENT;
-        return index;
-    }
-
-    pub fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData) {
-        let quad_instance = &draw_data.to_quad_instance();
-        let index = self.request_instance_buffer_start(1);
-        queue.write_buffer(
-            &self.instance_buffer,
-            index as u64,
-            bytemuck::bytes_of(quad_instance)
-        );
-
-        render_pass.draw_indexed(0..6,0,0..1);
-    }
-
-    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]) {
-        let mut quad_instances = Vec::with_capacity(draw_data.len());
-        quad_instances.extend(draw_data.iter().map(|d|d.to_quad_instance()));
-
-        let index = self.request_instance_buffer_start(draw_data.len() as u32);
-
-        queue.write_buffer(
-            &self.instance_buffer,
-            index as u64,
-            bytemuck::cast_slice(&quad_instances)
-        );
-
-        render_pass.draw_indexed(0..6,0,0..draw_data.len() as u32);
-    }
-
-    fn get_output_frame(&mut self,wgpu_interface: &impl WGPUInterface) -> Frame {
-        if self.output_frame_index.is_some() {
-            panic!("Output frame already exists!");
-        }
-        let texture_container = TextureContainer::create_output(wgpu_interface);
-        let size = texture_container.size();
-
-        let index = self.frame_cache.insert_keyless(texture_container);
-
-        self.output_frame_index = Some(index);
-
-        return FrameInternal::create_output(size,index);
     }
 
     /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
@@ -240,10 +177,6 @@ impl Pipeline {
         }
     }
 
-    pub fn get_texture_container(&self,reference: Index) -> &TextureContainer {
-        return self.frame_cache.get(reference);
-    }
-
     pub fn load_texture(&mut self,wgpu_interface: &impl WGPUInterface,path: &str) -> Result<Frame,ImageError> {
         let image = ImageReader::open(path)?.decode()?;
         let texture_container = TextureContainer::from_image(
@@ -257,17 +190,47 @@ impl Pipeline {
         ));
     }
 
-    pub fn create_render_pass<'a>(
+    fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
+        let index = self.instance_buffer_counter;
+        self.instance_buffer_counter += quad_count * size_of::<QuadInstance>() as u32;
+        return index;
+    }
+
+    fn request_uniform_buffer_start(&mut self) -> u32 {
+        let index = self.uniform_buffer_counter;
+        self.uniform_buffer_counter += UNIFORM_BUFFER_ALIGNMENT;
+        return index;
+    }
+}
+
+pub trait PipelineInternal {
+    fn get_texture_container(&self,reference: Index) -> &TextureContainer;
+    fn create_render_pass<'a>(&mut self,wgpu_interface: &impl WGPUInterface,frame: &Frame,encoder: &'a mut CommandEncoder,) -> RenderPass<'a>;
+    fn try_borrow_encoder(&mut self) -> Option<CommandEncoder>;
+    fn return_encoder(&mut self,encoder: CommandEncoder);
+    fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData);
+    fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]);
+}
+
+impl PipelineInternal for Pipeline {
+
+    fn get_texture_container(&self,reference: Index) -> &TextureContainer {
+        return self.frame_cache.get(reference);
+    }
+
+    fn create_render_pass<'a>(
         &mut self,
         wgpu_interface: &impl WGPUInterface,
         frame: &Frame,
         encoder: &'a mut CommandEncoder,
     ) -> RenderPass<'a> {
 
+        let texture_view = self.frame_cache.get(frame.get_index()).get_view();
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: self.get_texture_container(frame.get_index()).get_view(),
+                view: texture_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -282,8 +245,6 @@ impl Pipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        //render_pass.set_bind_group(index, bind_group, offsets);
-
         let buffer_start: u32 = self.request_uniform_buffer_start();
 
         wgpu_interface.get_queue().write_buffer(
@@ -292,25 +253,75 @@ impl Pipeline {
             bytemuck::bytes_of(&get_ortho_matrix(frame.size()))
         );
 
+        //Index buffer
+        render_pass.set_index_buffer(
+            self.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint32
+        );
+
+        //Vertex buffer
+        render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..));
+
+        //Instance buffer
+        render_pass.set_vertex_buffer(1,self.instance_buffer.slice(..));
+        
+        //Uniform buffer bind group
         render_pass.set_bind_group(
             Pipeline::UNIFORM_BIND_GROUP_INDEX,
             &self.uniform_bind_group,
             &[buffer_start]
         );
 
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint32
+        return render_pass;
+    }
+
+    fn try_borrow_encoder(&mut self) -> Option<CommandEncoder> {
+        if let Some(encoder) = self.encoder.take() {
+            return Some(encoder);
+        } else {
+            return None;
+        }
+    }
+
+    fn return_encoder(&mut self,encoder: CommandEncoder) {
+        if !self.active {
+            panic!("Pipeline was not started. There is no active command encoder.");
+        }
+        if self.encoder.is_some() {
+            panic!("Pipeline already has a command encoder in place.");
+        }
+        self.encoder = Some(encoder);
+    }
+
+    fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData) {
+        let quad_instance = &draw_data.to_quad_instance();
+        let index = self.request_instance_buffer_start(1);
+        queue.write_buffer(
+            &self.instance_buffer,
+            index as u64,
+            bytemuck::bytes_of(quad_instance)
         );
 
-        render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1,self.instance_buffer.slice(..));
+        render_pass.draw_indexed(0..6,0,0..1);
+    }
 
-        return render_pass;
+    fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]) {
+        let mut quad_instances = Vec::with_capacity(draw_data.len());
+        quad_instances.extend(draw_data.iter().map(|d|d.to_quad_instance()));
+
+        let index = self.request_instance_buffer_start(draw_data.len() as u32);
+
+        queue.write_buffer(
+            &self.instance_buffer,
+            index as u64,
+            bytemuck::cast_slice(&quad_instances)
+        );
+
+        render_pass.draw_indexed(0..6,0,0..draw_data.len() as u32);
     }
 }
 
-fn get_ortho_matrix(size: (u32,u32)) -> ViewProjectionMatrix {
+fn get_ortho_matrix(size: (u32,u32)) -> [[f32;4];4] {
     let (width,height) = size;
     let matrix = cgmath::ortho(
         0.0, //Left
@@ -601,24 +612,5 @@ impl QuadInstance {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &Self::ATTRS,
         }
-    }
-}
-
-type ViewProjectionMatrix = [[f32;4];4];
-
-#[repr(C)]
-#[derive(Debug,Copy,Clone,bytemuck::Pod,bytemuck::Zeroable)]
-pub struct ViewProjection {
-    value: ViewProjectionMatrix,
-}
-
-impl ViewProjection {
-    pub fn create(matrix: ViewProjectionMatrix) -> Self {
-        return ViewProjection {
-            value: matrix
-        }
-    }
-    pub fn get_bytes(&self) -> &[u8] {
-        return bytemuck::cast_slice(&self.value);
     }
 }

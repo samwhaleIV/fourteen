@@ -11,7 +11,7 @@ use crate::{
         FrameInternal,
         WrapMode
     },
-    pipeline_management::Pipeline,
+    pipeline_management::{Pipeline, PipelineInternal},
     texture_container::SamplerMode,
     wgpu_interface::WGPUInterface
 };
