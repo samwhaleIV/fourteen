@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::error::Error;
-
 use wimpy::{
     pipeline_management::Pipeline
 };

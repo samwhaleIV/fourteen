@@ -17,7 +17,16 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPass, RenderPipeline, SurfaceTexture, util::{
+    BindGroup,
+    BindGroupLayoutDescriptor,
+    Buffer, BufferDescriptor,
+    BufferUsages,
+    CommandEncoder,
+    CommandEncoderDescriptor,
+    RenderPass,
+    RenderPipeline,
+    SurfaceTexture,
+    util::{
         BufferInitDescriptor,
         DeviceExt
     }
@@ -200,6 +209,19 @@ impl Pipeline {
         ));
     }
 
+    pub fn load_texture_bytes(&mut self,wgpu_interface: &impl WGPUInterface,bytes: &[u8]) -> Frame {
+        let image = image::load_from_memory(bytes).unwrap();
+        let texture_container = TextureContainer::from_image(
+            wgpu_interface,
+            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
+            &image
+        );
+        return FrameInternal::create_texture(
+            texture_container.size(),
+            self.frame_cache.insert_keyless(texture_container)
+        );
+    }
+
     fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
         let index = self.instance_buffer_counter;
         self.instance_buffer_counter += quad_count * size_of::<QuadInstance>() as u32;
@@ -255,6 +277,8 @@ impl PipelineInternal for Pipeline {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
+        render_pass.set_pipeline(&self.render_pipeline);
+
         let buffer_start: u32 = self.request_uniform_buffer_start();
 
         wgpu_interface.get_queue().write_buffer(
@@ -543,7 +567,10 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
         }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: Some(IndexFormat::Uint32),
+
+             /* Only for PrimitiveTopology::TriangleStrip */
+            strip_index_format: None,
+
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
@@ -567,7 +594,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct Vertex { // Aligned to 16
     pub position: [f32;2],
-    _padding: [f32;2]
+    //_padding: [f32;2]
 }
 
 #[repr(C)]

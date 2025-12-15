@@ -11,7 +11,7 @@ pub struct TestState {
 }
 
 pub fn generate_test_state(graphics: &Graphics,pipeline: &mut Pipeline) -> AppState {
-    let texture = pipeline.load_texture(graphics,"../../content/images/null.png").unwrap();
+    let texture = pipeline.load_texture_bytes(graphics,include_bytes!("../../content/images/null.png"));
     return Box::new(TestState { texture });
 }
 
@@ -31,10 +31,15 @@ impl AppStateHandler for TestState {
             f.set_texture_wrap(WrapMode::Clamp);
 
             f.draw_frame(&self.texture,DrawData {
-                area: Area::one(),
+                area: Area {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.5,
+                    height: 0.5
+                },
                 uv: Area::one(),
                 rotation: 0.0,
-                color: Color::BLACK,
+                color: Color::WHITE,
             });
 
             f.finish(graphics,pipeline);

@@ -29,10 +29,7 @@ fn rotate(rotation: f32) -> mat2x2<f32> {
     return mat2x2<f32>(vec2<f32>(c,-s),vec2<f32>(s,c));
 }
 
-@vertex fn vs_main(
-    vertex: VertexInput,
-    instance: InstanceInput
-) -> VertexOutput {
+@vertex fn vs_main(vertex: VertexInput,instance: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
 
     let world_position = rotate(instance.rotation) * vertex.position * instance.scale + instance.offset;
@@ -51,7 +48,7 @@ var s_diffuse: sampler;
 
 @fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
     if (fragment.color.a < 0.005) {
-        discard;
+        //discard;
     }
     return textureSample(t_diffuse,s_diffuse,fragment.uv) * fragment.color;
 }

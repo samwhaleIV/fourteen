@@ -67,8 +67,8 @@ impl FrameInternal for Frame {
     //TODO: Implement color selection
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         return match self.write_lock {
-            LockStatus::FutureUnlock => Some(wgpu::Color::WHITE),
-            LockStatus::FutureLock => Some(wgpu::Color::WHITE),
+            LockStatus::FutureUnlock => Some(wgpu::Color::RED),
+            LockStatus::FutureLock => Some(wgpu::Color::RED),
             LockStatus::Unlocked => None,
             LockStatus::Locked => None,
         }
@@ -254,18 +254,18 @@ impl Frame {
     }
 
     /* Draw Commands */
-    pub fn draw_frame(&mut self,frame: &Frame,draw_data: DrawData) {
-        if !validate_src_dst_op(self,frame) {
+    pub fn draw_frame(&mut self,source_frame: &Frame,draw_data: DrawData) {
+        if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrame(self.index,draw_data));
+        self.command_buffer.push_back(FrameCommand::DrawFrame(source_frame.index,draw_data));
     }
 
-    pub fn draw_frame_set(&mut self,frame: &Frame,draw_data: Vec<DrawData>) {
-        if !validate_src_dst_op(self,frame) {
+    pub fn draw_frame_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
+        if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrameSet(self.index,draw_data));
+        self.command_buffer.push_back(FrameCommand::DrawFrameSet(source_frame.index,draw_data));
     }
 
     /* Output & Interop */
