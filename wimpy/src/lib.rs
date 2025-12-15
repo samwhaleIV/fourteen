@@ -6,11 +6,12 @@ use crate::{
     area::Area, color::Color, frame::DrawData, pipeline_management::{CacheOptions, Pipeline, PipelineCreationOptions}, wgpu_interface::WGPUInterface
 };
 
-mod frame;
+
 mod lease_arena;
 mod texture_container;
 mod frame_processor;
 
+pub mod frame;
 pub mod color;
 pub mod area;
 

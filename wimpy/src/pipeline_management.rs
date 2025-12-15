@@ -101,7 +101,7 @@ impl Pipeline {
         return create_pipeline(wgpu_interface,options);
     }
 
-    pub fn start(&mut self,wgpu_interface: &mut impl WGPUInterface) -> Option<Frame> {
+    pub fn start(&mut self,wgpu_interface: &impl WGPUInterface) -> Option<Frame> {
         if self.active {
             panic!("Pipeline is already started. There is already a command encoder active.");
         }
@@ -132,7 +132,7 @@ impl Pipeline {
         }
     }
 
-    pub fn finish(&mut self,wgpu_interface: &mut impl WGPUInterface) {
+    pub fn finish(&mut self,wgpu_interface: &impl WGPUInterface) {
         if !self.active {
             panic!("Pipeline was not started. There is no active command encoder.");
         }
@@ -186,6 +186,7 @@ impl Pipeline {
         }
     }
 
+    //TODO: Remove result return, create fallback texture
     pub fn load_texture(&mut self,wgpu_interface: &impl WGPUInterface,path: &str) -> Result<Frame,ImageError> {
         let image = ImageReader::open(path)?.decode()?;
         let texture_container = TextureContainer::from_image(
