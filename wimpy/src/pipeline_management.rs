@@ -34,7 +34,10 @@ use wgpu::{
 
 use crate::{
     frame::{
-        DrawData, Frame, FrameCreationOptions, FrameInternal
+        DrawData,
+        Frame,
+        FrameCreationOptions,
+        FrameInternal
     },
     lease_arena::LeaseArena,
     texture_container::TextureContainer,
@@ -66,14 +69,29 @@ pub struct Pipeline {
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
 
-struct FrameCacheConfig<'a> {
-    sizes: &'a[(u32,u32)],
-    instances: u32
+pub struct PipelineCreationOptions {
+    pub quad_instance_capacity: u32,
+    pub uniform_capacity: u32,
+    pub cache_options: Option<CacheOptions>
 }
 
+/* Reasonable-ish defaults. Callers, do it yourself! */
+impl Default for PipelineCreationOptions {
+    fn default() -> Self {
+        Self {
+            quad_instance_capacity: 640,
+            uniform_capacity: 16,
+            cache_options: None
+        }
+    }
+}
+
+pub struct CacheOptions {
+    pub instances: u32,
+    pub sizes: Vec<(u32,u32)>
+}
 
 #[allow(dead_code)]
-
 impl Pipeline {
 
     pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
@@ -81,46 +99,36 @@ impl Pipeline {
 
     pub fn create(
         wgpu_interface: &impl WGPUInterface,
-        quad_instance_capacity: u32,
-        uniform_capacity: u32
+        options: PipelineCreationOptions
     ) -> Self {
-        return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,None);
+        return create_pipeline(wgpu_interface,options);
     }
 
-    pub fn create_with_buffer_frames(
-        wgpu_interface: &impl WGPUInterface,
-        quad_instance_capacity: u32,
-        uniform_capacity: u32,
-        cache_sizes: &[(u32,u32)],
-        cache_instances: u32
-    ) -> Self {
-        return create_pipeline(wgpu_interface,quad_instance_capacity,uniform_capacity,Some(FrameCacheConfig {
-            sizes: cache_sizes,
-            instances: cache_instances
-        }));
-    }
-
-    pub fn start(&mut self,wgpu_interface: &mut impl WGPUInterface) -> Frame {
+    pub fn start(&mut self,wgpu_interface: &mut impl WGPUInterface) -> Option<Frame> {
         if self.active {
             panic!("Pipeline is already started. There is already a command encoder active.");
         }
-     
-        self.encoder = Some(wgpu_interface.get_device().create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("Render Encoder")
-        }));
         self.active = true;
 
         if self.output_frame_index.is_some() {
             panic!("Output frame already exists!");
         }
-        let texture_container = TextureContainer::create_output(wgpu_interface);
-        let size = texture_container.size();
 
-        let index = self.frame_cache.insert_keyless(texture_container);
+        if let Some(texture_container) = TextureContainer::create_output(wgpu_interface) {
+            self.encoder = Some(wgpu_interface.get_device().create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("Render Encoder")
+            }));
+            let size = texture_container.size();
+            let index = self.frame_cache.insert_keyless(texture_container);
+            self.output_frame_index = Some(index);
 
-        self.output_frame_index = Some(index);
-
-        return FrameInternal::create_output(size,index);
+            return Some(FrameInternal::create_output(size,index));
+        } else {
+            log::warn!("Unable to create output texture.");
+            self.active = false;
+            
+            return None;
+        }
     }
 
     pub fn finish(&mut self,wgpu_interface: &mut impl WGPUInterface) {
@@ -336,9 +344,7 @@ fn get_ortho_matrix(size: (u32,u32)) -> [[f32;4];4] {
 
 fn create_pipeline(
     wgpu_interface: &impl WGPUInterface,
-    quad_instance_capacity: u32,
-    uniform_capacity: u32,
-    cache_config: Option<FrameCacheConfig>
+    options: PipelineCreationOptions
 ) -> Pipeline {
 
     let device = wgpu_interface.get_device();
@@ -380,7 +386,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
 
     let instance_buffer = device.create_buffer(&BufferDescriptor{
         label: Some("Instance Buffer"),
-        size: (size_of::<QuadInstance>() * quad_instance_capacity as usize) as u64,
+        size: (size_of::<QuadInstance>() * options.quad_instance_capacity as usize) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -388,7 +394,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     let uniform_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("View Projection Buffer"),
         //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
-        size: (UNIFORM_BUFFER_ALIGNMENT * uniform_capacity) as u64,
+        size: (UNIFORM_BUFFER_ALIGNMENT * options.uniform_capacity) as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false
     });
@@ -402,20 +408,25 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         label: Some("View Projection Bind Group"),
     });
 
-    let frame_cache: FrameCache = match cache_config {
+    let frame_cache: FrameCache = match options.cache_options {
         None => FrameCache::default(),
-        Some(config) => {
-            let capacity = config.sizes.len();
+        Some(cache_options) => {
+            let capacity = cache_options.sizes.len();
+            let instances = cache_options.instances;
+
+            if instances < 1 {
+                log::warn!("Frame cache instances is 0. No caches will be created.");
+            }
 
             let mut textures = Arena::with_capacity(capacity);
             let mut mutable_textures = HashMap::with_capacity(capacity);
 
             let bind_group_layout = &render_pipeline.get_bind_group_layout(Pipeline::TEXTURE_BIND_GROUP_INDEX);
 
-            for size in config.sizes.iter() {
-                let mut queue = VecDeque::with_capacity(config.instances as usize);
+            for size in cache_options.sizes.iter() {
+                let mut queue = VecDeque::with_capacity(instances as usize);
 
-                for _ in 0..config.instances {
+                for _ in 0..instances {
 
                     let mutable_texture = TextureContainer::create_mutable(
                         wgpu_interface,

@@ -2,10 +2,9 @@ const WINDOW_TITLE: &'static str = "Twelve Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (400,300);
 
 use std::sync::Arc;
-use wgpu::TextureView;
-
 use crate::app_state::*;
 use crate::graphics::Graphics;
+use wimpy::pipeline_management::{Pipeline, PipelineCreationOptions};
 
 use winit::{
     application::ApplicationHandler,
@@ -16,7 +15,15 @@ use winit::{
     window::{Window,WindowId}
 };
 
+struct PostConstructionHandles {
+    window: Arc<Window>,
+    graphics: Graphics,
+    pipeline: Pipeline
+}
+
 pub struct App {
+    handles: Option<PostConstructionHandles>,
+
     state_loaded: bool,
     surface_configured: bool,
     app_exiting: bool,
@@ -28,14 +35,11 @@ pub struct App {
     window_height: u32,
 
     mouse_point: MousePoint,
-
-    window: Option<Arc<Window>>,
-    graphics: Option<Graphics>,
-
     state_generator: AppStateGenerator,
     state: AppState,
-    
-    log_trace_config: LogTraceConfig
+
+    log_trace_config: LogTraceConfig,
+    pipeline_options: Option<PipelineCreationOptions>,
 }
 
 enum EventLoopOperation {
@@ -44,6 +48,7 @@ enum EventLoopOperation {
     Repeat
 }
 
+#[allow(dead_code)]
 pub struct MouseDelta {
     pub x: f64,
     pub y: f64
@@ -53,16 +58,19 @@ struct DummyState;
 
 impl AppStateHandler for DummyState {
     /* Oh no! You've activated my trap card. */
-    fn unload(&mut self,_graphics: &Graphics) {
+    fn unload(&mut self,_graphics: &Graphics,_pipeline: &mut Pipeline) {
         panic!("Cannot unload the dummy state!");
     }
+    
     fn update(&mut self) -> UpdateResult {
         panic!("Cannot update the dummy state!");
     }
-    fn render(&mut self,_: &Graphics,_texture_view: &TextureView) {
+    
+    fn render(&self,_graphics: &Graphics,_pipeline: &mut Pipeline) {
         panic!("Cannot render the dummy state!");
     }
-    fn input(&mut self,_: InputEvent) {
+    
+    fn input(&mut self,_event: InputEvent) {
         panic!("Cannot input to the dummy state!");
     }
 }
@@ -84,22 +92,29 @@ pub struct MousePoint {
     y: i32
 }
 
-fn placeholder_state_generator(_: &mut Graphics) -> AppState {
+fn placeholder_state_generator(_graphics: &Graphics,_pipeline: &mut Pipeline) -> AppState {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
-pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceConfig) -> App {
-    return App {
-        window: None,
-        graphics: None,
+pub struct AppCreationOptions {
+    pub state_generator: AppStateGenerator,
+    pub pipeline_options: Option<PipelineCreationOptions>,
+    pub log_trace_config: Option<LogTraceConfig>,
+}
 
-        state_generator,
+pub fn create_app(options: AppCreationOptions) -> App {
+    return App {
+        handles: None,
+
+        state_generator: options.state_generator,
         state: Box::new(DummyState),
 
         state_loaded: false,
         surface_configured: false,
 
         app_exiting: false,
+
+        pipeline_options: options.pipeline_options,
 
         window_width: 0,
         window_height: 0,
@@ -110,7 +125,10 @@ pub fn create_app(state_generator: AppStateGenerator,log_trace_config: LogTraceC
         mouse_point: MousePoint { x: 0, y: 0 },
  
         /* For Debugging */
-        log_trace_config
+        log_trace_config: match options.log_trace_config {
+            Some(value) => value,
+            None => Default::default(),
+        }
     }
 }
 
@@ -121,20 +139,25 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
 }
 
 impl App {
-    fn configure_surface(&mut self) {
+    fn try_configure_surface(&mut self) -> bool {
         let width = self.window_width;
         let height = self.window_height;
 
         if width < 1 || height < 1 {
             log::warn!("Cannot configure surface with one or more of the following size components: {}x{}",width,height);
-            return;
+            return false;
         }
 
-        let graphics = self.graphics.as_mut().unwrap();
-
-        graphics.configure_surface_size(width,height);
+        if let Some(handles) = &mut self.handles {
+            handles.graphics.configure_surface_size(width,height);
+        } else {
+            let error = "Graphics object does not exist.";
+            log::error!("{}",&error);
+            panic!("{}",&error);
+        }
 
         self.surface_configured = true;
+        return true;
     }
 
     fn update(&mut self) -> EventLoopOperation {
@@ -180,7 +203,7 @@ impl App {
             },
         };
     }
- 
+
     /* Primary function to handle updating */
     fn handle_redraw(&mut self,event_loop: &ActiveEventLoop) {
         if self.log_trace_config.redraw {
@@ -199,26 +222,20 @@ impl App {
             }
         }
 
-        if self.state_loaded {
-            if !self.surface_configured {
-                self.configure_surface();
+        if let Some(mut handles) = self.handles.take() {
+            if !self.state_loaded {
+                log::warn!("Attempt to render without a loaded state.");
             }
-
-            if self.surface_configured {
-                match self.render() {
-                    Ok(_) => {},
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        log::warn!("WebGPU surface error. Is the surface lost or outdated? Attempting to configure surface again.");
-                        self.configure_surface()
-                    },
-                    Err(error) => log::error!("Unable to render: {}",error)
-                }
+            if self.state_loaded && (self.surface_configured || self.try_configure_surface()) {
+                self.state.render(&handles.graphics,&mut handles.pipeline);
             }
+            handles.window.request_redraw();
+            self.handles = Some(handles);
         } else {
-            log::warn!("Attempt to render without a loaded state.");
+            log::error!("Window handles not found.");
+            self.terminate_app(event_loop);
         }
 
-        self.window.as_mut().unwrap().request_redraw();
         self.frame_number += 1;
     }
 
@@ -227,9 +244,14 @@ impl App {
             log::warn!("Cannot load state, we are already in a loaded state.");
             return;
         }
-        let new_state = (self.state_generator)(self.graphics.as_mut().unwrap());
-        self.state_generator = placeholder_state_generator;
-        self.state = new_state;
+
+        if let Some(mut handles) = self.handles.take() {
+            let new_state = (self.state_generator)(&handles.graphics,&mut handles.pipeline);
+            self.state_generator = placeholder_state_generator;
+            self.state = new_state;
+            self.handles = Some(handles);
+        }
+
         self.state_loaded = true;
     }
 
@@ -240,19 +262,14 @@ impl App {
             }
             return;
         }
-        self.state.unload(self.graphics.as_ref().unwrap());
+        if let Some(mut handles) = self.handles.take() {
+            self.state.unload(&handles.graphics,&mut handles.pipeline);
+            self.handles = Some(handles);    
+        } else if !self.app_exiting {
+            return;
+        }
         self.state = Box::new(DummyState);
         self.state_loaded = false;
-    }
-
-    
-    fn render(&mut self) -> Result<(),wgpu::SurfaceError> {
-        let graphics = self.graphics.as_mut().unwrap();
-        let output = graphics.get_window_surface()?;
-        let texture_view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.state.render(graphics,&texture_view);
-        output.present();
-        Ok(())
     }
 
     fn terminate_app(&mut self,event_loop: &ActiveEventLoop) {
@@ -311,7 +328,7 @@ impl ApplicationHandler for App {
     /* Create window and graphics pipeline. */
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
-        if self.window.is_some() {
+        if self.handles.is_some() {
             /* This shouldn't happen on desktop platforms. */
             log::info!("The app has been resumed. Welcome back.");
             return;
@@ -354,10 +371,14 @@ impl ApplicationHandler for App {
         };
         window.set_visible(true);
 
-        self.window = Some(window);
-        self.graphics = Some(graphics);
+        let pipeline = Pipeline::create(&graphics,match self.pipeline_options.take() { /* We take so the underlying vectors (if any) are dropped. */
+            Some(options) => options,
+            None => PipelineCreationOptions::default(),
+        });
 
-        log::info!("Graphics pipeline and window are now configured.");
+        self.handles = Some(PostConstructionHandles { window, graphics, pipeline });
+
+        log::info!("Graphics, pipeline, and window are now configured.");
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -390,7 +411,7 @@ impl ApplicationHandler for App {
                 self.window_width = size.width;
                 self.window_height = size.height;
 
-                self.configure_surface();
+                self.try_configure_surface();
             },
 
             WindowEvent::KeyboardInput {

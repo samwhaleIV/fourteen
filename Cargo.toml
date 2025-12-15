@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["collections","main","shared","wimpy"]
+members = ["main","wimpy"]
 
 [workspace.dependencies]
 winit = "0.30.12"

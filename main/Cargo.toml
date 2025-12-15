@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared = { path = "../shared" }
+wimpy = { path = "../wimpy" }
 winit = { workspace = true }
 anyhow = { workspace = true }
-env_logger = "0.11.8"
 log = { workspace = true }
+wgpu = { workspace = true }
+env_logger = "0.11.8"
+pollster = "0.4.0"

@@ -197,13 +197,15 @@ impl TextureContainer {
         });
     }
 
-    pub fn create_output(wgpu: &impl WGPUInterface) -> TextureContainer {
-        let (view,size) = wgpu.get_output();
-        return TextureContainer {
-            width: size.0,
-            height: size.1,
-            view,
-            bind_groups: Vec::with_capacity(0)
+    pub fn create_output(wgpu: &impl WGPUInterface) -> Option<TextureContainer> {
+        return match wgpu.get_output() {
+            Some(output_result) => Some(TextureContainer {
+                width: output_result.size.0,
+                height: output_result.size.1,
+                view: output_result.texture_view,
+                bind_groups: Vec::with_capacity(0)
+            }),
+            None => None,
         };
     }
 }

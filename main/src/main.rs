@@ -1,15 +1,23 @@
+mod app_state;
+mod app;
+mod graphics;
+mod test_state;
+
 use std::env;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 use env_logger::{Builder, Target};
+
+use crate::app::AppCreationOptions;
 
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = shared::app::create_app(
-        shared::test_state::generate_test_state,
-        shared::app::LogTraceConfig::default()
-    );
+    let mut app = app::create_app(AppCreationOptions {
+        state_generator: test_state::generate_test_state,
+        pipeline_options: None,
+        log_trace_config: None
+    });
 
     event_loop.listen_device_events(DeviceEvents::WhenFocused);
 

@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use wgpu::TextureView;
+use wimpy::{
+    pipeline_management::Pipeline
+};
+
 use winit::keyboard::KeyCode;
 use crate::graphics::Graphics;
 
@@ -45,11 +48,13 @@ pub enum InputEvent {
 }
 
 pub trait AppStateHandler {
-    fn unload(&mut self,graphics: &Graphics);
-    fn input(&mut self,event: InputEvent);
+    fn unload(&mut self,graphics: &Graphics,pipeline: &mut Pipeline);
+
     fn update(&mut self) -> UpdateResult;
-    fn render(&mut self,graphics: &Graphics,texture_view: &TextureView);
+    fn input(&mut self,event: InputEvent);
+
+    fn render(&self,graphics: &Graphics,pipeline: &mut Pipeline);
 }
 
 pub type AppState = Box<dyn AppStateHandler>;
-pub type AppStateGenerator = fn(&mut Graphics) -> AppState;
+pub type AppStateGenerator = fn(&Graphics,pipeline: &mut Pipeline) -> AppState;
