@@ -5,7 +5,7 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup, BindGroupLayout, Device, TextureUsages, TextureView
+    BindGroup, BindGroupLayout, Device, SurfaceTexture, TextureUsages, TextureView
 };
 
 use crate::{
@@ -79,7 +79,7 @@ fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout:
                 resource: wgpu::BindingResource::Sampler(&sampler),
             }
         ],
-        label: None, //TODO: Make meaningful label
+        label: Some("Texture Bind Group"),
     })).collect();
     return bind_groups;
 }
@@ -137,7 +137,7 @@ fn create_texture(
         format: wgpu::TextureFormat::Rgba8Unorm,
 
         usage: usage_flags,
-        label: None, //TODO: Add useful labels
+        label: Some("Texture"),
         view_formats: &[],
     });
 
@@ -197,15 +197,15 @@ impl TextureContainer {
         });
     }
 
-    pub fn create_output(wgpu: &impl WGPUInterface) -> Option<TextureContainer> {
-        return match wgpu.get_output() {
-            Some(output_result) => Some(TextureContainer {
-                width: output_result.size.0,
-                height: output_result.size.1,
-                view: output_result.texture_view,
-                bind_groups: Vec::with_capacity(0)
-            }),
-            None => None,
+    pub fn create_output(surface: &SurfaceTexture,size: (u32,u32)) -> TextureContainer {
+        let view = surface.texture.create_view(
+            &wgpu::TextureViewDescriptor::default()
+        );
+        return TextureContainer {
+            width: size.0,
+            height: size.1,
+            view,
+            bind_groups: Vec::with_capacity(0)
         };
     }
 }
@@ -222,6 +222,4 @@ impl TextureContainer {
             panic!("Bind group not found for this sampler mode.");
         }
     }
-
-    //TODO
 }

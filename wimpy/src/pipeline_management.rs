@@ -17,16 +17,7 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup,
-    BindGroupLayoutDescriptor,
-    Buffer, BufferDescriptor,
-    BufferUsages,
-    CommandEncoder,
-    CommandEncoderDescriptor,
-    IndexFormat,
-    RenderPass,
-    RenderPipeline,
-    util::{
+    BindGroup, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, IndexFormat, RenderPass, RenderPipeline, SurfaceTexture, util::{
         BufferInitDescriptor,
         DeviceExt
     }
@@ -64,7 +55,13 @@ pub struct Pipeline {
 
     active: bool,
     encoder: Option<CommandEncoder>,
-    output_frame_index: Option<Index>
+
+    output_frame: Option<OutputFrame>
+}
+
+struct OutputFrame {
+    index: Index,
+    surface: SurfaceTexture
 }
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
@@ -110,18 +107,22 @@ impl Pipeline {
         }
         self.active = true;
 
-        if self.output_frame_index.is_some() {
+        if self.output_frame.is_some() {
             panic!("Output frame already exists!");
         }
 
-        if let Some(texture_container) = TextureContainer::create_output(wgpu_interface) {
+        if let Some(surface) = wgpu_interface.get_output_surface() {
             self.encoder = Some(wgpu_interface.get_device().create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder")
             }));
-            let size = texture_container.size();
+            let size = (
+                surface.texture.width(),
+                surface.texture.height()
+            );
+            let texture_container = TextureContainer::create_output(&surface,size);
             let index = self.frame_cache.insert_keyless(texture_container);
-            self.output_frame_index = Some(index);
 
+            self.output_frame = Some(OutputFrame { index, surface });
             return Some(FrameInternal::create_output(size,index));
         } else {
             log::warn!("Unable to create output texture.");
@@ -143,12 +144,12 @@ impl Pipeline {
             self.instance_buffer_counter = 0;
             self.uniform_buffer_counter = 0;
 
-            if let Some(index) = self.output_frame_index.take() {
-                self.frame_cache.remove(index);
+            if let Some(output_frame) = self.output_frame.take() {
+                self.frame_cache.remove(output_frame.index);
+                output_frame.surface.present();
             } else {
-                log::warn!("Output frame index not found on frame cleanup.");
+                log::warn!("Output frame not found during frame finish.");
             }
-
             self.encoder = None;
             self.active = false;
         } else {
@@ -455,7 +456,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         frame_cache,
         encoder: None,
         active: false,
-        output_frame_index: None,
+        output_frame: None,
         instance_buffer_counter: 0,
         uniform_buffer_counter: 0
     };

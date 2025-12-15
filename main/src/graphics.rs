@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use winit::window::Window;
-use wimpy::wgpu_interface::{WGPUInterface,OutputResult};
+use wimpy::wgpu_interface::WGPUInterface;
 
 pub struct Graphics {
     surface: wgpu::Surface<'static>,
@@ -77,14 +77,10 @@ impl WGPUInterface for Graphics {
         return self.config.format;
     }
     
-    fn get_output(&self) -> Option<OutputResult> {
-        let size = (self.config.width,self.config.height);
-
+    fn get_output_surface(&self) -> Option<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
-            Ok(surface_texture) => {
-                let texture_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                
-                return Some(OutputResult {surface: surface_texture, texture_view, size});
+            Ok(surface) => {
+                return Some(surface);
             },
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 log::warn!("WebGPU surface error. Is the surface lost or outdated? Attempting to configure surface again.");

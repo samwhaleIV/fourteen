@@ -266,6 +266,7 @@ impl App {
             self.state.unload(&handles.graphics,&mut handles.pipeline);
             self.handles = Some(handles);    
         } else if !self.app_exiting {
+            log::warn!("Unusual app exit state. The app handles have already been dropped.");
             return;
         }
         self.state = Box::new(DummyState);

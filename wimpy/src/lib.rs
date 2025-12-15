@@ -34,7 +34,7 @@ impl WGPUInterface for VirtualWGPUProvider {
         todo!()
     }
     
-    fn get_output(&self) -> Option<wgpu_interface::OutputResult> {
+    fn get_output_surface(&self) -> Option<wgpu::SurfaceTexture> {
         todo!()
     }
 }
