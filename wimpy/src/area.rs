@@ -32,12 +32,13 @@ impl Area {
 
     pub fn to_center_encoded(&self) -> Self {
         return Self {
-            x: self.x + (self.width * -0.5),
-            y: self.y + (self.height * -0.5),
+            x: self.x + (self.width * 0.5),
+            y: self.y + (self.height * 0.5),
             width: self.width,
             height: self.height
         }
     }
+
     pub fn to_top_left_encoded(&self) -> Self {
         return Self {
             x: self.x + (self.width * -0.5),

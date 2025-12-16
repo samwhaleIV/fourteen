@@ -32,23 +32,17 @@ fn rotate(rotation: f32) -> mat2x2<f32> {
     var out: VertexOutput;
 
     let world_position = rotate(instance.rotation) * vertex.position * instance.scale + instance.offset;
-
     out.clip_position = camera.view_projection * vec4<f32>(world_position,0.0,1.0);
+
     out.uv = (vertex.position + vec2<f32>(0.5)) * instance.uv_scale + instance.uv_offset;
-
     out.color = instance.color;
-
-    out.clip_position = vec4(vertex.position,0,1);
     return out;
 }
 
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1)
-var s_diffuse: sampler;
+@group(0) @binding(0) var t_diffuse: texture_2d<f32>;
+@group(0) @binding(1) var s_diffuse: sampler;
 
 @fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4(0,1,0,1);
     if (fragment.color.a < 0.005) {
         discard;
     }

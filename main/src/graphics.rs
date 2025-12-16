@@ -15,7 +15,7 @@ impl Graphics {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL,
+            backends: wgpu::Backends::DX12,
             ..Default::default()
         });
 

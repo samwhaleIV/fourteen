@@ -67,8 +67,8 @@ impl FrameInternal for Frame {
     //TODO: Implement color selection
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         return match self.write_lock {
-            LockStatus::FutureUnlock => Some(wgpu::Color::RED),
-            LockStatus::FutureLock => Some(wgpu::Color::RED),
+            LockStatus::FutureUnlock => Some(wgpu::Color::BLACK),
+            LockStatus::FutureLock => Some(wgpu::Color::BLACK),
             LockStatus::Unlocked => None,
             LockStatus::Locked => None,
         }

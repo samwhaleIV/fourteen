@@ -32,10 +32,10 @@ impl AppStateHandler for TestState {
 
             f.draw_frame(&self.texture,DrawData {
                 area: Area {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 10.0,
-                    height: 10.0
+                    x: 64.0,
+                    y: 64.0,
+                    width: 128.0,
+                    height: 128.0
                 },
                 uv: Area::one(),
                 rotation: 0.0,

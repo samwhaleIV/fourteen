@@ -1,5 +1,5 @@
 const WINDOW_TITLE: &'static str = "Twelve Engine - Hello, World!";
-const MINIMUM_WINDOW_SIZE: (u32,u32) = (400,300);
+const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 
 use std::sync::Arc;
 use crate::app_state::*;
@@ -339,7 +339,7 @@ impl ApplicationHandler for App {
         
         let (min_width,min_height) = MINIMUM_WINDOW_SIZE;
         let min_inner_size = PhysicalSize::new(min_width,min_height);
-        let window_size = PhysicalSize::new(min_width * 2,min_height * 2); /* TODO: Load last window size of application. */
+        let window_size = PhysicalSize::new(min_width,min_height); /* TODO: Load last window size of application. */
 
         let window_attributes = Window::default_attributes()
             .with_title(WINDOW_TITLE)

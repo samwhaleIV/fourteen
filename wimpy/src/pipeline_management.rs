@@ -1,8 +1,8 @@
 use core::panic;
-use std::collections::{
+use std::{collections::{
     HashMap,
     VecDeque
-};
+}, io::Read};
 
 use bytemuck::{
     Pod,
@@ -284,7 +284,7 @@ impl PipelineInternal for Pipeline {
         wgpu_interface.get_queue().write_buffer(
             &self.uniform_buffer,
             buffer_start as u64,
-            bytemuck::bytes_of(&get_ortho_matrix(frame.size()))
+            bytemuck::bytes_of(&get_camera_uniform(frame.size()))
         );
 
         //Index buffer
@@ -355,17 +355,19 @@ impl PipelineInternal for Pipeline {
     }
 }
 
-fn get_ortho_matrix(size: (u32,u32)) -> [[f32;4];4] {
+fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
     let (width,height) = size;
-    let matrix = cgmath::ortho(
+
+    let ortho = cgmath::ortho(
         0.0, //Left
         width as f32, //Right
         height as f32, //Bottom
         0.0, //Top
         -1.0, //Near
         1.0, //Far
-    ).into();
-    return matrix;
+    );
+
+    return CameraUniform { view_projection: ortho.into() };
 }
 
 fn create_pipeline(
@@ -386,11 +388,11 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
                 1---3
 */
 
-    let vertices = [
-        -0.5,-0.5, //Top Left     0
-        -0.5, 0.5, //Bottom Left  1
-         0.5,-0.5, //Top Right    2
-         0.5, 0.5  //Bottom Right 3
+    let vertices = [  
+        Vertex { position: [-0.5,-0.5] }, //Top Left     0
+        Vertex { position: [-0.5, 0.5] }, //Bottom Left  1
+        Vertex { position: [0.5,-0.5] }, //Top Right    2
+        Vertex { position: [0.5, 0.5] }  //Bottom Right 3
     ];
 
     let indices: [u32;6] = [
@@ -607,6 +609,12 @@ pub struct QuadInstance { //Aligned to 64
     pub color: [f32;4],
     pub rotation: f32,
     pub _padding: [f32;3]
+}
+
+#[repr(C)]
+#[derive(Debug,Copy,Clone,Pod,Zeroable)]
+pub struct CameraUniform {
+    view_projection: [[f32;4];4]
 }
 
 #[non_exhaustive]
