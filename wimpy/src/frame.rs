@@ -168,6 +168,17 @@ pub struct DrawData {
     pub rotation: f32
 }
 
+impl Default for DrawData {
+    fn default() -> Self {
+        Self {
+            area: Area::one(),
+            uv: Area::one(),
+            color: Color::WHITE,
+            rotation: 0.0
+        }
+    }
+}
+
 impl DrawData {
     pub fn to_quad_instance(&self) -> QuadInstance {
         let area = self.area.to_center_encoded();
@@ -300,5 +311,14 @@ impl Frame {
 
     pub fn height(&self) -> u32 {
         return self.height;
+    }
+
+    pub fn area(&self) -> Area {
+        return Area {
+            x: 0.0,
+            y: 0.0,
+            width: self.width as f32,
+            height: self.height as f32,
+        }
     }
 }

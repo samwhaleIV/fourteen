@@ -2,7 +2,7 @@ use core::panic;
 use std::{collections::{
     HashMap,
     VecDeque
-}, io::Read};
+}};
 
 use bytemuck::{
     Pod,
@@ -97,6 +97,17 @@ pub struct CacheOptions {
     pub sizes: Vec<(u32,u32)>
 }
 
+pub enum FrameLifetime {
+    Temporary,
+    Persistent
+}
+
+pub struct FrameConfig {
+    pub lifetime: FrameLifetime,
+    pub size: (u32,u32),
+    pub draw_once: bool
+}
+
 #[allow(dead_code)]
 impl Pipeline {
 
@@ -167,7 +178,7 @@ impl Pipeline {
     }
 
     /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
-    pub fn get_persistent_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_persistent_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
         let frame = TextureContainer::create_mutable(
             wgpu_interface,
             &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
@@ -181,7 +192,7 @@ impl Pipeline {
         });
     }
 
-    pub fn get_temp_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_temp_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
         if let Some(index) = self.frame_cache.try_request_lease(size) {
             return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
         } else {
@@ -192,6 +203,17 @@ impl Pipeline {
             );
             let index = self.frame_cache.insert_leasable_and_take(size,new_texture);
             return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
+        }
+    }
+
+    pub fn get_frame(&mut self,wgpu_interface: &impl WGPUInterface,config: FrameConfig) -> Frame {
+        return match config.lifetime {
+            FrameLifetime::Temporary => {
+                self.get_temp_frame(wgpu_interface,config.size,config.draw_once)
+            },
+            FrameLifetime::Persistent => {
+                self.get_persistent_frame(wgpu_interface,config.size,config.draw_once)
+            },
         }
     }
 

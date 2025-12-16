@@ -10,6 +10,17 @@ pub struct Color {
 
 const FULL_OPACITY: u8 = u8::MAX;
 
+impl Default for Color {
+    fn default() -> Self {
+        Self {
+            r: u8::MAX,
+            g: u8::MAX,
+            b: u8::MAX,
+            a: u8::MAX
+        }
+    }
+}
+
 impl Color {
 
     pub fn get(r: u8,g: u8, b: u8,a: u8) -> Color {

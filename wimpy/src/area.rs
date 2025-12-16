@@ -7,6 +7,7 @@ pub struct Layout {
     pub y: LayoutDimension
 }
 
+#[derive(Copy,Clone)]
 pub struct Area {
     pub x: Unit,
     pub y: Unit,
@@ -47,6 +48,10 @@ impl Area {
             height: self.height
         }
     }
+
+    fn size(&self) -> (Unit,Unit) {
+        return (self.width,self.height);
+    }
 }
 
 #[derive(Copy,Clone)]
@@ -62,7 +67,8 @@ pub enum Alignment {
 #[derive(Copy,Clone)]
 pub enum SizeMode {
     Absolute,
-    Relative
+    RelativeWidth,
+    RelativeHeight
 }
 
 #[derive(Copy,Clone)]
@@ -71,10 +77,58 @@ pub struct Position {
     pub alignment: Alignment
 }
 
+impl Default for Position {
+    fn default() -> Self {
+        Self {
+            value: Default::default(),
+            alignment: Alignment::Absolute
+        }
+    }
+}
+
+impl Position {
+    pub fn center_of_parent() -> Self {
+        return Self {
+            value: Size::default(),
+            alignment: Alignment::Center
+        }
+    }
+    pub fn center_of_parent_with_offset(size: Size) -> Self {
+        return Self {
+            value: size,
+            alignment: Alignment::Center
+        }
+    }
+}
+
 #[derive(Copy,Clone)]
 pub struct Size {
     pub value: Unit,
     pub mode: SizeMode
+}
+
+impl Default for Size {
+    fn default() -> Self {
+        Self {
+            value: 0.0,
+            mode: SizeMode::Absolute
+        }
+    }
+}
+
+impl Size {
+    pub fn of_parent_height(value: f32) -> Self {
+        return Self {
+            value,
+            mode: SizeMode::RelativeHeight,
+        }
+    }
+    pub fn of_parent_width(value: f32) -> Self {
+        return Self {
+            value,
+            mode: SizeMode::RelativeWidth,
+        }
+    }
 }
 
 #[derive(Copy,Clone)]
@@ -84,18 +138,49 @@ pub struct LayoutDimension {
     pub size_offset: Size,
 }
 
-impl Layout {
-    //Top Left Encoded
-    pub fn to_area(&self,parent: &Area) -> Area {  
-        let (x,width) = calculate_area_dimension(parent.x,parent.width,self.x);
-        let (y,height) = calculate_area_dimension(parent.y,parent.height,self.y);
-        return Area { x, y, width, height };
+impl Default for LayoutDimension {
+    fn default() -> Self {
+        Self {
+            position: Default::default(),
+            size: Default::default(),
+            size_offset: Default::default()
+        }
     }
 }
 
-fn calculate_area_dimension(parent_position: Unit,parent_size: Unit,child: LayoutDimension) -> (Unit,Unit) {
+impl Layout {
+    //Top Left Encoded
+    pub fn compute(&self,parent: Area) -> Area {  
+        let (x,width) = calculate_area_dimension(
+            parent.x,
+            parent.width,
+            parent.size(),
+            self.x
+        );
+        let (y,height) = calculate_area_dimension(
+            parent.y,
+            parent.height,
+            parent.size(),
+            self.y
+        );
+        return Area { x, y, width, height };
+    }
+    pub fn same_xy(layout_dimension: LayoutDimension) -> Self {
+        return Self {
+            x: layout_dimension,
+            y: layout_dimension,
+        }
+    }
+}
+
+fn calculate_area_dimension(
+    parent_position: Unit,
+    parent_dimension: Unit,
+    parent_size: (Unit,Unit),
+    child: LayoutDimension
+) -> (Unit,Unit) {
     let mut size = dimension(parent_size,child.size);
-    let mut position = position(parent_position,parent_size,size,child.position);
+    let mut position = position(parent_position,parent_dimension,parent_size,size,child.position);
 
     /* Applies after all other layout calculation. */
     let size_offset = dimension(parent_size,child.size_offset);
@@ -108,21 +193,31 @@ fn calculate_area_dimension(parent_position: Unit,parent_size: Unit,child: Layou
     return (position,size);
 }
 
-fn dimension(parent_value: Unit,child: Size) -> Unit {
+fn dimension(
+    parent_value: (Unit,Unit),
+    child: Size
+) -> Unit {
     return match child.mode {
         SizeMode::Absolute => child.value,
-        SizeMode::Relative => parent_value * child.value,
+        SizeMode::RelativeWidth => parent_value.0 * child.value,
+        SizeMode::RelativeHeight => parent_value.1 * child.value,
     }
 }
 
-fn position(parent_position: Unit,parent_size: Unit,child_size: Unit,child_position: Position) -> Unit {
+fn position(
+    parent_position: Unit,
+    parent_dimension: Unit,
+    parent_size: (Unit,Unit),
+    child_size: Unit,
+    child_position: Position
+) -> Unit {
 
     let position_offset = dimension(parent_size,child_position.value);
 
     return match child_position.alignment {
         Alignment::Center => {
             //Translate to center of parent
-            (parent_position + parent_size * 0.5) +
+            (parent_position + parent_dimension * 0.5) +
             //Align child on axis line
             (child_size * -0.5) +
             //Apply offset in regular LTR
@@ -131,14 +226,14 @@ fn position(parent_position: Unit,parent_size: Unit,child_size: Unit,child_posit
         
         Alignment::CenterLeftToRight => {
             //Translate to center of parent
-            (parent_position + parent_size * 0.5) +
+            (parent_position + parent_dimension * 0.5) +
             //Apply offset in regular LTR
             position_offset
         },
 
         Alignment::CenterRightToLeft => {
             //Center of parent
-            (parent_position + parent_size * 0.5) +
+            (parent_position + parent_dimension * 0.5) +
             //Push right edge to axis line
             (child_size * -1.0) +
             //Apply offset inverted because of RTL
@@ -154,7 +249,7 @@ fn position(parent_position: Unit,parent_size: Unit,child_size: Unit,child_posit
 
         Alignment::RightToLeft => {
             //Translate to center of parent
-            (parent_position + parent_size) +
+            (parent_position + parent_dimension) +
             //Push right edge to axis line
             (child_size * -1.0) +
             //Apply offset inverted because of RTL
