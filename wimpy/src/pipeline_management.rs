@@ -224,13 +224,13 @@ impl Pipeline {
 
     fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
         let index = self.instance_buffer_counter;
-        self.instance_buffer_counter += quad_count * size_of::<QuadInstance>() as u32;
+        self.instance_buffer_counter += quad_count;
         return index;
     }
 
     fn request_uniform_buffer_start(&mut self) -> u32 {
         let index = self.uniform_buffer_counter;
-        self.uniform_buffer_counter += UNIFORM_BUFFER_ALIGNMENT;
+        self.uniform_buffer_counter += 1;
         return index;
     }
 }
@@ -283,7 +283,7 @@ impl PipelineInternal for Pipeline {
 
         wgpu_interface.get_queue().write_buffer(
             &self.uniform_buffer,
-            buffer_start as u64,
+            (buffer_start * UNIFORM_BUFFER_ALIGNMENT) as u64,
             bytemuck::bytes_of(&get_camera_uniform(frame.size()))
         );
 
@@ -328,15 +328,14 @@ impl PipelineInternal for Pipeline {
     }
 
     fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData) {
-        let quad_instance = &draw_data.to_quad_instance();
+        let quad_instance = draw_data.to_quad_instance();
         let index = self.request_instance_buffer_start(1);
         queue.write_buffer(
             &self.instance_buffer,
-            index as u64,
-            bytemuck::bytes_of(quad_instance)
+            index as u64 * size_of::<QuadInstance>() as u64,
+            bytemuck::bytes_of(&quad_instance)
         );
-
-        render_pass.draw_indexed(0..6,0,0..1);
+        render_pass.draw_indexed(0..6,0,index..index + 1);
     }
 
     fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]) {
@@ -347,11 +346,11 @@ impl PipelineInternal for Pipeline {
 
         queue.write_buffer(
             &self.instance_buffer,
-            index as u64,
+            index as u64 * size_of::<QuadInstance>() as u64,
             bytemuck::cast_slice(&quad_instances)
         );
 
-        render_pass.draw_indexed(0..6,0,0..draw_data.len() as u32);
+        render_pass.draw_indexed(0..6,0,index..index + draw_data.len() as u32);
     }
 }
 

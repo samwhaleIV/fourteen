@@ -41,7 +41,7 @@ fn process_commands(render_pass: &mut RenderPass,frame: &Frame,pipeline: &mut Pi
     let mut current_sampling_frame: Option<Index> = None;
 
     /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
-    
+
     for command in frame.get_command_buffer().iter() {
 
         if let Some(new_index) = match command {

@@ -42,6 +42,18 @@ impl AppStateHandler for TestState {
                 color: Color::WHITE,
             });
 
+            f.draw_frame(&self.texture,DrawData {
+                area: Area {
+                    x: 128.0,
+                    y: 128.0,
+                    width: 128.0,
+                    height: 128.0
+                },
+                uv: Area::one(),
+                rotation: 0.0,
+                color: Color::WHITE,
+            });
+
             f.finish(graphics,pipeline);
             pipeline.finish(graphics);
         }
