@@ -34,8 +34,8 @@ impl AppStateHandler for TestState {
                 area: Area {
                     x: 0.0,
                     y: 0.0,
-                    width: 0.5,
-                    height: 0.5
+                    width: 10.0,
+                    height: 10.0
                 },
                 uv: Area::one(),
                 rotation: 0.0,

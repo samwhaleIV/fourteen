@@ -190,7 +190,7 @@ impl DrawData {
             ],
             color: self.color.to_float_array(),
             rotation: self.rotation,
-            _padding: [f32::NAN,f32::NAN,f32::NAN],
+            _padding: [0.0,0.0,0.0],
         }
     }
 }

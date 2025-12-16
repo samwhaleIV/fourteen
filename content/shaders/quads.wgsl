@@ -1,8 +1,7 @@
 struct CameraUniform {
     view_projection: mat4x4<f32>,
 };
-@group(1) @binding(0)
-var<uniform> camera: CameraUniform;
+@group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 struct VertexInput {
     @location(0) position: vec2<f32>,
@@ -38,6 +37,8 @@ fn rotate(rotation: f32) -> mat2x2<f32> {
     out.uv = (vertex.position + vec2<f32>(0.5)) * instance.uv_scale + instance.uv_offset;
 
     out.color = instance.color;
+
+    out.clip_position = vec4(vertex.position,0,1);
     return out;
 }
 
@@ -47,8 +48,9 @@ var t_diffuse: texture_2d<f32>;
 var s_diffuse: sampler;
 
 @fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4(0,1,0,1);
     if (fragment.color.a < 0.005) {
-        //discard;
+        discard;
     }
     return textureSample(t_diffuse,s_diffuse,fragment.uv) * fragment.color;
 }
