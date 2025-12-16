@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use crate::graphics::Graphics;
 use crate::app_state::*;
 
@@ -30,29 +32,41 @@ impl AppStateHandler for TestState {
             f.set_texture_filter(FilterMode::Nearest);
             f.set_texture_wrap(WrapMode::Clamp);
 
-            f.draw_frame(&self.texture,DrawData {
-                area: Area {
-                    x: 64.0,
-                    y: 64.0,
-                    width: 128.0,
-                    height: 128.0
-                },
-                uv: Area::one(),
-                rotation: 0.0,
-                color: Color::WHITE,
-            });
+            let size = 4;
 
-            f.draw_frame(&self.texture,DrawData {
-                area: Area {
-                    x: 128.0,
-                    y: 128.0,
-                    width: 128.0,
-                    height: 128.0
-                },
-                uv: Area::one(),
-                rotation: 0.0,
-                color: Color::WHITE,
-            });
+            let width = (f.width() as f32 / size as f32).ceil() as u32;
+            let height = (f.height() as f32 / size as f32).ceil() as u32;
+
+            let quads = width * height;
+
+            let mut buffer = Vec::<DrawData>::with_capacity(quads as usize);
+
+            for x in 0..width {
+                for y in 0..height {
+
+                    let x_normal = x as f32 / width as f32;
+                    let y_normal = y as f32 / height as f32;
+
+                    buffer.push(DrawData {
+                        area: Area {
+                            x: (x * size) as f32,
+                            y: (y * size) as f32,
+                            width: size as f32,
+                            height: size as f32
+                        },
+                        uv: Area::one(),
+                        rotation: (x_normal + y_normal) * std::f32::consts::FRAC_PI_8,
+                        color: Color {
+                            r: (x_normal * 255.0) as u8,
+                            g: (y_normal * 255.0) as u8,
+                            b: 255,
+                            a: u8::MAX
+                        },
+                    });
+                }
+            }
+
+            f.draw_frame_set(&self.texture,buffer);
 
             f.finish(graphics,pipeline);
             pipeline.finish(graphics);

@@ -4,6 +4,7 @@ mod graphics;
 mod test_state;
 
 use std::env;
+use wimpy::pipeline_management::PipelineCreationOptions;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 use env_logger::{Builder, Target};
 
@@ -15,7 +16,11 @@ fn create_event_loop() -> anyhow::Result<()> {
 
     let mut app = app::create_app(AppCreationOptions {
         state_generator: test_state::generate_test_state,
-        pipeline_options: None,
+        pipeline_options: Some(PipelineCreationOptions {
+            quad_instance_capacity: 1000000,
+            uniform_capacity: 64,
+            cache_options: None,
+        }),
         log_trace_config: None
     });
 

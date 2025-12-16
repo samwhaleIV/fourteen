@@ -293,4 +293,12 @@ impl Frame {
     pub fn size(&self) -> (u32,u32) {
         return (self.width,self.height);
     }
+
+    pub fn width(&self) -> u32 {
+        return self.width;
+    }
+
+    pub fn height(&self) -> u32 {
+        return self.height;
+    }
 }
