@@ -1,5 +1,5 @@
 use super::{
-    wgpu_interface::WGPUInterface,
+    wgpu_handle::WGPUHandle,
     frame::{
         FilterMode,
         WrapMode
@@ -104,7 +104,7 @@ struct TextureCreationParameters {
 }
 
 fn create_texture(
-    wgpu_interface: &impl WGPUInterface,
+    wgpu_handle: &impl WGPUHandle,
     bind_group_layout: &BindGroupLayout,
     image_data: Option<&[u8]>,
     parameters: TextureCreationParameters
@@ -130,7 +130,7 @@ fn create_texture(
         usage_flags |= TextureUsages::RENDER_ATTACHMENT;
     }
 
-    let device = wgpu_interface.get_device();
+    let device = wgpu_handle.get_device();
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         size: texture_size,
         mip_level_count: 1,
@@ -146,7 +146,7 @@ fn create_texture(
     });
 
     if let Some(data) = image_data {
-        wgpu_interface.get_queue().write_texture(
+        wgpu_handle.get_queue().write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
@@ -182,20 +182,24 @@ impl TextureContainer {
         return &self.view;
     }
 
-    pub fn create_mutable(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,dimensions: (u32,u32)) -> TextureContainer {
-        return create_texture(wgpu_interface,bind_group_layout,None,TextureCreationParameters {
+    pub fn create_mutable(
+        wgpu_handle: &impl WGPUHandle,
+        bind_group_layout: &BindGroupLayout,
+        dimensions: (u32,u32)
+    ) -> TextureContainer {
+        return create_texture(wgpu_handle,bind_group_layout,None,TextureCreationParameters {
             dimensions,
             mutable: true
         });
     }
 
-    pub fn from_image(wgpu_interface: &impl WGPUInterface,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
+    pub fn from_image(wgpu_handle: &impl WGPUHandle,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
         let dimensions = image.dimensions();
 
         //TODO: Make sure alpha channel is premultiplied ... Somehow.
         let image_data = image.to_rgba8();
 
-        return create_texture(wgpu_interface,bind_group_layout,Some(image_data.as_bytes()),TextureCreationParameters {
+        return create_texture(wgpu_handle,bind_group_layout,Some(image_data.as_bytes()),TextureCreationParameters {
             dimensions,
             mutable: false
         });

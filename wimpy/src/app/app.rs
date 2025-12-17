@@ -1,11 +1,18 @@
 const WINDOW_TITLE: &'static str = "Twelve Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
+const MAX_STATE_LOAD_PASSES: u32 = 32;
 
 use std::sync::Arc;
-use crate::app_state::*;
-use crate::graphics_binder::GraphicsBinder;
 
-use wimpy::graphics::{Pipeline, PipelineCreationOptions};
+use super::{
+    virtual_device::VirtualDevice,
+    app_state::*
+};
+
+use crate::graphics::{
+    GraphicsContext,
+    GraphicsContextConfiguration
+};
 
 use winit::{
     application::ApplicationHandler,
@@ -16,14 +23,14 @@ use winit::{
     window::{Window,WindowId}
 };
 
-struct PostConstructionHandles {
+struct LongLifetimeHandles {
     window: Arc<Window>,
-    graphics: GraphicsBinder,
-    pipeline: Pipeline
+    device: VirtualDevice,
+    context: GraphicsContext,
 }
 
 pub struct App {
-    handles: Option<PostConstructionHandles>,
+    handles: Option<LongLifetimeHandles>,
 
     state_loaded: bool,
     surface_configured: bool,
@@ -40,7 +47,7 @@ pub struct App {
     state: AppState,
 
     log_trace_config: LogTraceConfig,
-    pipeline_options: Option<PipelineCreationOptions>,
+    context_options: Option<GraphicsContextConfiguration>,
 }
 
 enum EventLoopOperation {
@@ -49,11 +56,11 @@ enum EventLoopOperation {
     Repeat
 }
 
-struct DummyState;
+struct DummyAppState;
 
-impl AppStateHandler for DummyState {
+impl AppStateInterface for DummyAppState {
     /* Oh no! You've activated my trap card. */
-    fn unload(&mut self,_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) {
+    fn unload(&mut self,_device: &VirtualDevice,_context: &mut GraphicsContext) {
         panic!("Cannot unload the dummy state!");
     }
     
@@ -61,7 +68,7 @@ impl AppStateHandler for DummyState {
         panic!("Cannot update the dummy state!");
     }
     
-    fn render(&self,_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) {
+    fn render(&self,_device: &VirtualDevice,_context: &mut GraphicsContext) {
         panic!("Cannot render the dummy state!");
     }
     
@@ -83,44 +90,14 @@ pub struct LogTraceConfig {
     pub other: bool
 }
 
-fn placeholder_state_generator(_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) -> AppState {
+fn placeholder_state_generator(_device: &VirtualDevice,_pipeline: &mut GraphicsContext) -> AppState {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
-pub struct AppCreationOptions {
+pub struct AppConfiguration {
     pub state_generator: AppStateGenerator,
-    pub pipeline_options: Option<PipelineCreationOptions>,
+    pub context_options: Option<GraphicsContextConfiguration>,
     pub log_trace_config: Option<LogTraceConfig>,
-}
-
-pub fn create_app(options: AppCreationOptions) -> App {
-    return App {
-        handles: None,
-
-        state_generator: options.state_generator,
-        state: Box::new(DummyState),
-
-        state_loaded: false,
-        surface_configured: false,
-
-        app_exiting: false,
-
-        pipeline_options: options.pipeline_options,
-
-        window_width: 0,
-        window_height: 0,
-
-        frame_number: 0,
-        event_number: 0,
-        
-        mouse_point: (0.0,0.0),
- 
-        /* For Debugging */
-        log_trace_config: match options.log_trace_config {
-            Some(value) => value,
-            None => Default::default(),
-        }
-    }
 }
 
 fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Position {
@@ -130,6 +107,36 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
 }
 
 impl App {
+    pub fn create(options: AppConfiguration) -> Self {
+        return Self {
+            handles: None,
+
+            state_generator: options.state_generator,
+            state: Box::new(DummyAppState),
+
+            state_loaded: false,
+            surface_configured: false,
+
+            app_exiting: false,
+
+            context_options: options.context_options,
+
+            window_width: 0,
+            window_height: 0,
+
+            frame_number: 0,
+            event_number: 0,
+            
+            mouse_point: (0.0,0.0),
+    
+            /* For Debugging */
+            log_trace_config: match options.log_trace_config {
+                Some(value) => value,
+                None => Default::default(),
+            }
+        }
+    }
+
     fn try_configure_surface(&mut self) -> bool {
         let width = self.window_width;
         let height = self.window_height;
@@ -140,7 +147,7 @@ impl App {
         }
 
         if let Some(handles) = &mut self.handles {
-            handles.graphics.configure_surface_size(width,height);
+            handles.device.configure_surface_size(width,height);
         } else {
             let error = "Graphics object does not exist.";
             log::error!("{}",&error);
@@ -155,43 +162,22 @@ impl App {
         if !self.state_loaded {
             self.load_state();
         }
-        return match self.state.update() {
-            UpdateResult {
-                operation: AppOperation::Continue,
-                new_state: None
-            } => EventLoopOperation::Continue,
+        let update_result = self.state.update();
+        return match update_result.get_operation() {
+            AppStateOperation::Continue => EventLoopOperation::Continue,
 
-            UpdateResult {
-                operation: AppOperation::Transition,
-                new_state: Some(state_generator)
-            } => {
-                self.unload_state();
-                self.state_generator = state_generator;
-                return EventLoopOperation::Repeat;
+            AppStateOperation::Terminate => EventLoopOperation::Terminate,
+
+            AppStateOperation::Transition => {
+                if let Some(state_generator) = update_result.get_state_generator() {
+                    self.unload_state();
+                    self.state_generator = state_generator;
+                    return EventLoopOperation::Repeat;
+                } else {
+                    log::error!("Invalid app state transition data.");
+                    return EventLoopOperation::Terminate;
+                }
             }
-
-            UpdateResult {
-                operation: AppOperation::Terminate,
-                new_state: None
-            } => EventLoopOperation::Terminate,
-
-            /* These invalid results can probably be fixed up by a better creation pattern. I.e. don't let the caller write them manually. */
-
-            UpdateResult {
-                new_state: Some(_),
-                ..
-            } => {
-                log::error!("Invalid update result: A state has been provided, but it has not been provided with a transition instruction. Triggering app termination.");
-                return EventLoopOperation::Terminate;
-            },
-
-            UpdateResult {
-                operation: AppOperation::Transition,
-                new_state: None
-            } => {
-                log::error!("Invalid update result: A transition has been requested, but a state has not been provided. Triggering app termination.");
-                return EventLoopOperation::Terminate;
-            },
         };
     }
 
@@ -201,8 +187,17 @@ impl App {
             log::trace!("handle_redraw - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
 
-        /* Prevent a stack overflow in the case of extremely cursed state loading. */
+        let mut load_attempts = 0;
+
         loop {
+
+            if load_attempts >= MAX_STATE_LOAD_PASSES {
+                self.terminate_app(event_loop);
+                return; 
+            }
+
+            load_attempts += 1;
+
             match self.update() {
                 EventLoopOperation::Continue => break,
                 EventLoopOperation::Terminate => {
@@ -218,7 +213,7 @@ impl App {
                 log::warn!("Attempt to render without a loaded state.");
             }
             if self.state_loaded && (self.surface_configured || self.try_configure_surface()) {
-                self.state.render(&handles.graphics,&mut handles.pipeline);
+                self.state.render(&handles.device,&mut handles.context);
             }
             handles.window.request_redraw();
             self.handles = Some(handles);
@@ -237,7 +232,7 @@ impl App {
         }
 
         if let Some(mut handles) = self.handles.take() {
-            let new_state = (self.state_generator)(&handles.graphics,&mut handles.pipeline);
+            let new_state = (self.state_generator)(&handles.device,&mut handles.context);
             self.state_generator = placeholder_state_generator;
             self.state = new_state;
             self.handles = Some(handles);
@@ -254,13 +249,13 @@ impl App {
             return;
         }
         if let Some(mut handles) = self.handles.take() {
-            self.state.unload(&handles.graphics,&mut handles.pipeline);
+            self.state.unload(&handles.device,&mut handles.context);
             self.handles = Some(handles);    
         } else if !self.app_exiting {
             log::warn!("Unusual app exit state. The app handles have already been dropped.");
             return;
         }
-        self.state = Box::new(DummyState);
+        self.state = Box::new(DummyAppState);
         self.state_loaded = false;
     }
 
@@ -317,7 +312,6 @@ impl App {
 
 impl ApplicationHandler for App {
 
-    /* Create window and graphics pipeline. */
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
         if self.handles.is_some() {
@@ -353,8 +347,8 @@ impl ApplicationHandler for App {
             window.set_outer_position(position);
         }
 
-        let graphics = match pollster::block_on(GraphicsBinder::new(window.clone())) {
-            Ok(graphics) => graphics,
+        let device = match pollster::block_on(VirtualDevice::new(window.clone())) {
+            Ok(device) => device,
             Err(error) => {
                 log::error!("{}",error);
                 self.terminate_app(event_loop);
@@ -363,12 +357,16 @@ impl ApplicationHandler for App {
         };
         window.set_visible(true);
 
-        let pipeline = Pipeline::create(&graphics,match self.pipeline_options.take() { /* We take so the underlying vectors (if any) are dropped. */
+        let context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
             Some(options) => options,
-            None => PipelineCreationOptions::default(),
+            None => GraphicsContextConfiguration::default(),
         });
 
-        self.handles = Some(PostConstructionHandles { window, graphics, pipeline });
+        self.handles = Some(LongLifetimeHandles {
+            window,
+            device,
+            context
+        });
 
         log::info!("Graphics, pipeline, and window are now configured.");
     }
@@ -445,8 +443,6 @@ impl ApplicationHandler for App {
                 }
             },
 
-            WindowEvent::CloseRequested | WindowEvent::Destroyed => self.terminate_app(event_loop), //Goodbye, cruel world.
-
             WindowEvent::Moved(_) => {
                 if self.log_trace_config.window_move {
                     log::trace!("window moved - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
@@ -467,35 +463,14 @@ impl ApplicationHandler for App {
                 },
             },
 
-            /* I actually have no idea what the fuck this event means. */
-            WindowEvent::ActivationTokenDone {
-                token,
-                serial: _,
-            } => {
-                if self.log_trace_config.other {
-                    let token_string = token.into_raw();
-                    log::trace!("activation token done - frame_number:{} | event_number:{} | token:{}",self.frame_number,self.event_number,token_string);
-                }
-            },
-
             /* TODO: Might want to use this ? */
             WindowEvent::ScaleFactorChanged { .. } => {
                 if self.log_trace_config.other {
                     log::trace!("scale factor changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
                 }
-            }
-
-            WindowEvent::ThemeChanged(_) => {
-                if self.log_trace_config.other {
-                    log::trace!("theme changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                }
             },
 
-            WindowEvent::Occluded(occluded) => {
-                if self.log_trace_config.other {
-                    log::trace!("occluded - frame_number:{} | event_number:{} | occlusion:{}",self.frame_number,self.event_number,occluded);
-                }
-            },
+            WindowEvent::CloseRequested | WindowEvent::Destroyed => self.terminate_app(event_loop), //Goodbye, cruel world.
 
             _ => {}
         };

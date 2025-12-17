@@ -1,4 +1,4 @@
-pub trait WGPUInterface {
+pub trait WGPUHandle {
     fn get_device(&self) -> &wgpu::Device;
     fn get_queue(&self) -> &wgpu::Queue;
 

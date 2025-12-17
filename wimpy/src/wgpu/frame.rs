@@ -9,10 +9,10 @@ use crate::shared::{
 };
 
 use super::{
-    wgpu_interface::WGPUInterface,
-    pipeline_management::QuadInstance,
+    wgpu_handle::WGPUHandle,
+    graphics_context::QuadInstance,
     frame_processor::render_frame,
-    pipeline_management::Pipeline
+    graphics_context::GraphicsContext
 };
 
 use generational_arena::Index;
@@ -285,7 +285,7 @@ impl Frame {
 
     /* Output & Interop */
 
-    pub fn finish(&mut self,wgpu_interface: &impl WGPUInterface,pipeline: &mut Pipeline) {
+    pub fn finish(&mut self,wgpu_handle: &impl WGPUHandle,context: &mut GraphicsContext) {
         if !self.is_writable() {
             log::error!("Frame is readonly!");
             self.command_buffer.clear();
@@ -294,7 +294,7 @@ impl Frame {
         if self.command_buffer.is_empty() {
             log::warn!("Frame command buffer is empty!");
         }        
-        render_frame(&self,wgpu_interface,pipeline);
+        render_frame(&self,wgpu_handle,context);
 
         match self.write_lock {
             LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,

@@ -1,10 +1,10 @@
 mod frame;
 mod frame_processor;
-mod pipeline_management;
+mod graphics_context;
 mod texture_container;
-mod wgpu_interface;
+mod wgpu_handle;
 
-pub use wgpu_interface::WGPUInterface;
+pub use wgpu_handle::WGPUHandle;
 pub use frame::{
     Frame,
     DrawData,
@@ -12,8 +12,7 @@ pub use frame::{
     WrapMode
 };
 
-pub use pipeline_management::{
-    Pipeline,
-    PipelineCreationOptions
+pub use graphics_context::{
+    GraphicsContext,
+    GraphicsContextConfiguration
 };
-

@@ -1221,8 +1221,6 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "pollster",
- "wgpu",
  "wimpy",
  "winit",
 ]
@@ -2852,12 +2850,15 @@ dependencies = [
 name = "wimpy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "cgmath",
  "generational-arena",
  "image",
  "log",
+ "pollster",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

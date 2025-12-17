@@ -1,24 +1,24 @@
-mod app_state;
-mod app;
-mod graphics_binder;
 mod test_state;
 
-use std::env;
-use wimpy::graphics::PipelineCreationOptions;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 use env_logger::{Builder, Target};
+use std::env;
+use wimpy::graphics::GraphicsContextConfiguration;
 
-use crate::app::AppCreationOptions;
+use wimpy::app::{
+    App,
+    AppConfiguration
+};
 
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = app::create_app(AppCreationOptions {
+    let mut app = App::create(AppConfiguration {
         state_generator: test_state::generate_test_state,
-        pipeline_options: Some(PipelineCreationOptions {
-            quad_instance_capacity: 1000000,
-            uniform_capacity: 64,
+        context_options: Some(GraphicsContextConfiguration {
+            quad_instance_capacity: 10000,
+            uniform_capacity: 32,
             cache_options: None,
         }),
         log_trace_config: None

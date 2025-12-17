@@ -17,6 +17,7 @@ impl<TKey: Hash + Eq + Copy,TValue> Default for LeaseArena<TKey,TValue> {
     }
 }
 
+#[allow(unused)]
 impl<TKey: Hash + Eq + Copy,TValue> LeaseArena<TKey,TValue> {
 
     pub fn create_with_values(

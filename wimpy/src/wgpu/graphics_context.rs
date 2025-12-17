@@ -35,7 +35,7 @@ use wgpu::{
 use crate::internal::LeaseArena;
 use super::{
     texture_container::TextureContainer,
-    wgpu_interface::WGPUInterface,
+    wgpu_handle::WGPUHandle,
     frame::{
         Frame,
         FrameInternal,
@@ -46,7 +46,7 @@ use super::{
 
 const UNIFORM_BUFFER_ALIGNMENT: u32 = 256;
 
-pub struct Pipeline {
+pub struct GraphicsContext {
     render_pipeline: RenderPipeline,
 
     vertex_buffer: Buffer,
@@ -75,14 +75,14 @@ struct OutputFrame {
 
 type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
 
-pub struct PipelineCreationOptions {
+pub struct GraphicsContextConfiguration {
     pub quad_instance_capacity: u32,
     pub uniform_capacity: u32,
     pub cache_options: Option<CacheOptions>
 }
 
 /* Reasonable-ish defaults. Callers, do it yourself! */
-impl Default for PipelineCreationOptions {
+impl Default for GraphicsContextConfiguration {
     fn default() -> Self {
         Self {
             quad_instance_capacity: 640,
@@ -108,19 +108,19 @@ pub struct FrameConfig {
     pub draw_once: bool
 }
 
-impl Pipeline {
+impl GraphicsContext {
 
     pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
     pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
     pub fn create(
-        wgpu_interface: &impl WGPUInterface,
-        options: PipelineCreationOptions
+        wgpu_handle: &impl WGPUHandle,
+        options: GraphicsContextConfiguration
     ) -> Self {
-        return create_pipeline(wgpu_interface,options);
+        return create_graphics_context(wgpu_handle,options);
     }
 
-    pub fn start(&mut self,wgpu_interface: &impl WGPUInterface) -> Option<Frame> {
+    pub fn start(&mut self,wgpu_handle: &impl WGPUHandle) -> Option<Frame> {
         if self.active {
             panic!("Pipeline is already started. There is already a command encoder active.");
         }
@@ -130,8 +130,8 @@ impl Pipeline {
             panic!("Output frame already exists!");
         }
 
-        if let Some(surface) = wgpu_interface.get_output_surface() {
-            self.encoder = Some(wgpu_interface.get_device().create_command_encoder(&CommandEncoderDescriptor {
+        if let Some(surface) = wgpu_handle.get_output_surface() {
+            self.encoder = Some(wgpu_handle.get_device().create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder")
             }));
             let size = (
@@ -151,12 +151,12 @@ impl Pipeline {
         }
     }
 
-    pub fn finish(&mut self,wgpu_interface: &impl WGPUInterface) {
+    pub fn finish(&mut self,wgpu_handle: &impl WGPUHandle) {
         if !self.active {
             panic!("Pipeline was not started. There is no active command encoder.");
         }
         if let Some(encoder) = self.encoder.take() {
-            wgpu_interface.get_queue().submit(std::iter::once(encoder.finish()));
+            wgpu_handle.get_queue().submit(std::iter::once(encoder.finish()));
 
             self.frame_cache.end_all_leases();
 
@@ -177,9 +177,9 @@ impl Pipeline {
     }
 
     /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
-    fn get_persistent_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_persistent_frame(&mut self,wgpu_handle: &impl WGPUHandle,size: (u32,u32),write_once: bool) -> Frame {
         let frame = TextureContainer::create_mutable(
-            wgpu_interface,
+            wgpu_handle,
             &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
             size
         );
@@ -191,12 +191,12 @@ impl Pipeline {
         });
     }
 
-    fn get_temp_frame(&mut self,wgpu_interface: &impl WGPUInterface,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_temp_frame(&mut self,wgpu_handle: &impl WGPUHandle,size: (u32,u32),write_once: bool) -> Frame {
         if let Some(index) = self.frame_cache.try_request_lease(size) {
             return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
         } else {
             let new_texture = TextureContainer::create_mutable(
-                wgpu_interface,
+                wgpu_handle,
                 &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
                 size
             );
@@ -205,22 +205,22 @@ impl Pipeline {
         }
     }
 
-    pub fn get_frame(&mut self,wgpu_interface: &impl WGPUInterface,config: FrameConfig) -> Frame {
+    pub fn get_frame(&mut self,wgpu_handle: &impl WGPUHandle,config: FrameConfig) -> Frame {
         return match config.lifetime {
             FrameLifetime::Temporary => {
-                self.get_temp_frame(wgpu_interface,config.size,config.draw_once)
+                self.get_temp_frame(wgpu_handle,config.size,config.draw_once)
             },
             FrameLifetime::Persistent => {
-                self.get_persistent_frame(wgpu_interface,config.size,config.draw_once)
+                self.get_persistent_frame(wgpu_handle,config.size,config.draw_once)
             },
         }
     }
 
     //TODO: Remove result return, create fallback texture
-    pub fn load_texture(&mut self,wgpu_interface: &impl WGPUInterface,path: &str) -> Result<Frame,ImageError> {
+    pub fn load_texture(&mut self,wgpu_handle: &impl WGPUHandle,path: &str) -> Result<Frame,ImageError> {
         let image = ImageReader::open(path)?.decode()?;
         let texture_container = TextureContainer::from_image(
-            wgpu_interface,
+            wgpu_handle,
             &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
             &image
         );
@@ -230,10 +230,10 @@ impl Pipeline {
         ));
     }
 
-    pub fn load_texture_bytes(&mut self,wgpu_interface: &impl WGPUInterface,bytes: &[u8]) -> Frame {
+    pub fn load_texture_bytes(&mut self,wgpu_handle: &impl WGPUHandle,bytes: &[u8]) -> Frame {
         let image = image::load_from_memory(bytes).unwrap();
         let texture_container = TextureContainer::from_image(
-            wgpu_interface,
+            wgpu_handle,
             &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
             &image
         );
@@ -256,16 +256,16 @@ impl Pipeline {
     }
 }
 
-pub trait PipelineInternal {
+pub trait GraphicsContextInternal {
     fn get_texture_container(&self,reference: Index) -> &TextureContainer;
-    fn create_render_pass<'a>(&mut self,wgpu_interface: &impl WGPUInterface,frame: &Frame,encoder: &'a mut CommandEncoder,) -> RenderPass<'a>;
+    fn create_render_pass<'a>(&mut self,wgpu_handle: &impl WGPUHandle,frame: &Frame,encoder: &'a mut CommandEncoder,) -> RenderPass<'a>;
     fn try_borrow_encoder(&mut self) -> Option<CommandEncoder>;
     fn return_encoder(&mut self,encoder: CommandEncoder);
     fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData);
     fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]);
 }
 
-impl PipelineInternal for Pipeline {
+impl GraphicsContextInternal for GraphicsContext {
 
     fn get_texture_container(&self,reference: Index) -> &TextureContainer {
         return self.frame_cache.get(reference);
@@ -273,7 +273,7 @@ impl PipelineInternal for Pipeline {
 
     fn create_render_pass<'a>(
         &mut self,
-        wgpu_interface: &impl WGPUInterface,
+        wgpu_handle: &impl WGPUHandle,
         frame: &Frame,
         encoder: &'a mut CommandEncoder,
     ) -> RenderPass<'a> {
@@ -302,7 +302,7 @@ impl PipelineInternal for Pipeline {
 
         let buffer_start: u32 = self.request_uniform_buffer_start();
 
-        wgpu_interface.get_queue().write_buffer(
+        wgpu_handle.get_queue().write_buffer(
             &self.uniform_buffer,
             (buffer_start * UNIFORM_BUFFER_ALIGNMENT) as u64,
             bytemuck::bytes_of(&get_camera_uniform(frame.size()))
@@ -322,7 +322,7 @@ impl PipelineInternal for Pipeline {
         
         //Uniform buffer bind group
         render_pass.set_bind_group(
-            Pipeline::UNIFORM_BIND_GROUP_INDEX,
+            Self::UNIFORM_BIND_GROUP_INDEX,
             &self.uniform_bind_group,
             &[buffer_start]
         );
@@ -390,13 +390,13 @@ fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
     return CameraUniform { view_projection: ortho.into() };
 }
 
-fn create_pipeline(
-    wgpu_interface: &impl WGPUInterface,
-    options: PipelineCreationOptions
-) -> Pipeline {
+fn create_graphics_context(
+    wgpu_handle: &impl WGPUHandle,
+    options: GraphicsContextConfiguration
+) -> GraphicsContext {
 
-    let device = wgpu_interface.get_device();
-    let render_pipeline = create_wgpu_pipeline(wgpu_interface);
+    let device = wgpu_handle.get_device();
+    let render_pipeline = create_wgpu_pipeline(wgpu_handle);
 
 /*
 Triangle list should generate 0-1-2 2-1-3 in CCW
@@ -448,7 +448,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     });
 
     let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &render_pipeline.get_bind_group_layout(Pipeline::UNIFORM_BIND_GROUP_INDEX),
+        layout: &render_pipeline.get_bind_group_layout(GraphicsContext::UNIFORM_BIND_GROUP_INDEX),
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform_buffer.as_entire_binding(),
@@ -469,7 +469,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
             let mut textures = Arena::with_capacity(capacity);
             let mut mutable_textures = HashMap::with_capacity(capacity);
 
-            let bind_group_layout = &render_pipeline.get_bind_group_layout(Pipeline::TEXTURE_BIND_GROUP_INDEX);
+            let bind_group_layout = &render_pipeline.get_bind_group_layout(GraphicsContext::TEXTURE_BIND_GROUP_INDEX);
 
             for size in cache_options.sizes.iter() {
                 let mut queue = VecDeque::with_capacity(instances as usize);
@@ -477,7 +477,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
                 for _ in 0..instances {
 
                     let mutable_texture = TextureContainer::create_mutable(
-                        wgpu_interface,
+                        wgpu_handle,
                         bind_group_layout,
                         *size
                     );
@@ -493,7 +493,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         }
     };
 
-    return Pipeline {
+    return GraphicsContext {
         render_pipeline,
         vertex_buffer,
         index_buffer,
@@ -509,9 +509,9 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 }
 
-pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeline {
+pub fn create_wgpu_pipeline(wgpu_handle: &impl WGPUHandle) -> RenderPipeline {
 
-    let device = wgpu_interface.get_device();
+    let device = wgpu_handle.get_device();
 
     let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("Texture Bind Group Layout"),
@@ -582,7 +582,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
             entry_point: Some("fs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu_interface.get_output_format(),
+                format: wgpu_handle.get_output_format(),
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })]
