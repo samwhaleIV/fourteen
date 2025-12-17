@@ -1,4 +1,3 @@
-#![allow(dead_code,unused_variables)]
 use std::u8;
 
 pub struct Color {
@@ -7,8 +6,6 @@ pub struct Color {
     pub b: u8,
     pub a: u8
 }
-
-const FULL_OPACITY: u8 = u8::MAX;
 
 impl Default for Color {
     fn default() -> Self {
@@ -40,52 +37,52 @@ impl Color {
         r: 0,
         g: 0,
         b: 0,
-        a: u8::MAX
+        a: u8::MAX,
     };
 
     pub const WHITE: Self = Self {
         r: u8::MAX,
         g: u8::MAX,
         b: u8::MAX,
-        a: u8::MAX
+        a: u8::MAX,
     };
 
     pub const RED: Self = Self {
         r: u8::MAX,
         g: 0,
         b: 0,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
     pub const GREEN: Self = Self {
         r: 0,
         g: u8::MAX,
         b: 0,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
     pub const BLUE: Self = Self {
         r: 0,
         g: 0,
         b: u8::MAX,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
 
     pub const YELLOW: Self = Self {
         r: u8::MAX,
         g: u8::MAX,
         b: 0,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
     pub const CYAN: Self = Self {
         r: 0,
         g: u8::MAX,
         b: u8::MAX,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
     
     pub const MAGENTA: Self = Self {
         r: u8::MAX,
         g: 0,
         b: u8::MAX,
-        a: FULL_OPACITY,
+        a: u8::MAX,
     };
 }

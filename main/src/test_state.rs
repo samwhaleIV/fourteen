@@ -1,25 +1,33 @@
-use std::f32::consts::PI;
+use crate::{
+    graphics_binder::GraphicsBinder,
+    app_state::*
+};
 
-use crate::graphics::Graphics;
-use crate::app_state::*;
-
-use wimpy::area::Area;
-use wimpy::color::Color;
-use wimpy::frame::{DrawData, FilterMode, Frame, WrapMode};
-use wimpy::pipeline_management::Pipeline;
+use wimpy::{
+    Area,
+    Color,
+    
+};
+use wimpy::graphics::{
+    DrawData,
+    FilterMode,
+    WrapMode,
+    Frame,
+    Pipeline
+};
 
 pub struct TestState {
     texture: Frame
 }
 
-pub fn generate_test_state(graphics: &Graphics,pipeline: &mut Pipeline) -> AppState {
-    let texture = pipeline.load_texture_bytes(graphics,include_bytes!("../../content/images/null.png"));
+pub fn generate_test_state(graphics: &GraphicsBinder,pipeline: &mut Pipeline) -> AppState {
+    let texture = pipeline.load_texture_bytes(graphics,include_bytes!("../../content/null.png"));
     return Box::new(TestState { texture });
 }
 
 #[allow(unused_variables)]
 impl AppStateHandler for TestState {
-    fn unload(&mut self,graphics: &Graphics,pipeline: &mut Pipeline) {
+    fn unload(&mut self,graphics: &GraphicsBinder,pipeline: &mut Pipeline) {
         
     }
 
@@ -27,7 +35,7 @@ impl AppStateHandler for TestState {
         return UpdateResult::default();
     }
 
-    fn render(&self,graphics: &Graphics,pipeline: &mut Pipeline) {
+    fn render(&self,graphics: &GraphicsBinder,pipeline: &mut Pipeline) {
         if let Some(f) = &mut pipeline.start(graphics) {
             f.set_texture_filter(FilterMode::Nearest);
             f.set_texture_wrap(WrapMode::Clamp);

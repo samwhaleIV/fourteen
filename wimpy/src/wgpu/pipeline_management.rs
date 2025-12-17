@@ -32,16 +32,16 @@ use wgpu::{
     }
 };
 
-use crate::{
-    frame::{
-        DrawData,
-        Frame,
-        FrameCreationOptions,
-        FrameInternal
-    },
-    lease_arena::LeaseArena,
+use crate::internal::LeaseArena;
+use super::{
     texture_container::TextureContainer,
-    wgpu_interface::WGPUInterface
+    wgpu_interface::WGPUInterface,
+    frame::{
+        Frame,
+        FrameInternal,
+        FrameCreationOptions,
+        DrawData
+    }
 };
 
 const UNIFORM_BUFFER_ALIGNMENT: u32 = 256;
@@ -108,7 +108,6 @@ pub struct FrameConfig {
     pub draw_once: bool
 }
 
-#[allow(dead_code)]
 impl Pipeline {
 
     pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
@@ -554,7 +553,7 @@ pub fn create_wgpu_pipeline(wgpu_interface: &impl WGPUInterface) -> RenderPipeli
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../content/shaders/quads.wgsl").into())
+        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/quads.wgsl").into())
     });
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

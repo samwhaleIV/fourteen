@@ -1,16 +1,16 @@
 use std::sync::Arc;
 use winit::window::Window;
-use wimpy::wgpu_interface::WGPUInterface;
+use wimpy::graphics::WGPUInterface;
 
-pub struct Graphics {
+pub struct GraphicsBinder {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 }
 
-impl Graphics {
-    pub async fn new(window: Arc<Window>) -> anyhow::Result<Graphics> {
+impl GraphicsBinder {
+    pub async fn new(window: Arc<Window>) -> anyhow::Result<GraphicsBinder> {
 
         let size = window.inner_size();
 
@@ -64,7 +64,7 @@ impl Graphics {
     }
 }
 
-impl WGPUInterface for Graphics {
+impl WGPUInterface for GraphicsBinder {
     fn get_device(&self) -> &wgpu::Device {
         return &self.device;
     }

@@ -1,20 +1,16 @@
-#![allow(dead_code,unused_variables)]
+use::wgpu::RenderPass;
+
+use crate::wgpu::{
+    frame::*,
+    wgpu_interface::WGPUInterface,
+    pipeline_management::{
+        Pipeline,
+        PipelineInternal
+    },
+    texture_container::SamplerMode
+};
 
 use generational_arena::Index;
-use wgpu::RenderPass;
-
-use crate::{
-    frame::{
-        FilterMode,
-        Frame,
-        FrameCommand,
-        FrameInternal,
-        WrapMode
-    },
-    pipeline_management::{Pipeline, PipelineInternal},
-    texture_container::SamplerMode,
-    wgpu_interface::WGPUInterface
-};
 
 pub fn render_frame(frame: &Frame,wgpu_interface: &impl WGPUInterface,pipeline: &mut Pipeline) {
     /* This is not where the encoder is created. Only 1 encoder is created for the master, output frame. */

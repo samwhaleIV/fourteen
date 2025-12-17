@@ -1,5 +1,3 @@
-#![allow(dead_code,unused_variables)]
-
 type Unit = f32;
 
 pub struct Layout {

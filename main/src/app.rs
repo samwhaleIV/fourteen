@@ -3,8 +3,9 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 
 use std::sync::Arc;
 use crate::app_state::*;
-use crate::graphics::Graphics;
-use wimpy::pipeline_management::{Pipeline, PipelineCreationOptions};
+use crate::graphics_binder::GraphicsBinder;
+
+use wimpy::graphics::{Pipeline, PipelineCreationOptions};
 
 use winit::{
     application::ApplicationHandler,
@@ -17,7 +18,7 @@ use winit::{
 
 struct PostConstructionHandles {
     window: Arc<Window>,
-    graphics: Graphics,
+    graphics: GraphicsBinder,
     pipeline: Pipeline
 }
 
@@ -34,7 +35,7 @@ pub struct App {
     window_width: u32,
     window_height: u32,
 
-    mouse_point: MousePoint,
+    mouse_point: (f32,f32),
     state_generator: AppStateGenerator,
     state: AppState,
 
@@ -48,17 +49,11 @@ enum EventLoopOperation {
     Repeat
 }
 
-#[allow(dead_code)]
-pub struct MouseDelta {
-    pub x: f64,
-    pub y: f64
-}
-
 struct DummyState;
 
 impl AppStateHandler for DummyState {
     /* Oh no! You've activated my trap card. */
-    fn unload(&mut self,_graphics: &Graphics,_pipeline: &mut Pipeline) {
+    fn unload(&mut self,_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) {
         panic!("Cannot unload the dummy state!");
     }
     
@@ -66,7 +61,7 @@ impl AppStateHandler for DummyState {
         panic!("Cannot update the dummy state!");
     }
     
-    fn render(&self,_graphics: &Graphics,_pipeline: &mut Pipeline) {
+    fn render(&self,_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) {
         panic!("Cannot render the dummy state!");
     }
     
@@ -87,12 +82,8 @@ pub struct LogTraceConfig {
     pub window_focus: bool,
     pub other: bool
 }
-pub struct MousePoint {
-    x: i32,
-    y: i32
-}
 
-fn placeholder_state_generator(_graphics: &Graphics,_pipeline: &mut Pipeline) -> AppState {
+fn placeholder_state_generator(_graphics: &GraphicsBinder,_pipeline: &mut Pipeline) -> AppState {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
@@ -122,7 +113,7 @@ pub fn create_app(options: AppCreationOptions) -> App {
         frame_number: 0,
         event_number: 0,
         
-        mouse_point: MousePoint { x: 0, y: 0 },
+        mouse_point: (0.0,0.0),
  
         /* For Debugging */
         log_trace_config: match options.log_trace_config {
@@ -312,9 +303,9 @@ impl App {
         //TODO
     }
 
-    fn handle_mouse_move(&mut self,point: MousePoint) {
+    fn handle_mouse_move(&mut self,point: (f32,f32)) {
         if self.log_trace_config.mouse_move {
-            log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.x,point.y);
+            log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.0,point.1);
         }
         self.mouse_point = point;
         if !self.state_loaded {
@@ -362,7 +353,7 @@ impl ApplicationHandler for App {
             window.set_outer_position(position);
         }
 
-        let graphics = match pollster::block_on(Graphics::new(window.clone())) {
+        let graphics = match pollster::block_on(GraphicsBinder::new(window.clone())) {
             Ok(graphics) => graphics,
             Err(error) => {
                 log::error!("{}",error);
@@ -392,7 +383,7 @@ impl ApplicationHandler for App {
             return;
         }
         match event {
-            DeviceEvent::MouseMotion { delta } => self.state.input(InputEvent::MouseMoveRaw(delta)),
+            DeviceEvent::MouseMotion { delta } => self.state.input(InputEvent::MouseMoveDelta((delta.0 as f32,delta.1 as f32))),
             _ => {}
         }
     }
@@ -439,7 +430,7 @@ impl ApplicationHandler for App {
             },
 
             WindowEvent::CursorMoved { position, device_id: _ } => {
-                self.handle_mouse_move(MousePoint {x: position.x as i32,y: position.y as i32});
+                self.handle_mouse_move((position.x as f32,position.y as f32));
             }
 
             WindowEvent::CursorEntered { device_id: _ } => {

@@ -1,3 +1,11 @@
+use super::{
+    wgpu_interface::WGPUInterface,
+    frame::{
+        FilterMode,
+        WrapMode
+    }
+};
+
 use image::{
     DynamicImage,
     EncodableLayout,
@@ -5,17 +13,13 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup, BindGroupLayout, Device, SurfaceTexture, TextureUsages, TextureView
+    BindGroup,
+    BindGroupLayout,
+    Device,
+    SurfaceTexture,
+    TextureUsages,
+    TextureView
 };
-
-use crate::{
-    frame::{
-        FilterMode,
-        WrapMode,
-    },
-    wgpu_interface::WGPUInterface
-};
-
 pub struct TextureContainer {
     width: u32,
     height: u32,

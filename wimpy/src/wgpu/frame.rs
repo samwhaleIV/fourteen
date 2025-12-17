@@ -1,13 +1,21 @@
-use std::{collections::VecDeque, ptr};
-use generational_arena::Index;
-
-use crate::{
-    area::Area,
-    color::Color,
-    frame_processor,
-    pipeline_management::{Pipeline,QuadInstance},
-    wgpu_interface::WGPUInterface
+use std::{
+    collections::VecDeque,
+    ptr
 };
+
+use crate::shared::{
+    Color,
+    Area
+};
+
+use super::{
+    wgpu_interface::WGPUInterface,
+    pipeline_management::QuadInstance,
+    frame_processor::render_frame,
+    pipeline_management::Pipeline
+};
+
+use generational_arena::Index;
 
 #[derive(Clone,Copy,PartialEq)]
 pub enum FrameType {
@@ -130,7 +138,6 @@ impl FrameInternal for Frame {
 }
 
  //Conveniently enough, 64 bytes wide.
- #[allow(dead_code)]
 pub enum FrameCommand {
     /* Single Fire Draw Commands */
 
@@ -147,7 +154,6 @@ pub enum FrameCommand {
 }
 
 #[derive(Copy,Clone,PartialEq)]
-#[allow(dead_code)]
 pub enum WrapMode {
     Clamp,
     Repeat,
@@ -155,7 +161,6 @@ pub enum WrapMode {
 }
 
 #[derive(Copy,Clone,PartialEq)]
-#[allow(dead_code)]
 pub enum FilterMode {
     Nearest,
     Linear,
@@ -253,7 +258,6 @@ fn validate_src_dst_op(destination: &Frame,source: &Frame) -> bool {
     return valid;
 }
 
-#[allow(dead_code)]
 impl Frame {
 
     pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
@@ -290,7 +294,7 @@ impl Frame {
         if self.command_buffer.is_empty() {
             log::warn!("Frame command buffer is empty!");
         }        
-        frame_processor::render_frame(&self,wgpu_interface,pipeline);
+        render_frame(&self,wgpu_interface,pipeline);
 
         match self.write_lock {
             LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,

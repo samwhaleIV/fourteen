@@ -1,10 +1,10 @@
 mod app_state;
 mod app;
-mod graphics;
+mod graphics_binder;
 mod test_state;
 
 use std::env;
-use wimpy::pipeline_management::PipelineCreationOptions;
+use wimpy::graphics::PipelineCreationOptions;
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 use env_logger::{Builder, Target};
 
