@@ -5,5 +5,8 @@ pub mod shared;
 pub mod app;
 
 pub mod graphics {
-    pub use crate::wgpu::*;
+    pub use crate::wgpu::{
+        GraphicsContext,
+        GraphicsContextConfiguration
+    };
 }

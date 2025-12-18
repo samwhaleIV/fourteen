@@ -1,5 +1,4 @@
 mod frame;
-mod frame_processor;
 mod graphics_context;
 mod texture_container;
 mod wgpu_handle;
@@ -14,5 +13,6 @@ pub use frame::{
 
 pub use graphics_context::{
     GraphicsContext,
-    GraphicsContextConfiguration
+    GraphicsContextConfiguration,
+    GraphicsContextInternal
 };

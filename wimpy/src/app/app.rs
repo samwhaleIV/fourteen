@@ -9,9 +9,10 @@ use super::{
     app_state::*
 };
 
-use crate::graphics::{
+use crate::wgpu::{
     GraphicsContext,
-    GraphicsContextConfiguration
+    GraphicsContextConfiguration,
+    GraphicsContextInternal
 };
 
 use winit::{
@@ -19,23 +20,37 @@ use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Position},
     event::*,
     event_loop::{ActiveEventLoop},
-    keyboard::{KeyCode,PhysicalKey},
+    keyboard::{PhysicalKey},
     window::{Window,WindowId}
 };
 
-struct LongLifetimeHandles {
-    window: Arc<Window>,
-    device: VirtualDevice,
-    context: GraphicsContext
+pub type AppState<TSharedState> = Box<dyn AppStateInterface<TSharedState>>;
+pub type AppStateGenerator<TSharedState> = fn(&mut AppContext<TSharedState>) -> AppState<TSharedState>;
+
+pub type SharedStateGenerator<TSharedState> = fn(&mut GraphicsContext<VirtualDevice>) -> TSharedState;
+
+struct TransientBlock<TSharedState> {
+    window: Option<Arc<Window>>,
+    device: Option<VirtualDevice>,
+    graphics_context: Option<GraphicsContext<VirtualDevice>>,
+    app_state: Option<AppState<TSharedState>>,
+    shared_state: Option<TSharedState>,
 }
 
-pub type SharedStateGenerator<TSharedState> = fn(&VirtualDevice,&mut GraphicsContext) -> TSharedState;
-
+impl<TSharedState> Default for TransientBlock<TSharedState> {
+    fn default() -> Self {
+        return Self {
+            window: None,
+            device: None,
+            graphics_context: None,
+            app_state: None,
+            shared_state: None
+        }
+    }
+}
 pub struct App<TSharedState> {
 
-    handles: Option<LongLifetimeHandles>,
-    state: Option<AppState<TSharedState>>,
-    shared_state: Option<TSharedState>,
+    transient_block: TransientBlock<TSharedState>,
 
     state_generator: AppStateGenerator<TSharedState>,
     shared_state_generator: SharedStateGenerator<TSharedState>,
@@ -53,6 +68,8 @@ pub struct App<TSharedState> {
 
     log_trace_config: LogTraceConfig,
     context_options: Option<GraphicsContextConfiguration>,
+
+    received_resume_call: bool
 }
 
 enum EventLoopOperation {
@@ -74,7 +91,7 @@ pub struct LogTraceConfig {
     pub other: bool
 }
 
-fn placeholder_state_generator<TSharedState>(_device: &VirtualDevice,_pipeline: &mut GraphicsContext) -> AppState<TSharedState> {
+fn placeholder_state_generator<TSharedState>(_context: &mut AppContext<TSharedState>) -> AppState<TSharedState> {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
@@ -92,53 +109,73 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
 }
 
 struct BorrowingBlock<TSharedState> {
-    pub state: AppState<TSharedState>,
-    pub shared_state: Option<TSharedState>,
-    pub handles: LongLifetimeHandles,
+    window: Arc<Window>,
+    app_state: AppState<TSharedState>,
+    device: Option<VirtualDevice>,
+    graphics_context: Option<GraphicsContext<VirtualDevice>>,
+    shared_state: Option<TSharedState>,
 }
 
 impl<TSharedState> BorrowingBlock<TSharedState> {
-
-    fn insert_shared_state(&mut self) {
-        self.state.insert_shared_state(self.shared_state.take());
+    pub fn try_get_app_context(&mut self) -> Option<AppContext<TSharedState>> {
+        if
+            let (Some(shared_state),Some(mut graphics_context),Some(device)) = (self.shared_state.take(),self.graphics_context.take(),self.device.take())
+        {
+            graphics_context.insert_wgpu_handle(device);
+            return Some(AppContext::construct(shared_state,graphics_context));
+        } else {
+            log::warn!("Borrowing block is missing parts of the app context.");
+            return None;
+        }
     }
-
-    fn remove_shared_state(&mut self) {
-        self.shared_state = self.state.remove_shared_state();
-    }
-
-    pub fn update_state(&mut self) -> UpdateResult<TSharedState> {
-        self.insert_shared_state();
-        let result = self.state.update(&self.handles.device,&mut self.handles.context);
-        self.remove_shared_state();
-        return result;
-    }
-
-    pub fn render_state(&mut self) {
-        self.insert_shared_state();
-        self.state.render(&self.handles.device,&mut self.handles.context);
-        self.remove_shared_state();
-    }
-
-    pub fn unload_state(&mut self) {
-        self.insert_shared_state();
-        self.state.unload(&self.handles.device,&mut self.handles.context);
-        self.remove_shared_state();
+    pub fn return_app_context(&mut self,app_context: AppContext<TSharedState>) {
+        let (shared_state,mut graphics_context) = app_context.deconstruct();
+        self.shared_state = Some(shared_state);
+        self.device = graphics_context.remove_wgpu_handle();
+        self.graphics_context = Some(graphics_context);
     }
 }
 
 impl<TSharedState> App<TSharedState> {
 
+    fn try_get_borrowing_block(&mut self) -> Option<BorrowingBlock<TSharedState>> {
+        let TransientBlock {
+            window: Some(window),
+            device: Some(device),
+            graphics_context: Some(graphics_context),
+            app_state: Some(app_state),
+            shared_state: Some(shared_state),
+        } = std::mem::take(&mut self.transient_block) else {
+            return None;
+        };
+        return Some(BorrowingBlock {
+            window,
+            app_state,
+            device: Some(device),
+            graphics_context: Some(graphics_context),
+            shared_state: Some(shared_state),
+        });
+    }
+
+    fn return_borrowing_block(&mut self,borrowing_block: BorrowingBlock<TSharedState>) {
+        self.transient_block = TransientBlock {
+            window: Some(borrowing_block.window),
+            app_state: Some(borrowing_block.app_state),
+            device: borrowing_block.device,
+            graphics_context: borrowing_block.graphics_context,
+            shared_state: borrowing_block.shared_state
+        };
+    }
+
     pub fn create(options: AppConfiguration<TSharedState>) -> Self {
         return Self {
-            handles: None,
-            state: None,
-            shared_state: None,
+            transient_block: TransientBlock::<TSharedState>::default(),
 
             shared_state_generator: options.shared_state_generator,
             state_generator: options.state_generator,
 
             surface_configured: false,
+            received_resume_call: false,
 
             app_exiting: false,
 
@@ -160,43 +197,6 @@ impl<TSharedState> App<TSharedState> {
         }
     }
 
-    fn try_get_borrowing_block(&mut self) -> Option<BorrowingBlock<TSharedState>> {
-        let handles = self.handles.take();
-        let state = self.state.take();
-        let shared_state = self.shared_state.take();
-
-        if handles.is_none() || state.is_none() || shared_state.is_none() {
-            if handles.is_none() {
-                log::error!("App handles not found!");
-            }
-            if state.is_none() {
-                log::error!("App state is missing!");
-            }
-            if shared_state.is_none() {
-                log::error!("Shared state is missing!");
-            }
-            self.handles = handles;
-            self.state = state;
-            self.shared_state = shared_state;
-            return None;
-        }
-        if let (Some(handles),Some(state)) = (handles,state) {
-            return Some(BorrowingBlock {
-                state,
-                handles,
-                shared_state,
-            });
-        } else {
-            return None;
-        }
-    }
-
-    fn return_borrowing_block(&mut self,borrowing_block: BorrowingBlock<TSharedState>) {
-        self.handles = Some(borrowing_block.handles);
-        self.state = Some(borrowing_block.state);
-        self.shared_state = borrowing_block.shared_state;
-    }
-
     fn try_configure_surface(&mut self) -> bool {
         let width = self.window_width;
         let height = self.window_height;
@@ -206,34 +206,47 @@ impl<TSharedState> App<TSharedState> {
             return false;
         }
 
-        if let Some(handles) = &mut self.handles {
-            handles.device.configure_surface_size(width,height);
+        if let Some(mut device) = self.transient_block.device.take() {
+            device.configure_surface_size(width,height);
+            self.transient_block.device = Some(device);
         } else {
-            let error = "Graphics object does not exist.";
-            log::error!("{}",&error);
-            panic!("{}",&error);
+            log::error!("Virtual device not found.");
+            return false;
         }
 
         self.surface_configured = true;
         return true;
     }
 
+    fn try_load_new_state(&mut self) -> bool {
+        if 
+            let Some(mut borrowing_block) = self.try_get_borrowing_block() &&
+            let Some(mut app_context) = borrowing_block.try_get_app_context() 
+        {
+            let new_state = (self.state_generator)(&mut app_context);
+            self.state_generator = placeholder_state_generator;
+
+            borrowing_block.return_app_context(app_context);
+            self.return_borrowing_block(borrowing_block);
+
+            self.transient_block.app_state = Some(new_state);
+        } else {
+            return false;
+        }
+        return true;
+    }
+
     fn update(&mut self) -> EventLoopOperation {
         /* Load a state if ones does not exist. */
-        if self.state.is_none() {
-            if let Some(mut handles) = self.handles.take() {
-                let new_state = (self.state_generator)(&handles.device,&mut handles.context);
-                self.state_generator = placeholder_state_generator;
-                self.state = Some(new_state);
-                self.handles = Some(handles);
-            } else {
-                log::error!("App handles not found!");
-                return EventLoopOperation::Terminate;
-            }
+        if self.transient_block.app_state.is_none() && !self.try_load_new_state() {
+            return EventLoopOperation::Terminate;
         }
-        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
-
-            let update_result = borrowing_block.update_state();
+        if 
+            let Some(mut borrowing_block) = self.try_get_borrowing_block() &&
+            let Some(mut app_context) = borrowing_block.try_get_app_context() 
+        {
+            let update_result = borrowing_block.app_state.update(&mut app_context);
+            borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
 
             let event_loop_operation = match update_result.get_operation() {
@@ -284,26 +297,32 @@ impl<TSharedState> App<TSharedState> {
                 EventLoopOperation::Repeat => continue
             }
         }
-
-        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
+        if
+            let Some(mut borrowing_block) = self.try_get_borrowing_block() &&
+            let Some(mut app_context) = borrowing_block.try_get_app_context() 
+        {
             if self.surface_configured || self.try_configure_surface() {
-                borrowing_block.render_state();
+                borrowing_block.app_state.render(&mut app_context);
             }
-            borrowing_block.handles.window.request_redraw();
+            borrowing_block.window.request_redraw();
+            borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
         } else {
             self.terminate_app(event_loop);
             return;
         }
-
         self.frame_number += 1;
     }
 
     fn unload_state(&mut self) {
-        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
-            borrowing_block.unload_state();
+        if 
+            let Some(mut borrowing_block) = self.try_get_borrowing_block() &&
+            let Some(mut app_context) = borrowing_block.try_get_app_context() 
+        {
+            borrowing_block.app_state.unload(&mut app_context);
+            borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
-            self.state = None;
+            self.transient_block.app_state = None;
         }
     }
 
@@ -319,42 +338,17 @@ impl<TSharedState> App<TSharedState> {
         log::info!("Termination success; event loop exiting.");
     }
 
-    fn handle_key_change(&mut self,_code: KeyCode,_pressed: bool){
-        if self.log_trace_config.key_change {
-            log::trace!("handle_key_change - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
+    fn send_input(&mut self,input_event: InputEvent) {
+        if
+            let Some(mut borrowing_block) = self.try_get_borrowing_block() &&
+            let Some(mut app_context) = borrowing_block.try_get_app_context() 
+        {    
+            borrowing_block.app_state.input(input_event,&mut app_context);
+            borrowing_block.return_app_context(app_context);
+            self.return_borrowing_block(borrowing_block);
+        } else {
+            log::warn!("Could not send input to app state because the context is missing.");
         }
-        //TODO
-    }
-
-    fn handle_mouse_press(&mut self) {
-        if self.log_trace_config.mouse_click {
-            log::trace!("handle_mouse_press - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-        }
-        if !self.state.is_none() {
-            return;
-        }
-        //TODO
-    }
-
-    fn handle_mouse_release(&mut self) {
-        if self.log_trace_config.mouse_click {
-            log::trace!("handle_mouse_release - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-        }
-        if !self.state.is_none() {
-            return;
-        }
-        //TODO
-    }
-
-    fn handle_mouse_move(&mut self,point: (f32,f32)) {
-        if self.log_trace_config.mouse_move {
-            log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.0,point.1);
-        }
-        self.mouse_point = point;
-        if !self.state.is_none() {
-            return;
-        }
-        //TODO
     }
 }
 
@@ -362,13 +356,14 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
-        if self.handles.is_some() {
+        if self.received_resume_call {
             /* This shouldn't happen on desktop platforms. */
             log::info!("The app has been resumed. Welcome back!");
             return;
         } else {
             log::info!("Received 'resumed' call. Getting on with the window and graphics setup.");
         }
+        self.received_resume_call = true;
         
         let (min_width,min_height) = MINIMUM_WINDOW_SIZE;
         let min_inner_size = PhysicalSize::new(min_width,min_height);
@@ -405,20 +400,20 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
         };
         window.set_visible(true);
 
-        let mut context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
+        let mut graphics_context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
             Some(options) => options,
             None => GraphicsContextConfiguration::default(),
         });
 
-        self.shared_state = Some((self.shared_state_generator)(&device,&mut context));
+        let shared_state = (self.shared_state_generator)(&mut graphics_context);
 
-        self.handles = Some(LongLifetimeHandles {
-            window,
-            device,
-            context
-        });
+        self.transient_block.window = Some(window);
+        self.transient_block.device = Some(device);
 
-        log::info!("Long living app handles are now configured.");
+        self.transient_block.graphics_context = Some(graphics_context);
+        self.transient_block.shared_state = Some(shared_state);
+
+        log::info!("App graphics context and shared state are configured.");
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -427,15 +422,14 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
     }
 
     fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
-        if self.app_exiting || self.state.is_none() {
+        if self.app_exiting || self.transient_block.app_state.is_none() {
             return;
         }
-        if let Some(mut state) = self.state.take() {
-            match event {
-                DeviceEvent::MouseMotion { delta } => state.input(InputEvent::MouseMoveDelta((delta.0 as f32,delta.1 as f32))),
-                _ => {}
-            }
-            self.state = Some(state);
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.send_input(InputEvent::MouseMoveDelta((delta.0 as f32,delta.1 as f32)));
+            },
+            _ => {}
         }
     }
 
@@ -461,27 +455,39 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
                 is_synthetic: false,
                 event: KeyEvent {
                     physical_key: PhysicalKey::Code(code),
-                    state: key_state,
+                    state: ElementState::Pressed,
                     repeat: false,
                     ..
                 },
                 device_id: _
-            } => {
-                let key_pressed = key_state == ElementState::Pressed;
-                self.handle_key_change(code,key_pressed);
-            },
+            } => self.send_input(InputEvent::KeyPress(code)),
+
+            WindowEvent::KeyboardInput {
+                is_synthetic: false,
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(code),
+                    state: ElementState::Released,
+                    repeat: false,
+                    ..
+                },
+                device_id: _
+            } => self.send_input(InputEvent::KeyRelease(code)),
 
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
-                state,
+                state: ElementState::Pressed,
                 device_id: _
-            } => match state {
-                ElementState::Pressed => self.handle_mouse_press(),
-                ElementState::Released => self.handle_mouse_release(),
-            },
+            } => self.send_input(InputEvent::MousePress(self.mouse_point)),
+
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state: ElementState::Released,
+                device_id: _
+            } => self.send_input(InputEvent::MousePress(self.mouse_point)),
 
             WindowEvent::CursorMoved { position, device_id: _ } => {
-                self.handle_mouse_move((position.x as f32,position.y as f32));
+                self.mouse_point = (position.x as f32,position.y as f32);
+                self.send_input(InputEvent::MouseMove(self.mouse_point));
             }
 
             WindowEvent::CursorEntered { device_id: _ } => {

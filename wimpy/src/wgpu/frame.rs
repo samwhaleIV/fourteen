@@ -3,16 +3,13 @@ use std::{
     ptr
 };
 
-use crate::shared::{
-    Color,
-    Area
-};
+use crate::{shared::{
+    Area, Color
+}, wgpu::{WGPUHandle, graphics_context::GraphicsContextInternal}};
 
-use super::{
-    wgpu_handle::WGPUHandle,
-    graphics_context::QuadInstance,
-    frame_processor::render_frame,
-    graphics_context::GraphicsContext
+use super::graphics_context::{
+    QuadInstance,
+    GraphicsContext,
 };
 
 use generational_arena::Index;
@@ -285,7 +282,7 @@ impl Frame {
 
     /* Output & Interop */
 
-    pub fn finish(&mut self,wgpu_handle: &impl WGPUHandle,context: &mut GraphicsContext) {
+    pub fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>) {
         if !self.is_writable() {
             log::error!("Frame is readonly!");
             self.command_buffer.clear();
@@ -293,8 +290,8 @@ impl Frame {
         }
         if self.command_buffer.is_empty() {
             log::warn!("Frame command buffer is empty!");
-        }        
-        render_frame(&self,wgpu_handle,context);
+        }    
+        context.render_frame(&self);
 
         match self.write_lock {
             LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,

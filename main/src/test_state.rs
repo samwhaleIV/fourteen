@@ -3,14 +3,13 @@
 use wimpy::app::*;
 use wimpy::graphics::GraphicsContext;
 
-use crate::shared_state::SharedState;
-
+#[allow(unused)]
 pub struct SharedState {
     pub ahhhhh: u32
 }
 
 impl SharedState {
-    pub fn generator(_device: &VirtualDevice,_context: &mut GraphicsContext) -> Self {
+    pub fn generator(_context: &mut GraphicsContext<VirtualDevice>) -> Self {
         return Self {
             ahhhhh: 0
         }
@@ -18,38 +17,31 @@ impl SharedState {
 }
 
 
+
 pub struct TestState {
     shared_state: Option<SharedState>
 }
 
-pub fn generate_test_state(device: &VirtualDevice,context: &mut GraphicsContext) -> AppState<SharedState> {
+pub fn generate_test_state(context: &mut AppContext<SharedState>) -> AppState<SharedState> {
     return Box::new(TestState {
         shared_state: None
     });
 }
 
 impl AppStateInterface<SharedState> for TestState {
-    fn input(&mut self,input_event: InputEvent) {
+    fn input(&mut self,input_event: InputEvent,context: &mut AppContext<SharedState>) {
         todo!()
     }
 
-    fn unload(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) {
+    fn unload(&mut self,context: &mut AppContext<SharedState>) {
         todo!()
     }
 
-    fn render(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) {
+    fn render(&mut self,context: &mut AppContext<SharedState>) {
         todo!()
     }
 
-    fn update(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) -> UpdateResult<SharedState> {
+    fn update(&mut self,context: &mut AppContext<SharedState>) -> UpdateResult<SharedState> {
         todo!()
-    }
-
-    fn insert_shared_state(&mut self,shared_state: Option<SharedState>) {
-        self.shared_state = shared_state;
-    }
-
-    fn remove_shared_state(&mut self) -> Option<SharedState> {
-        return self.shared_state.take();
     }
 }

@@ -1,6 +1,6 @@
 use winit::keyboard::KeyCode;
-use super::virtual_device::VirtualDevice;
-use crate::graphics::GraphicsContext;
+use crate::{app::VirtualDevice, graphics::GraphicsContext};
+use super::app::AppStateGenerator;
 
 pub struct UpdateResult<TSharedState> {
     operation: AppStateOperation,
@@ -62,17 +62,36 @@ pub enum InputEvent {
     /* could also making the loading implementation parameterized */
 }
 
-pub trait AppStateInterface<TSharedState> {
-
-    fn input(&mut self,input_event: InputEvent);
-
-    fn unload(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
-    fn render(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
-    fn update(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) -> UpdateResult<TSharedState>;
-
-    fn insert_shared_state(&mut self,shared_state: Option<TSharedState>);
-    fn remove_shared_state(&mut self) -> Option<TSharedState>;
+pub struct AppContext<TSharedState> {
+    shared_state: TSharedState,
+    graphics_context: GraphicsContext<VirtualDevice>
 }
 
-pub type AppState<TSharedState> = Box<dyn AppStateInterface<TSharedState>>;
-pub type AppStateGenerator<TSharedState> = fn(&VirtualDevice,&mut GraphicsContext) -> AppState<TSharedState>;
+impl<TSharedState> AppContext<TSharedState> {
+    pub fn construct(shared_state: TSharedState,graphics_context: GraphicsContext<VirtualDevice>) -> Self {
+        return Self {
+            shared_state,
+            graphics_context
+        }
+    }
+
+    pub fn deconstruct(self) -> (TSharedState,GraphicsContext<VirtualDevice>) {
+        return (self.shared_state,self.graphics_context);
+    }
+
+    pub fn shared(&mut self) -> &mut GraphicsContext<VirtualDevice> {
+        return &mut self.graphics_context;
+    }
+
+    pub fn graphics(&mut self) -> &mut TSharedState {
+        return &mut self.shared_state;
+    }
+}
+
+pub trait AppStateInterface<TSharedState> {
+    fn input(&mut self,input_event: InputEvent,context: &mut AppContext<TSharedState>);
+    fn unload(&mut self,context: &mut AppContext<TSharedState>);
+    fn render(&mut self,context: &mut AppContext<TSharedState>);
+    fn update(&mut self,context: &mut AppContext<TSharedState>) -> UpdateResult<TSharedState>;
+}
+

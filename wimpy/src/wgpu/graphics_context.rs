@@ -1,8 +1,8 @@
 use core::panic;
-use std::{collections::{
+use std::collections::{
     HashMap,
     VecDeque
-}};
+};
 
 use bytemuck::{
     Pod,
@@ -32,7 +32,7 @@ use wgpu::{
     }
 };
 
-use crate::internal::LeaseArena;
+use crate::{internal::LeaseArena, wgpu::{FilterMode, WrapMode, frame::FrameCommand, texture_container::SamplerMode}};
 use super::{
     texture_container::TextureContainer,
     wgpu_handle::WGPUHandle,
@@ -46,7 +46,7 @@ use super::{
 
 const UNIFORM_BUFFER_ALIGNMENT: u32 = 256;
 
-pub struct GraphicsContext {
+pub struct GraphicsContext<THandle> {
     render_pipeline: RenderPipeline,
 
     vertex_buffer: Buffer,
@@ -54,6 +54,8 @@ pub struct GraphicsContext {
 
     instance_buffer: Buffer,
     uniform_buffer: Buffer,
+
+    wgpu_handle: Option<THandle>,
 
     uniform_bind_group: BindGroup,
 
@@ -108,19 +110,19 @@ pub struct FrameConfig {
     pub draw_once: bool
 }
 
-impl GraphicsContext {
+pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
-    pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
-    pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+impl<THandle: WGPUHandle> GraphicsContext<THandle> {
 
     pub fn create(
-        wgpu_handle: &impl WGPUHandle,
+        wgpu_handle: &THandle,
         options: GraphicsContextConfiguration
     ) -> Self {
         return create_graphics_context(wgpu_handle,options);
     }
 
-    pub fn start(&mut self,wgpu_handle: &impl WGPUHandle) -> Option<Frame> {
+    pub fn start(&mut self,wgpu_handle: &THandle) -> Option<Frame> {
         if self.active {
             panic!("Pipeline is already started. There is already a command encoder active.");
         }
@@ -151,11 +153,11 @@ impl GraphicsContext {
         }
     }
 
-    pub fn finish(&mut self,wgpu_handle: &impl WGPUHandle) {
+    pub fn finish(&mut self) {
         if !self.active {
             panic!("Pipeline was not started. There is no active command encoder.");
         }
-        if let Some(encoder) = self.encoder.take() {
+        if let (Some(wgpu_handle),Some(encoder)) = (self.wgpu_handle.take(),self.encoder.take()) {
             wgpu_handle.get_queue().submit(std::iter::once(encoder.finish()));
 
             self.frame_cache.end_all_leases();
@@ -169,18 +171,17 @@ impl GraphicsContext {
             } else {
                 log::warn!("Output frame not found during frame finish.");
             }
-            self.encoder = None;
             self.active = false;
         } else {
-            panic!("Encoder not found. Did a caller forget to return it?");
+            panic!("Encoder or wgpu handle not found. Did a caller forget to return it?");
         }
     }
 
     /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
-    fn get_persistent_frame(&mut self,wgpu_handle: &impl WGPUHandle,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_persistent_frame(&mut self,wgpu_handle: &THandle,size: (u32,u32),write_once: bool) -> Frame {
         let frame = TextureContainer::create_mutable(
             wgpu_handle,
-            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
+            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
             size
         );
         let index = self.frame_cache.insert_keyless(frame);
@@ -191,13 +192,13 @@ impl GraphicsContext {
         });
     }
 
-    fn get_temp_frame(&mut self,wgpu_handle: &impl WGPUHandle,size: (u32,u32),write_once: bool) -> Frame {
+    fn get_temp_frame(&mut self,wgpu_handle: &THandle,size: (u32,u32),write_once: bool) -> Frame {
         if let Some(index) = self.frame_cache.try_request_lease(size) {
             return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
         } else {
             let new_texture = TextureContainer::create_mutable(
                 wgpu_handle,
-                &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
+                &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
                 size
             );
             let index = self.frame_cache.insert_leasable_and_take(size,new_texture);
@@ -205,7 +206,7 @@ impl GraphicsContext {
         }
     }
 
-    pub fn get_frame(&mut self,wgpu_handle: &impl WGPUHandle,config: FrameConfig) -> Frame {
+    pub fn get_frame(&mut self,wgpu_handle: &THandle,config: FrameConfig) -> Frame {
         return match config.lifetime {
             FrameLifetime::Temporary => {
                 self.get_temp_frame(wgpu_handle,config.size,config.draw_once)
@@ -217,11 +218,11 @@ impl GraphicsContext {
     }
 
     //TODO: Remove result return, create fallback texture
-    pub fn load_texture(&mut self,wgpu_handle: &impl WGPUHandle,path: &str) -> Result<Frame,ImageError> {
+    pub fn load_texture(&mut self,wgpu_handle: &THandle,path: &str) -> Result<Frame,ImageError> {
         let image = ImageReader::open(path)?.decode()?;
         let texture_container = TextureContainer::from_image(
             wgpu_handle,
-            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
+            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
             &image
         );
         return Ok(FrameInternal::create_texture(
@@ -230,11 +231,11 @@ impl GraphicsContext {
         ));
     }
 
-    pub fn load_texture_bytes(&mut self,wgpu_handle: &impl WGPUHandle,bytes: &[u8]) -> Frame {
+    pub fn load_texture_bytes(&mut self,wgpu_handle: &THandle,bytes: &[u8]) -> Frame {
         let image = image::load_from_memory(bytes).unwrap();
         let texture_container = TextureContainer::from_image(
             wgpu_handle,
-            &self.render_pipeline.get_bind_group_layout(Self::TEXTURE_BIND_GROUP_INDEX),
+            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
             &image
         );
         return FrameInternal::create_texture(
@@ -254,18 +255,6 @@ impl GraphicsContext {
         self.uniform_buffer_counter += 1;
         return index;
     }
-}
-
-pub trait GraphicsContextInternal {
-    fn get_texture_container(&self,reference: Index) -> &TextureContainer;
-    fn create_render_pass<'a>(&mut self,wgpu_handle: &impl WGPUHandle,frame: &Frame,encoder: &'a mut CommandEncoder,) -> RenderPass<'a>;
-    fn try_borrow_encoder(&mut self) -> Option<CommandEncoder>;
-    fn return_encoder(&mut self,encoder: CommandEncoder);
-    fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData);
-    fn write_quad_set(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &[DrawData]);
-}
-
-impl GraphicsContextInternal for GraphicsContext {
 
     fn get_texture_container(&self,reference: Index) -> &TextureContainer {
         return self.frame_cache.get(reference);
@@ -273,8 +262,8 @@ impl GraphicsContextInternal for GraphicsContext {
 
     fn create_render_pass<'a>(
         &mut self,
-        wgpu_handle: &impl WGPUHandle,
         frame: &Frame,
+        queue: &wgpu::Queue,
         encoder: &'a mut CommandEncoder,
     ) -> RenderPass<'a> {
 
@@ -302,7 +291,7 @@ impl GraphicsContextInternal for GraphicsContext {
 
         let buffer_start: u32 = self.request_uniform_buffer_start();
 
-        wgpu_handle.get_queue().write_buffer(
+        queue.write_buffer(
             &self.uniform_buffer,
             (buffer_start * UNIFORM_BUFFER_ALIGNMENT) as u64,
             bytemuck::bytes_of(&get_camera_uniform(frame.size()))
@@ -322,30 +311,12 @@ impl GraphicsContextInternal for GraphicsContext {
         
         //Uniform buffer bind group
         render_pass.set_bind_group(
-            Self::UNIFORM_BIND_GROUP_INDEX,
+            UNIFORM_BIND_GROUP_INDEX,
             &self.uniform_bind_group,
             &[buffer_start]
         );
 
         return render_pass;
-    }
-
-    fn try_borrow_encoder(&mut self) -> Option<CommandEncoder> {
-        if let Some(encoder) = self.encoder.take() {
-            return Some(encoder);
-        } else {
-            return None;
-        }
-    }
-
-    fn return_encoder(&mut self,encoder: CommandEncoder) {
-        if !self.active {
-            panic!("Pipeline was not started. There is no active command encoder.");
-        }
-        if self.encoder.is_some() {
-            panic!("Pipeline already has a command encoder in place.");
-        }
-        self.encoder = Some(encoder);
     }
 
     fn write_quad(&mut self,render_pass: &mut RenderPass,queue: &wgpu::Queue,draw_data: &DrawData) {
@@ -373,6 +344,93 @@ impl GraphicsContextInternal for GraphicsContext {
 
         render_pass.draw_indexed(0..6,0,index..index + draw_data.len() as u32);
     }
+
+    fn process_commands(&mut self,render_pass: &mut RenderPass,frame: &Frame,queue: &wgpu::Queue) {
+        let mut needs_sampler_update: bool = true;
+
+        let mut filter_mode: FilterMode = FilterMode::Nearest;
+        let mut wrap_mode: WrapMode = WrapMode::Clamp;
+
+        let mut current_sampling_frame: Option<Index> = None;
+
+        /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
+
+        for command in frame.get_command_buffer().iter() {
+
+            if let Some(new_index) = match command {
+                FrameCommand::DrawFrame(index,_) |
+                FrameCommand::DrawFrameSet(index,_) => Some(index),
+                //Add more types if they change the sampler bind group
+                _ => None
+            } {
+                let texture_container = self.get_texture_container(*new_index);
+
+                if needs_sampler_update || match current_sampling_frame.take() {
+                    Some(current_index) => current_index != *new_index,
+                    None => true
+                } {
+                    let sampler_mode = SamplerMode::get_mode(filter_mode,wrap_mode);
+                    let sampler = texture_container.get_bind_group(sampler_mode);
+                    render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,sampler,&[]);
+                }
+                needs_sampler_update = false;
+                current_sampling_frame = Some(*new_index);
+            }
+
+            match command {
+                FrameCommand::SetTextureFilter(value) => {
+                    if filter_mode != *value {
+                        filter_mode = *value;
+                        needs_sampler_update = true;
+                    }
+                },
+
+                FrameCommand::SetTextureWrap(value) => {
+                    if wrap_mode != *value {
+                        wrap_mode = *value;
+                        needs_sampler_update = true;
+                    }
+                },
+
+                FrameCommand::DrawFrame(_,draw_data) => {
+                    self.write_quad(render_pass,queue,draw_data);
+                },
+
+                FrameCommand::DrawFrameSet(_,draw_data_set) => {
+                    self.write_quad_set(render_pass,queue,&draw_data_set);
+                },
+            }
+        }
+    }
+}
+
+pub trait GraphicsContextInternal<THandle> {
+    fn insert_wgpu_handle(&mut self,wgpu_handle: THandle);
+    fn remove_wgpu_handle(&mut self) -> Option<THandle>;
+    fn render_frame(&mut self,frame: &Frame);
+}
+
+impl<THandle: WGPUHandle> GraphicsContextInternal<THandle> for GraphicsContext<THandle> {
+    fn insert_wgpu_handle(&mut self,wgpu_handle: THandle) {
+        self.wgpu_handle = Some(wgpu_handle);
+    }
+    fn remove_wgpu_handle(&mut self) -> Option<THandle> {
+        return self.wgpu_handle.take();
+    }
+    fn render_frame(&mut self,frame: &Frame) {
+        /* This is not where the encoder is created. Only 1 encoder is created for the master, output frame. */
+        if let (Some(wgpu_handle),Some(mut encoder)) = (self.wgpu_handle.take(),self.encoder.take()) {
+            {
+                let queue = wgpu_handle.get_queue();
+                let mut render_pass = self.create_render_pass(frame,queue,&mut encoder);
+                self.process_commands(&mut render_pass,frame,queue);
+            }
+            self.wgpu_handle = Some(wgpu_handle);
+            self.encoder = Some(encoder);
+        } else {
+            panic!("Missing wgpu handle or encoder.");
+        }
+    }
 }
 
 fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
@@ -390,10 +448,10 @@ fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
     return CameraUniform { view_projection: ortho.into() };
 }
 
-fn create_graphics_context(
-    wgpu_handle: &impl WGPUHandle,
+fn create_graphics_context<THandle: WGPUHandle> (
+    wgpu_handle: &THandle,
     options: GraphicsContextConfiguration
-) -> GraphicsContext {
+) -> GraphicsContext<THandle> {
 
     let device = wgpu_handle.get_device();
     let render_pipeline = create_wgpu_pipeline(wgpu_handle);
@@ -448,7 +506,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     });
 
     let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &render_pipeline.get_bind_group_layout(GraphicsContext::UNIFORM_BIND_GROUP_INDEX),
+        layout: &render_pipeline.get_bind_group_layout(UNIFORM_BIND_GROUP_INDEX),
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform_buffer.as_entire_binding(),
@@ -469,7 +527,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
             let mut textures = Arena::with_capacity(capacity);
             let mut mutable_textures = HashMap::with_capacity(capacity);
 
-            let bind_group_layout = &render_pipeline.get_bind_group_layout(GraphicsContext::TEXTURE_BIND_GROUP_INDEX);
+            let bind_group_layout = &render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
 
             for size in cache_options.sizes.iter() {
                 let mut queue = VecDeque::with_capacity(instances as usize);
@@ -494,6 +552,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 
     return GraphicsContext {
+        wgpu_handle: None,
         render_pipeline,
         vertex_buffer,
         index_buffer,
@@ -509,7 +568,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 }
 
-pub fn create_wgpu_pipeline(wgpu_handle: &impl WGPUHandle) -> RenderPipeline {
+pub fn create_wgpu_pipeline<THandle: WGPUHandle>(wgpu_handle: &THandle) -> RenderPipeline {
 
     let device = wgpu_handle.get_device();
 

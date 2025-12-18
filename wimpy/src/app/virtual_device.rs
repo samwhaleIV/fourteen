@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use winit::window::Window;
-use crate::graphics::WGPUHandle;
+use crate::wgpu::WGPUHandle;
 
 pub struct VirtualDevice {
     surface: wgpu::Surface<'static>,
