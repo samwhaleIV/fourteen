@@ -11,11 +11,6 @@ use bytemuck::{
 
 use generational_arena::{Arena, Index};
 
-use image::{
-    ImageError,
-    ImageReader
-};
-
 use wgpu::{
     BindGroup,
     BindGroupLayoutDescriptor,
@@ -32,7 +27,16 @@ use wgpu::{
     }
 };
 
-use crate::{internal::LeaseArena, wgpu::{FilterMode, WrapMode, frame::FrameCommand, texture_container::SamplerMode}};
+use crate::{
+    internal::LeaseArena,
+    wgpu::{
+        FilterMode,
+        WrapMode,
+        frame::FrameCommand,
+        texture_container::SamplerMode
+    }
+};
+
 use super::{
     texture_container::TextureContainer,
     wgpu_handle::WGPUHandle,
@@ -122,7 +126,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         return create_graphics_context(wgpu_handle,options);
     }
 
-    pub fn start(&mut self,wgpu_handle: &THandle) -> Option<Frame> {
+    pub fn create_output_frame(&mut self) -> Option<Frame> {
         if self.active {
             panic!("Pipeline is already started. There is already a command encoder active.");
         }
@@ -132,7 +136,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
             panic!("Output frame already exists!");
         }
 
-        if let Some(surface) = wgpu_handle.get_output_surface() {
+        if let Some(wgpu_handle) = &self.wgpu_handle && let Some(surface) = wgpu_handle.get_output_surface() {
             self.encoder = Some(wgpu_handle.get_device().create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder")
             }));
@@ -153,7 +157,11 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         }
     }
 
-    pub fn finish(&mut self) {
+    pub fn bake(&mut self,frame: &mut Frame) {
+        frame.finish(self);
+    }
+
+    pub fn present_output_frame(&mut self) {
         if !self.active {
             panic!("Pipeline was not started. There is no active command encoder.");
         }
@@ -206,42 +214,40 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         }
     }
 
-    pub fn get_frame(&mut self,wgpu_handle: &THandle,config: FrameConfig) -> Frame {
-        return match config.lifetime {
-            FrameLifetime::Temporary => {
-                self.get_temp_frame(wgpu_handle,config.size,config.draw_once)
-            },
-            FrameLifetime::Persistent => {
-                self.get_persistent_frame(wgpu_handle,config.size,config.draw_once)
-            },
+    pub fn get_frame(&mut self,config: FrameConfig) -> Option<Frame> {
+        if let Some(wgpu_handle) = self.wgpu_handle.take() {
+            let frame = Some(match config.lifetime {
+                FrameLifetime::Temporary => {
+                    self.get_temp_frame(&wgpu_handle,config.size,config.draw_once)
+                },
+                FrameLifetime::Persistent => {
+                    self.get_persistent_frame(&wgpu_handle,config.size,config.draw_once)
+                },
+            });
+            self.wgpu_handle = Some(wgpu_handle);
+            return frame;
+        } else {
+            log::error!("Failure to create frame. Missing WGPU handle.");
+            return None;
         }
     }
 
-    //TODO: Remove result return, create fallback texture
-    pub fn load_texture(&mut self,wgpu_handle: &THandle,path: &str) -> Result<Frame,ImageError> {
-        let image = ImageReader::open(path)?.decode()?;
-        let texture_container = TextureContainer::from_image(
-            wgpu_handle,
-            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
-            &image
-        );
-        return Ok(FrameInternal::create_texture(
-            texture_container.size(),
-            self.frame_cache.insert_keyless(texture_container)
-        ));
-    }
-
-    pub fn load_texture_bytes(&mut self,wgpu_handle: &THandle,bytes: &[u8]) -> Frame {
-        let image = image::load_from_memory(bytes).unwrap();
-        let texture_container = TextureContainer::from_image(
-            wgpu_handle,
-            &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
-            &image
-        );
-        return FrameInternal::create_texture(
-            texture_container.size(),
-            self.frame_cache.insert_keyless(texture_container)
-        );
+    pub fn load_texture(&mut self,bytes: &[u8]) -> Option<Frame> {
+        if let Some(wgpu_handle) = self.wgpu_handle.take() {
+            let image = image::load_from_memory(bytes).unwrap();
+            let texture_container = TextureContainer::from_image(
+                &wgpu_handle,
+                &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+                &image
+            );
+            self.wgpu_handle = Some(wgpu_handle);
+            return Some(FrameInternal::create_texture(
+                texture_container.size(),
+                self.frame_cache.insert_keyless(texture_container)
+            ));
+        } else {
+            return None;
+        }
     }
 
     fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {

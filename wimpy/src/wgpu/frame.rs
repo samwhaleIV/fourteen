@@ -50,6 +50,8 @@ pub trait FrameInternal {
     fn create_texture(size: (u32,u32),index: Index) -> Self;
 
     fn get_index(&self) -> Index;
+
+    fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>);
 }
 
 #[derive(PartialEq)]
@@ -131,6 +133,25 @@ impl FrameInternal for Frame {
             write_lock: LockStatus::FutureLock,
             index,
         };
+    }
+
+    fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>) {
+        if !self.is_writable() {
+            log::error!("Frame is readonly!");
+            self.command_buffer.clear();
+            return;
+        }
+        if self.command_buffer.is_empty() {
+            log::warn!("Frame command buffer is empty!");
+        }    
+        context.render_frame(&self);
+
+        match self.write_lock {
+            LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,
+            LockStatus::FutureLock => self.write_lock = LockStatus::Locked,
+            _ => {}
+        }
+        self.command_buffer.clear();
     }
 }
 
@@ -266,39 +287,18 @@ impl Frame {
     }
 
     /* Draw Commands */
-    pub fn draw_frame(&mut self,source_frame: &Frame,draw_data: DrawData) {
+    pub fn draw(&mut self,source_frame: &Frame,draw_data: DrawData) {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
         self.command_buffer.push_back(FrameCommand::DrawFrame(source_frame.index,draw_data));
     }
 
-    pub fn draw_frame_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
+    pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
         self.command_buffer.push_back(FrameCommand::DrawFrameSet(source_frame.index,draw_data));
-    }
-
-    /* Output & Interop */
-
-    pub fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>) {
-        if !self.is_writable() {
-            log::error!("Frame is readonly!");
-            self.command_buffer.clear();
-            return;
-        }
-        if self.command_buffer.is_empty() {
-            log::warn!("Frame command buffer is empty!");
-        }    
-        context.render_frame(&self);
-
-        match self.write_lock {
-            LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,
-            LockStatus::FutureLock => self.write_lock = LockStatus::Locked,
-            _ => {}
-        }
-        self.command_buffer.clear();
     }
 
     /* Size Getters */

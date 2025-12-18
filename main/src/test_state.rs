@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
 use wimpy::app::*;
-use wimpy::wgpu::GraphicsContext;
+use wimpy::wgpu::{FilterMode, GraphicsContext};
 
 #[allow(unused)]
 pub struct SharedState {
@@ -36,9 +36,17 @@ impl AppStateInterface<SharedState> for TestState {
         todo!()
     }
 
-    fn render(&mut self,context: &mut AppContext<SharedState>) {
-        todo!()
+fn render(&mut self,app_context: &mut AppContext<SharedState>) {
+    let gfx = app_context.graphics();
+
+    if let Some(mut output_frame) = gfx.create_output_frame() {
+        output_frame.set_texture_filter(FilterMode::Linear);
+        output_frame.draw( ... );
+
+        gfx.bake(&mut output_frame);
+        gfx.present_output_frame();
     }
+}
 
     fn update(&mut self,context: &mut AppContext<SharedState>) -> UpdateResult<SharedState> {
         todo!()
