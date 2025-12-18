@@ -6,7 +6,7 @@ use env_logger::{
 };
 
 use std::env;
-use wimpy::graphics::GraphicsContextConfiguration;
+use wimpy::wgpu::GraphicsContextConfiguration;
 
 use winit::event_loop::{
     ControlFlow,

@@ -1,6 +1,11 @@
 use winit::keyboard::KeyCode;
-use crate::{app::VirtualDevice, graphics::GraphicsContext};
-use super::app::AppStateGenerator;
+use crate::{
+    app::{
+        AppStateGenerator,
+        VirtualDevice
+    },
+    wgpu::GraphicsContext
+};
 
 pub struct UpdateResult<TSharedState> {
     operation: AppStateOperation,
@@ -68,22 +73,28 @@ pub struct AppContext<TSharedState> {
 }
 
 impl<TSharedState> AppContext<TSharedState> {
-    pub fn construct(shared_state: TSharedState,graphics_context: GraphicsContext<VirtualDevice>) -> Self {
+    pub fn construct(
+        shared_state: TSharedState,
+        graphics_context: GraphicsContext<VirtualDevice>
+    ) -> Self {
         return Self {
             shared_state,
             graphics_context
         }
     }
 
-    pub fn deconstruct(self) -> (TSharedState,GraphicsContext<VirtualDevice>) {
+    pub fn deconstruct(self) -> (
+        TSharedState,
+        GraphicsContext<VirtualDevice>
+    ) {
         return (self.shared_state,self.graphics_context);
     }
 
-    pub fn shared(&mut self) -> &mut GraphicsContext<VirtualDevice> {
+    pub fn graphics(&mut self) -> &mut GraphicsContext<VirtualDevice> {
         return &mut self.graphics_context;
     }
 
-    pub fn graphics(&mut self) -> &mut TSharedState {
+    pub fn shared(&mut self) -> &mut TSharedState {
         return &mut self.shared_state;
     }
 }
@@ -94,4 +105,3 @@ pub trait AppStateInterface<TSharedState> {
     fn render(&mut self,context: &mut AppContext<TSharedState>);
     fn update(&mut self,context: &mut AppContext<TSharedState>) -> UpdateResult<TSharedState>;
 }
-

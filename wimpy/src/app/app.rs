@@ -4,15 +4,15 @@ const MAX_STATE_LOAD_PASSES: u32 = 32;
 
 use std::sync::Arc;
 
-use super::{
-    virtual_device::VirtualDevice,
-    app_state::*
-};
+use super::app_state::*;
 
-use crate::wgpu::{
-    GraphicsContext,
-    GraphicsContextConfiguration,
-    GraphicsContextInternal
+use crate::{
+    app::VirtualDevice,
+    wgpu::{
+        GraphicsContext,
+        GraphicsContextConfiguration,
+        GraphicsContextInternal,
+    }
 };
 
 use winit::{
@@ -26,7 +26,6 @@ use winit::{
 
 pub type AppState<TSharedState> = Box<dyn AppStateInterface<TSharedState>>;
 pub type AppStateGenerator<TSharedState> = fn(&mut AppContext<TSharedState>) -> AppState<TSharedState>;
-
 pub type SharedStateGenerator<TSharedState> = fn(&mut GraphicsContext<VirtualDevice>) -> TSharedState;
 
 struct TransientBlock<TSharedState> {
@@ -137,7 +136,6 @@ impl<TSharedState> BorrowingBlock<TSharedState> {
 }
 
 impl<TSharedState> App<TSharedState> {
-
     fn try_get_borrowing_block(&mut self) -> Option<BorrowingBlock<TSharedState>> {
         let TransientBlock {
             window: Some(window),
@@ -354,7 +352,7 @@ impl<TSharedState> App<TSharedState> {
 
 impl<TSharedState> ApplicationHandler for App<TSharedState> {
 
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self,event_loop: &ActiveEventLoop) {
 
         if self.received_resume_call {
             /* This shouldn't happen on desktop platforms. */

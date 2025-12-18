@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
 use wimpy::app::*;
-use wimpy::graphics::GraphicsContext;
+use wimpy::wgpu::GraphicsContext;
 
 #[allow(unused)]
 pub struct SharedState {
@@ -16,8 +16,7 @@ impl SharedState {
     }
 }
 
-
-
+#[allow(unused)]
 pub struct TestState {
     shared_state: Option<SharedState>
 }
