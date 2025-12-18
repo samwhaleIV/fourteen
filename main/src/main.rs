@@ -1,9 +1,12 @@
 mod test_state;
+mod shared_state;
 
 use winit::{event_loop::{ControlFlow,EventLoop,DeviceEvents}};
 use env_logger::{Builder, Target};
 use std::env;
 use wimpy::graphics::GraphicsContextConfiguration;
+
+use shared_state::SharedState;
 
 use wimpy::app::{
     App,
@@ -14,8 +17,9 @@ fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::create(AppConfiguration {
+    let mut app = App::create(AppConfiguration::<SharedState> {
         state_generator: test_state::generate_test_state,
+        shared_state_generator: shared_state::SharedState::generator,
         context_options: Some(GraphicsContextConfiguration {
             quad_instance_capacity: 10000,
             uniform_capacity: 32,

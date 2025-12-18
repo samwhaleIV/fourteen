@@ -26,13 +26,20 @@ use winit::{
 struct LongLifetimeHandles {
     window: Arc<Window>,
     device: VirtualDevice,
-    context: GraphicsContext,
+    context: GraphicsContext
 }
 
-pub struct App {
-    handles: Option<LongLifetimeHandles>,
+pub type SharedStateGenerator<TSharedState> = fn(&VirtualDevice,&mut GraphicsContext) -> TSharedState;
 
-    state_loaded: bool,
+pub struct App<TSharedState> {
+
+    handles: Option<LongLifetimeHandles>,
+    state: Option<AppState<TSharedState>>,
+    shared_state: Option<TSharedState>,
+
+    state_generator: AppStateGenerator<TSharedState>,
+    shared_state_generator: SharedStateGenerator<TSharedState>,
+
     surface_configured: bool,
     app_exiting: bool,
 
@@ -43,8 +50,6 @@ pub struct App {
     window_height: u32,
 
     mouse_point: (f32,f32),
-    state_generator: AppStateGenerator,
-    state: AppState,
 
     log_trace_config: LogTraceConfig,
     context_options: Option<GraphicsContextConfiguration>,
@@ -54,27 +59,6 @@ enum EventLoopOperation {
     Continue,
     Terminate,
     Repeat
-}
-
-struct DummyAppState;
-
-impl AppStateInterface for DummyAppState {
-    /* Oh no! You've activated my trap card. */
-    fn unload(&mut self,_device: &VirtualDevice,_context: &mut GraphicsContext) {
-        panic!("Cannot unload the dummy state!");
-    }
-    
-    fn update(&mut self) -> UpdateResult {
-        panic!("Cannot update the dummy state!");
-    }
-    
-    fn render(&self,_device: &VirtualDevice,_context: &mut GraphicsContext) {
-        panic!("Cannot render the dummy state!");
-    }
-    
-    fn input(&mut self,_event: InputEvent) {
-        panic!("Cannot input to the dummy state!");
-    }
 }
 
 #[derive(Default)]
@@ -90,12 +74,13 @@ pub struct LogTraceConfig {
     pub other: bool
 }
 
-fn placeholder_state_generator(_device: &VirtualDevice,_pipeline: &mut GraphicsContext) -> AppState {
+fn placeholder_state_generator<TSharedState>(_device: &VirtualDevice,_pipeline: &mut GraphicsContext) -> AppState<TSharedState> {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
-pub struct AppConfiguration {
-    pub state_generator: AppStateGenerator,
+pub struct AppConfiguration<TSharedState> {
+    pub state_generator: AppStateGenerator<TSharedState>,
+    pub shared_state_generator: SharedStateGenerator<TSharedState>,
     pub context_options: Option<GraphicsContextConfiguration>,
     pub log_trace_config: Option<LogTraceConfig>,
 }
@@ -106,15 +91,53 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
     return Position::Physical(PhysicalPosition::new(x as i32,y as i32));
 }
 
-impl App {
-    pub fn create(options: AppConfiguration) -> Self {
+struct BorrowingBlock<TSharedState> {
+    pub state: AppState<TSharedState>,
+    pub shared_state: Option<TSharedState>,
+    pub handles: LongLifetimeHandles,
+}
+
+impl<TSharedState> BorrowingBlock<TSharedState> {
+
+    fn insert_shared_state(&mut self) {
+        self.state.insert_shared_state(self.shared_state.take());
+    }
+
+    fn remove_shared_state(&mut self) {
+        self.shared_state = self.state.remove_shared_state();
+    }
+
+    pub fn update_state(&mut self) -> UpdateResult<TSharedState> {
+        self.insert_shared_state();
+        let result = self.state.update(&self.handles.device,&mut self.handles.context);
+        self.remove_shared_state();
+        return result;
+    }
+
+    pub fn render_state(&mut self) {
+        self.insert_shared_state();
+        self.state.render(&self.handles.device,&mut self.handles.context);
+        self.remove_shared_state();
+    }
+
+    pub fn unload_state(&mut self) {
+        self.insert_shared_state();
+        self.state.unload(&self.handles.device,&mut self.handles.context);
+        self.remove_shared_state();
+    }
+}
+
+impl<TSharedState> App<TSharedState> {
+
+    pub fn create(options: AppConfiguration<TSharedState>) -> Self {
         return Self {
             handles: None,
+            state: None,
+            shared_state: None,
 
+            shared_state_generator: options.shared_state_generator,
             state_generator: options.state_generator,
-            state: Box::new(DummyAppState),
 
-            state_loaded: false,
             surface_configured: false,
 
             app_exiting: false,
@@ -135,6 +158,43 @@ impl App {
                 None => Default::default(),
             }
         }
+    }
+
+    fn try_get_borrowing_block(&mut self) -> Option<BorrowingBlock<TSharedState>> {
+        let handles = self.handles.take();
+        let state = self.state.take();
+        let shared_state = self.shared_state.take();
+
+        if handles.is_none() || state.is_none() || shared_state.is_none() {
+            if handles.is_none() {
+                log::error!("App handles not found!");
+            }
+            if state.is_none() {
+                log::error!("App state is missing!");
+            }
+            if shared_state.is_none() {
+                log::error!("Shared state is missing!");
+            }
+            self.handles = handles;
+            self.state = state;
+            self.shared_state = shared_state;
+            return None;
+        }
+        if let (Some(handles),Some(state)) = (handles,state) {
+            return Some(BorrowingBlock {
+                state,
+                handles,
+                shared_state,
+            });
+        } else {
+            return None;
+        }
+    }
+
+    fn return_borrowing_block(&mut self,borrowing_block: BorrowingBlock<TSharedState>) {
+        self.handles = Some(borrowing_block.handles);
+        self.state = Some(borrowing_block.state);
+        self.shared_state = borrowing_block.shared_state;
     }
 
     fn try_configure_surface(&mut self) -> bool {
@@ -159,26 +219,47 @@ impl App {
     }
 
     fn update(&mut self) -> EventLoopOperation {
-        if !self.state_loaded {
-            self.load_state();
-        }
-        let update_result = self.state.update();
-        return match update_result.get_operation() {
-            AppStateOperation::Continue => EventLoopOperation::Continue,
-
-            AppStateOperation::Terminate => EventLoopOperation::Terminate,
-
-            AppStateOperation::Transition => {
-                if let Some(state_generator) = update_result.get_state_generator() {
-                    self.unload_state();
-                    self.state_generator = state_generator;
-                    return EventLoopOperation::Repeat;
-                } else {
-                    log::error!("Invalid app state transition data.");
-                    return EventLoopOperation::Terminate;
-                }
+        /* Load a state if ones does not exist. */
+        if self.state.is_none() {
+            if let Some(mut handles) = self.handles.take() {
+                let new_state = (self.state_generator)(&handles.device,&mut handles.context);
+                self.state_generator = placeholder_state_generator;
+                self.state = Some(new_state);
+                self.handles = Some(handles);
+            } else {
+                log::error!("App handles not found!");
+                return EventLoopOperation::Terminate;
             }
-        };
+        }
+        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
+
+            let update_result = borrowing_block.update_state();
+            self.return_borrowing_block(borrowing_block);
+
+            let event_loop_operation = match update_result.get_operation() {
+                AppStateOperation::Continue => {
+                    EventLoopOperation::Continue
+                },
+
+                AppStateOperation::Terminate => {
+                    EventLoopOperation::Terminate
+                },
+
+                AppStateOperation::Transition => {
+                    if let Some(state_generator) = update_result.get_state_generator() {
+                        self.unload_state();
+                        self.state_generator = state_generator;
+                        EventLoopOperation::Repeat
+                    } else {
+                        log::error!("Missing app state transition data!");
+                        EventLoopOperation::Terminate
+                    }
+                }
+            };
+            return event_loop_operation;
+        } else {
+            return EventLoopOperation::Terminate;
+        }
     }
 
     /* Primary function to handle updating */
@@ -186,16 +267,12 @@ impl App {
         if self.log_trace_config.redraw {
             log::trace!("handle_redraw - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
-
         let mut load_attempts = 0;
-
         loop {
-
             if load_attempts >= MAX_STATE_LOAD_PASSES {
                 self.terminate_app(event_loop);
                 return; 
             }
-
             load_attempts += 1;
 
             match self.update() {
@@ -208,55 +285,26 @@ impl App {
             }
         }
 
-        if let Some(mut handles) = self.handles.take() {
-            if !self.state_loaded {
-                log::warn!("Attempt to render without a loaded state.");
+        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
+            if self.surface_configured || self.try_configure_surface() {
+                borrowing_block.render_state();
             }
-            if self.state_loaded && (self.surface_configured || self.try_configure_surface()) {
-                self.state.render(&handles.device,&mut handles.context);
-            }
-            handles.window.request_redraw();
-            self.handles = Some(handles);
+            borrowing_block.handles.window.request_redraw();
+            self.return_borrowing_block(borrowing_block);
         } else {
-            log::error!("Window handles not found.");
             self.terminate_app(event_loop);
+            return;
         }
 
         self.frame_number += 1;
     }
 
-    fn load_state(&mut self) {
-        if self.state_loaded {
-            log::warn!("Cannot load state, we are already in a loaded state.");
-            return;
-        }
-
-        if let Some(mut handles) = self.handles.take() {
-            let new_state = (self.state_generator)(&handles.device,&mut handles.context);
-            self.state_generator = placeholder_state_generator;
-            self.state = new_state;
-            self.handles = Some(handles);
-        }
-
-        self.state_loaded = true;
-    }
-
     fn unload_state(&mut self) {
-        if !self.state_loaded {
-            if !self.app_exiting {
-                log::warn!("Cannot unload state, we are already in an unloaded state.");
-            }
-            return;
+        if let Some(mut borrowing_block) = self.try_get_borrowing_block() {
+            borrowing_block.unload_state();
+            self.return_borrowing_block(borrowing_block);
+            self.state = None;
         }
-        if let Some(mut handles) = self.handles.take() {
-            self.state.unload(&handles.device,&mut handles.context);
-            self.handles = Some(handles);    
-        } else if !self.app_exiting {
-            log::warn!("Unusual app exit state. The app handles have already been dropped.");
-            return;
-        }
-        self.state = Box::new(DummyAppState);
-        self.state_loaded = false;
     }
 
     fn terminate_app(&mut self,event_loop: &ActiveEventLoop) {
@@ -268,7 +316,7 @@ impl App {
         self.app_exiting = true;
         self.unload_state();
         event_loop.exit();
-        log::info!("Termination success. Event loop exiting.");
+        log::info!("Termination success; event loop exiting.");
     }
 
     fn handle_key_change(&mut self,_code: KeyCode,_pressed: bool){
@@ -282,7 +330,7 @@ impl App {
         if self.log_trace_config.mouse_click {
             log::trace!("handle_mouse_press - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
-        if !self.state_loaded {
+        if !self.state.is_none() {
             return;
         }
         //TODO
@@ -292,7 +340,7 @@ impl App {
         if self.log_trace_config.mouse_click {
             log::trace!("handle_mouse_release - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
         }
-        if !self.state_loaded {
+        if !self.state.is_none() {
             return;
         }
         //TODO
@@ -303,20 +351,20 @@ impl App {
             log::trace!("handle_mouse_move - frame_number:{} | event_number:{} | x:{} y:{}",self.frame_number,self.event_number,point.0,point.1);
         }
         self.mouse_point = point;
-        if !self.state_loaded {
+        if !self.state.is_none() {
             return;
         }
         //TODO
     }
 }
 
-impl ApplicationHandler for App {
+impl<TSharedState> ApplicationHandler for App<TSharedState> {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
         if self.handles.is_some() {
             /* This shouldn't happen on desktop platforms. */
-            log::info!("The app has been resumed. Welcome back.");
+            log::info!("The app has been resumed. Welcome back!");
             return;
         } else {
             log::info!("Received 'resumed' call. Getting on with the window and graphics setup.");
@@ -350,17 +398,19 @@ impl ApplicationHandler for App {
         let device = match pollster::block_on(VirtualDevice::new(window.clone())) {
             Ok(device) => device,
             Err(error) => {
-                log::error!("{}",error);
+                log::error!("Scary error: {}",error);
                 self.terminate_app(event_loop);
                 return;
             }
         };
         window.set_visible(true);
 
-        let context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
+        let mut context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
             Some(options) => options,
             None => GraphicsContextConfiguration::default(),
         });
+
+        self.shared_state = Some((self.shared_state_generator)(&device,&mut context));
 
         self.handles = Some(LongLifetimeHandles {
             window,
@@ -368,7 +418,7 @@ impl ApplicationHandler for App {
             context
         });
 
-        log::info!("Graphics, pipeline, and window are now configured.");
+        log::info!("Long living app handles are now configured.");
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -377,12 +427,15 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
-        if self.app_exiting || !self.state_loaded {
+        if self.app_exiting || self.state.is_none() {
             return;
         }
-        match event {
-            DeviceEvent::MouseMotion { delta } => self.state.input(InputEvent::MouseMoveDelta((delta.0 as f32,delta.1 as f32))),
-            _ => {}
+        if let Some(mut state) = self.state.take() {
+            match event {
+                DeviceEvent::MouseMotion { delta } => state.input(InputEvent::MouseMoveDelta((delta.0 as f32,delta.1 as f32))),
+                _ => {}
+            }
+            self.state = Some(state);
         }
     }
 

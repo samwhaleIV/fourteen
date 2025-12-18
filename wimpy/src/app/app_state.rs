@@ -2,12 +2,12 @@ use winit::keyboard::KeyCode;
 use super::virtual_device::VirtualDevice;
 use crate::graphics::GraphicsContext;
 
-pub struct UpdateResult {
+pub struct UpdateResult<TSharedState> {
     operation: AppStateOperation,
-    state_generator: Option<AppStateGenerator>
+    state_generator: Option<AppStateGenerator<TSharedState>>
 }
 
-impl Default for UpdateResult {
+impl<TSharedState> Default for UpdateResult<TSharedState> {
     fn default() -> Self {
         return UpdateResult {
             operation: AppStateOperation::Continue,
@@ -17,16 +17,16 @@ impl Default for UpdateResult {
 }
 
 #[allow(unused)]
-impl UpdateResult {
+impl<TSharedState> UpdateResult<TSharedState> {
     pub fn get_operation(&self) -> AppStateOperation {
         return self.operation;
     }
 
-    pub fn get_state_generator(&self) -> Option<AppStateGenerator> {
+    pub fn get_state_generator(&self) -> Option<AppStateGenerator<TSharedState>> {
         return self.state_generator;
     }
 
-    pub fn transition(generator: AppStateGenerator) -> Self {
+    pub fn transition(generator: AppStateGenerator<TSharedState>) -> Self {
         return Self {
             operation: AppStateOperation::Transition,
             state_generator: Some(generator),
@@ -62,14 +62,17 @@ pub enum InputEvent {
     /* could also making the loading implementation parameterized */
 }
 
-pub trait AppStateInterface {
-    fn unload(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
+pub trait AppStateInterface<TSharedState> {
 
-    fn update(&mut self) -> UpdateResult;
     fn input(&mut self,input_event: InputEvent);
 
-    fn render(&self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
+    fn unload(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
+    fn render(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext);
+    fn update(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) -> UpdateResult<TSharedState>;
+
+    fn insert_shared_state(&mut self,shared_state: Option<TSharedState>);
+    fn remove_shared_state(&mut self) -> Option<TSharedState>;
 }
 
-pub type AppState = Box<dyn AppStateInterface>;
-pub type AppStateGenerator = fn(&VirtualDevice,&mut GraphicsContext) -> AppState;
+pub type AppState<TSharedState> = Box<dyn AppStateInterface<TSharedState>>;
+pub type AppStateGenerator<TSharedState> = fn(&VirtualDevice,&mut GraphicsContext) -> AppState<TSharedState>;

@@ -3,35 +3,53 @@
 use wimpy::app::*;
 use wimpy::graphics::GraphicsContext;
 
-pub struct TestState { }
+use crate::shared_state::SharedState;
 
-pub fn generate_test_state(device: &VirtualDevice,context: &mut GraphicsContext) -> AppState {
-    return Box::new(TestState {});
+pub struct SharedState {
+    pub ahhhhh: u32
 }
 
-impl AppStateInterface for TestState {
-    fn unload(&mut self,device: &VirtualDevice,context: &mut GraphicsContext) {
-        todo!()
-    }
-
-    fn update(&mut self) -> UpdateResult {
-        todo!()
-    }
-
-    fn input(&mut self,event: InputEvent) {
-        todo!()
-    }
-
-    fn render(&self,device: &VirtualDevice,context: &mut GraphicsContext) {
-
-        if let Some(mut output_frame) = context.start(device) {
-
-            
-
-
-            output_frame.finish(device,context);
-
-            context.finish(device);
+impl SharedState {
+    pub fn generator(_device: &VirtualDevice,_context: &mut GraphicsContext) -> Self {
+        return Self {
+            ahhhhh: 0
         }
+    }
+}
+
+
+pub struct TestState {
+    shared_state: Option<SharedState>
+}
+
+pub fn generate_test_state(device: &VirtualDevice,context: &mut GraphicsContext) -> AppState<SharedState> {
+    return Box::new(TestState {
+        shared_state: None
+    });
+}
+
+impl AppStateInterface<SharedState> for TestState {
+    fn input(&mut self,input_event: InputEvent) {
+        todo!()
+    }
+
+    fn unload(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) {
+        todo!()
+    }
+
+    fn render(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) {
+        todo!()
+    }
+
+    fn update(&mut self,virtual_device: &VirtualDevice,graphics_context: &mut GraphicsContext) -> UpdateResult<SharedState> {
+        todo!()
+    }
+
+    fn insert_shared_state(&mut self,shared_state: Option<SharedState>) {
+        self.shared_state = shared_state;
+    }
+
+    fn remove_shared_state(&mut self) -> Option<SharedState> {
+        return self.shared_state.take();
     }
 }
