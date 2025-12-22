@@ -388,7 +388,7 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
             window.set_outer_position(position);
         }
 
-        let device = match pollster::block_on(VirtualDevice::new(window.clone())) {
+        let mut device = match pollster::block_on(VirtualDevice::new(window.clone())) {
             Ok(device) => device,
             Err(error) => {
                 log::error!("Scary error: {}",error);
@@ -403,10 +403,11 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
             None => GraphicsContextConfiguration::default(),
         });
 
+        graphics_context.insert_wgpu_handle(device);
         let shared_state = (self.shared_state_generator)(&mut graphics_context);
 
         self.transient_block.window = Some(window);
-        self.transient_block.device = Some(device);
+        self.transient_block.device = graphics_context.remove_wgpu_handle();
 
         self.transient_block.graphics_context = Some(graphics_context);
         self.transient_block.shared_state = Some(shared_state);

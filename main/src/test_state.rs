@@ -36,17 +36,20 @@ impl AppStateInterface<SharedState> for TestState {
         todo!()
     }
 
-fn render(&mut self,app_context: &mut AppContext<SharedState>) {
-    let gfx = app_context.graphics();
+    fn render(&mut self,app_context: &mut AppContext<SharedState>) {
 
-    if let Some(mut output_frame) = gfx.create_output_frame() {
-        output_frame.set_texture_filter(FilterMode::Linear);
-        output_frame.draw( ... );
+        app_context.shared().ahhhhh += 1;
 
-        gfx.bake(&mut output_frame);
-        gfx.present_output_frame();
+        let gfx = app_context.graphics();
+
+        if let Some(mut output_frame) = gfx.create_output_frame() {
+            output_frame.set_texture_filter(FilterMode::Linear);
+            // /output_frame.draw( ... );
+
+            gfx.bake(&mut output_frame);
+            gfx.present_output_frame();
+        }
     }
-}
 
     fn update(&mut self,context: &mut AppContext<SharedState>) -> UpdateResult<SharedState> {
         todo!()

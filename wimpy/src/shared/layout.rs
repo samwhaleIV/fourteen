@@ -171,6 +171,15 @@ impl Layout {
     }
 }
 
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            x: LayoutDimension::default(),
+            y:  LayoutDimension::default(),
+        }
+    }
+}
+
 fn calculate_area_dimension(
     parent_position: Unit,
     parent_dimension: Unit,
