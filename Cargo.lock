@@ -2857,6 +2857,7 @@ dependencies = [
  "image",
  "log",
  "pollster",
+ "slotmap",
  "wgpu",
  "winit",
 ]

@@ -1,19 +1,16 @@
-//TODO: Groups are redundant. Make elements nestable.
+const MINIMUM_NODE_CAPACITY: usize = 32; /* Should be at least 1. */
 
 use std::{
-    collections::{
-        HashMap,
-        HashSet, VecDeque
-    },
     time::{
         Duration,
         Instant
     }
 };
 
-use generational_arena::{
-    Arena,
-    Index
+use slotmap::{
+    SecondaryMap,
+    SlotMap,
+    SparseSecondaryMap
 };
 
 use crate::{
@@ -21,282 +18,295 @@ use crate::{
         Area,
         Color,
         Layout
-    }, wgpu::Frame
+    },
+    wgpu::Frame
 };
 
 enum AnimationEffect {
-    FinalScale,
+    FinalScale(f32),
     FadeIn,
-    FadeOut
+    FadeOut,
+}
+
+pub enum InteractionMode {
+    None,
+    Block,
+    Active
+}
+
+struct AnimationTiming {
+    start: Instant,
+    duration: Duration,
 }
 
 struct Animation {
-    start: Instant,
-    duration: Duration,
-    effect: AnimationEffect
+    timing: AnimationTiming,
+    effect: AnimationEffect,
 }
 
-impl Default for AnimatedLayout {
-    fn default() -> Self {
-        return Self {
-            value: Layout::default(),
-            pending_value: None,
-            start: Instant::now(),
-            duration: Duration::ZERO,
-        }
-    }
+struct LayoutAnimation {
+    timing: AnimationTiming,
+    future_layout: Layout
 }
 
-struct GroupInternal {
-    children: HashSet<Group>,
-    elements: HashSet<Element>,
-    layout: AnimatedLayout
-}
-
-impl Default for GroupInternal {
-    fn default() -> Self {
-        return Self {
-            children: Default::default(),
-            elements: Default::default(),
-            layout: AnimatedLayout::default()
-        }
-    }
-}
-
-struct AnimatedLayout {
-    value: Layout,
-    pending_value: Option<Layout>,
-    start: Instant,
-    duration: Duration
-}
-
-pub enum InteractionState {
-    None,
-    Disabled,
-    Enabled
-}
-
-struct ElementInternal {
-    style: ElementStyle,
-    layout: AnimatedLayout,
-    interaction: InteractionState,
+struct ElementAnimations {
+    layout_animation: Option<LayoutAnimation>,
     focus_animation: Option<Animation>,
-    capture_animation: Option<Animation>
+    hover_animation: Option<Animation>,
 }
 
-pub struct ElementStyle {
-    texture: Texture,
+slotmap::new_key_type! {
+    pub struct Node;
+    pub struct TextureReference;
+}
+
+#[derive(Default,Clone,Copy)]
+struct NodeTopology {
+    parent: Option<Node>,
+    first_child: Option<Node>,
+    last_child: Option<Node>,
+    left_sibling: Option<Node>,
+    right_sibling: Option<Node>
+}
+
+struct NodeData {
+    layout: Layout,
     uv: Area,
     rotation: f32,
     color: Color,
+    texture: Option<TextureReference>,
+    interaction_mode: InteractionMode
 }
 
-#[derive(Clone,Copy,Hash,PartialEq,Eq)]
-pub struct Group {
-    index: Index
-}
-
-#[derive(Clone,Copy,Hash,PartialEq,Eq)]
-pub struct Element {
-    index: Index
-}
-
-#[derive(Clone,Copy)]
-pub struct Texture {
-    index: Index
-}
-
-pub struct Page<TTexture> {
-    groups: Arena<GroupInternal>,
-    elements: Arena<ElementInternal>,
-
-    element_parent_table: HashMap<Element,Group>,
-    group_parent_table: HashMap<Group,Group>,
-
-    top_level_group: Group,
-
-    focus_element: Option<Element>,
-    captured_element: Option<Element>,
-
-    texture_binds: Arena<TTexture>,
-
-    //output_buffer: Vec<(DrawData,TTexture)>
+impl Default for NodeData {
+    fn default() -> Self {
+        Self {
+            layout: Default::default(),
+            uv: Area::ONE,
+            rotation: 0.0,
+            color: Color::WHITE,
+            texture: None,
+            interaction_mode: InteractionMode::None
+        }
+    }
 }
 
 pub enum PageEvent {
-    ClickStart(Element),
-    ClickRelease(Element),
-    FocusStart(Element),
-    FocusEnd(Element),
+    ClickStart(Node),
+    ClickRelease(Node),
+    FocusStart(Node),
+    FocusEnd(Node),
     FocusLost
 }
 
-pub enum PageActionResult {
+pub enum NodeManipulationResult {
     Success,
-    NullReferenceElement,
-    NullReferenceGroup,
-    NullReferenceGroupDestination,
-    NullReferenceGroupSource,
-    ElementAlreadyInGroup,
-    GroupAlreadyInGroup,
-    CircularGroupReference
+    NullReference(Node),
+    NullChildReference(Node),
+    NullParentReference(Node),
+    CircularReference(Node),
+    MissingTopology(Node),
+}
+
+pub enum MouseState {
+    Released,
+    JustPressed,
+    Held,
+    JustReleased,
+}
+
+pub struct LayoutComputationContext {
+    mouse_state: MouseState,
+    mouse_position: (f32,f32),
+    root_size: (u32,u32),
+    root_origin: (u32,u32)
+}
+
+impl Default for LayoutComputationContext {
+    fn default() -> Self {
+        Self {
+            mouse_state: MouseState::Released,
+            mouse_position: (f32::MIN,f32::MIN),
+            root_size: (1,1),
+            root_origin: (0,0)
+        }
+    }
+}
+
+struct NodeContainer {
+    nodes: SlotMap<Node,NodeData>,
+    topology: SecondaryMap<Node,NodeTopology>,
+}
+
+impl NodeContainer {
+
+    fn set_parent(&mut self,child: Node,parent: Node) -> NodeManipulationResult {
+        if child == parent {
+            return NodeManipulationResult::CircularReference(child);
+        }
+        if !self.nodes.contains_key(child) {
+            return NodeManipulationResult::NullChildReference(child);
+        }
+        if !self.nodes.contains_key(parent) {
+            return NodeManipulationResult::NullParentReference(parent);
+        }
+
+        todo!();
+
+        return NodeManipulationResult::Success;
+    }
+
+    fn remove_descendants(&mut self,start: NodeTopology) {
+        let Some(mut node) = start.first_child else {
+            /* Early return, node does not have children. */
+            return;
+        };
+        loop {
+            let Some(topology) = self.topology.remove(node) else {
+                /* Topology not found. Shouldn't usually happen. */
+                break;
+            };
+
+            self.nodes.remove(node);
+            self.remove_descendants(topology);
+
+            let Some(sibling) = topology.right_sibling else {
+                /* No siblings remain. */
+                break;
+            };
+
+            /* Set the node for the next iteration. */
+            node = sibling; 
+        }
+    }
+
+    fn remove(&mut self,node: Node) -> NodeManipulationResult {
+        /* Validation */
+        if self.nodes.remove(node).is_none() {
+            return NodeManipulationResult::NullReference(node);
+        }
+        let Some(t) = self.topology.remove(node) else {
+            return NodeManipulationResult::MissingTopology(node);
+        };
+
+        /* If parent exists. */
+        if let Some(parent) = t.parent {
+            let Some(pt) = self.topology.get_mut(parent) else {
+                return NodeManipulationResult::MissingTopology(parent);
+            };
+
+            /* If this node is the first child of its parent. */
+            if let Some(first_child) = pt.first_child && first_child == node {
+                // Note: 't.left_sibling' should be 'None' here.
+                pt.first_child = t.right_sibling;
+            }
+
+            /* Don't use 'else if' because 'last_child' and 'first_child' might both be set. */
+
+            /* If this node is the last child of its parent. */
+            if let Some(last_child) = pt.last_child && last_child == node {
+                // Note: 't.right_sibling' should be 'None' here.
+                pt.last_child = t.left_sibling;
+            }
+        };
+
+        /* If left sibling exists. */
+        if let Some(left_sibling) = t.left_sibling {
+            let Some(lt) = self.topology.get_mut(left_sibling) else {
+                return NodeManipulationResult::MissingTopology(left_sibling);
+            };
+            /* Pass our right sibling left. */
+            lt.right_sibling = t.right_sibling;
+        }
+
+        /* If right sibling exists. */
+        if let Some(right_sibling) = t.right_sibling {
+            let Some(rt) = self.topology.get_mut(right_sibling) else {
+                return NodeManipulationResult::MissingTopology(right_sibling);
+            };
+            /* Pass our left sibling right. */
+            rt.left_sibling = t.right_sibling;
+        }
+
+        self.remove_descendants(t);
+
+        return NodeManipulationResult::Success;
+    }
+}
+
+pub struct Page<TTexture> {
+    node_container: NodeContainer,
+    node_animations: SparseSecondaryMap<Node,ElementAnimations>,
+    root_node: Node,
+    focus_element: Option<Node>,
+    captured_element: Option<Node>,
+    texture_binds: SlotMap<TextureReference,TTexture>,
 }
 
 impl<TTexture> Page<TTexture> {
-    pub fn create() -> Self {
-        let mut groups = Arena::new();
-        let top_level_group = Group { index: groups.insert(GroupInternal::default()) };
+
+    pub fn create_with_capacity(capacity: usize) -> Self {
+        let capacity = usize::max(capacity,MINIMUM_NODE_CAPACITY);
+
+        let mut nodes = SlotMap::with_capacity_and_key(capacity);
+        let mut topology = SecondaryMap::with_capacity(capacity);
+
+        let root_node = nodes.insert(NodeData::default());
+        topology.insert(root_node,NodeTopology::default());
+
+
+        let node_container = NodeContainer {
+            nodes,
+            topology
+        };
 
         return Self {
-            groups, top_level_group, focus_element: None, captured_element: None,
-            elements: Default::default(), texture_binds: Default::default(),
-            element_parent_table: Default::default(), group_parent_table: Default::default(), 
+            node_container,
+            root_node,
+            focus_element: None,
+            captured_element: None,
+            node_animations: Default::default(),
+            texture_binds: Default::default(),
         }
     }
 
-    pub fn create_element(&mut self,layout: Layout,interaction: InteractionState,style: ElementStyle) -> Element {
-        return Element {
-            index: self.elements.insert(ElementInternal {
-                style,
-                interaction,
-                layout: AnimatedLayout { value: layout, ..Default::default() },
-                focus_animation: None,
-                capture_animation: None,
-            })
-        };
+    pub fn move_node_to_parent(&mut self,child: Node,parent: Node) -> NodeManipulationResult {
+        return self.node_container.set_parent(child,parent);
     }
 
-    pub fn create_group(&mut self,layout: Layout) -> Group {
-        return Group {
-            index: self.groups.insert(GroupInternal {
-                layout: AnimatedLayout { value: layout, ..Default::default() }, ..Default::default()
-            })
-        }
+    pub fn move_node_to_root(&mut self,child: Node) -> NodeManipulationResult {
+        return self.node_container.set_parent(child,self.root_node);
     }
 
-    pub fn bind_texture(&mut self,texture: TTexture) -> Texture {
-        return Texture {
-            index: self.texture_binds.insert(texture)
-        }
+    pub fn remove_node(&mut self,node: Node) -> NodeManipulationResult {
+        return self.node_container.remove(node);
     }
 
-    pub fn add_element_to_group(&mut self,child: Element,parent: Group) -> PageActionResult {
-        if !self.elements.contains(child.index) {
-            return PageActionResult::NullReferenceElement;
-        };
-        if self.element_parent_table.contains_key(&child) {
-            return PageActionResult::ElementAlreadyInGroup;
-        }
-        let Some(destination) = self.groups.get_mut(parent.index) else {
-            return PageActionResult::NullReferenceGroupDestination;
-        };
-        destination.elements.insert(child);
-        self.element_parent_table.insert(child,parent);
-        return PageActionResult::Success;
+    pub fn create_node(&mut self,node: NodeData) -> Node {
+        return self.node_container.nodes.insert(node);
     }
 
-    pub fn add_group_to_group(&mut self,child: Group,parent: Group) -> PageActionResult {
-        if child.index == parent.index {
-            return PageActionResult::CircularGroupReference;
-        }
-        if !self.groups.contains(child.index) {
-            return PageActionResult::NullReferenceGroupSource;
-        }
-        if self.group_parent_table.contains_key(&child) {
-            return PageActionResult::GroupAlreadyInGroup;
-        }
-        let Some(destination) = self.groups.get_mut(parent.index) else {
-            return PageActionResult::NullReferenceGroupDestination;
-        };
-        destination.children.insert(child);
-        self.group_parent_table.insert(child,parent);
-
-        return PageActionResult::Success;
+    pub fn bind_texture(&mut self,texture: TTexture) -> TextureReference {
+        return self.texture_binds.insert(texture);
     }
 
-    pub fn delete_element(&mut self,element: Element) -> PageActionResult {
-        if self.elements.remove(element.index).is_none() {
-            return PageActionResult::NullReferenceElement;
-        }
-        let Some(parent_reference) = self.element_parent_table.remove(&element) else {
-            return PageActionResult::Success;
-        };
-        if let Some(parent) = self.groups.get_mut(parent_reference.index) {
-            parent.elements.remove(&element);
-        };
-        return PageActionResult::Success;
+    pub fn compute(&self,context: &LayoutComputationContext) -> ComputedLayout {
+        return context.compute(self);
     }
+}
 
-    pub fn delete_group(&mut self,group: Group) -> PageActionResult {
+struct ComputedLayout {
+    //todo...
+}
 
-        if !self.groups.contains(group.index) {
-            return PageActionResult::NullReferenceGroup;
-        }
-
-        let mut deletion_queue = VecDeque::from([group]);
-
-        while let Some(group_reference) = deletion_queue.pop_back() {
-            self.group_parent_table.remove(&group_reference);
-            let Some(group) = self.groups.remove(group_reference.index) else {
-                continue;
-            };
-            for child_element in group.elements {
-                self.elements.remove(child_element.index);
-                self.element_parent_table.remove(&child_element);
-            }
-            for child_group in group.children {
-                deletion_queue.push_back(child_group);
-            }
-        }
-        return PageActionResult::Success;
-    }
-
-    pub fn add_element_to_page(&mut self,child: Element) -> PageActionResult {
-        return self.add_element_to_group(child,self.top_level_group);
-    }
-
-    pub fn add_group_to_page(&mut self,child: Group) -> PageActionResult {
-        return self.add_group_to_group(child,self.top_level_group);
-    }
- 
-    pub fn update_element_style(&mut self,element: Element,style: ElementStyle) -> PageActionResult {
-        let Some(element) = self.elements.get_mut(element.index) else {
-            return PageActionResult::NullReferenceElement;
-        };
-        element.style = style;
-        return PageActionResult::Success;
-    }
-   
-    pub fn update_element_interaction(&mut self,element: Element,interaction: InteractionState) -> PageActionResult {
-            let Some(element) = self.elements.get_mut(element.index) else {
-            return PageActionResult::NullReferenceElement;
-        };
-        element.interaction = interaction;
-        return PageActionResult::Success;    
-    }
-
-    pub fn update_group_layout(&mut self,group: Group,layout: Layout) -> PageActionResult {
-        let Some(group) = self.groups.get_mut(group.index) else {
-            return PageActionResult::NullReferenceElement;
-        };
-        group.layout = AnimatedLayout { value: layout, ..Default::default() };
-        return PageActionResult::Success;
-    }
-
-    pub fn update_element_layout(&mut self,element: Element,layout: Layout) -> PageActionResult {
-        let Some(element) = self.elements.get_mut(element.index) else {
-            return PageActionResult::NullReferenceElement;
-        };
-        /* Drops animation already happening. TODO: Change that. Freeze any current animation and shift the start point. */
-        element.layout = AnimatedLayout { value: layout, ..Default::default() };
-        return PageActionResult::Success;
-    }
-
-    pub fn update(&mut self,mouse_pressed: bool,mouse_position: (f32,f32),page_size: (u32,u32)) -> &Vec<PageEvent> {
+impl LayoutComputationContext {
+    pub fn compute<TTexture>(&self,_page: &Page<TTexture>) -> ComputedLayout {
         todo!();
     }
+}
 
-    pub fn render_to_frame(&self,frame: Frame) {
-        
+impl ComputedLayout {
+    pub fn render(&self,_frame: Frame) {
+        todo!();
     }
 }

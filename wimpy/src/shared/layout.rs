@@ -15,19 +15,17 @@ pub struct Area {
 
 impl Default for Area {
     fn default() -> Self {
-        Self {
-            x: 0.0,
-            y: 0.0,
-            width: 1.0,
-            height: 1.0
-        }
+        Self::ONE
     }
 }
 
 impl Area {
-    pub fn one() -> Self {
-        return Self::default()
-    }
+    pub const ONE: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0
+    };
 
     pub fn to_center_encoded(&self) -> Self {
         return Self {
@@ -115,13 +113,13 @@ impl Default for Size {
 }
 
 impl Size {
-    pub fn of_parent_height(value: f32) -> Self {
+    pub fn of_parent_height(value: Unit) -> Self {
         return Self {
             value,
             mode: SizeMode::RelativeHeight,
         }
     }
-    pub fn of_parent_width(value: f32) -> Self {
+    pub fn of_parent_width(value: Unit) -> Self {
         return Self {
             value,
             mode: SizeMode::RelativeWidth,
