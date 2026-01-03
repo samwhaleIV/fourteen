@@ -194,8 +194,8 @@ pub struct DrawData {
 impl Default for DrawData {
     fn default() -> Self {
         Self {
-            area: Area::one(),
-            uv: Area::one(),
+            area: Area::ONE,
+            uv: Area::ONE,
             color: Color::WHITE,
             rotation: 0.0
         }

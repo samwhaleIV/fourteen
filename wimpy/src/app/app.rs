@@ -388,7 +388,7 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
             window.set_outer_position(position);
         }
 
-        let mut device = match pollster::block_on(VirtualDevice::new(window.clone())) {
+        let device = match pollster::block_on(VirtualDevice::new(window.clone())) {
             Ok(device) => device,
             Err(error) => {
                 log::error!("Scary error: {}",error);
