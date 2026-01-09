@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["main","wimpy"]
+members = ["debug","main","wimpy"]
 
 [workspace.dependencies]
 winit = "0.30.12"

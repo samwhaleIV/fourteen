@@ -42,13 +42,14 @@ impl AppStateInterface<SharedState> for TestState {
 
         let gfx = app_context.graphics();
 
-        if let Some(mut output_frame) = gfx.create_output_frame() {
-            output_frame.set_texture_filter(FilterMode::Linear);
-            // /output_frame.draw( ... );
+        let Some(mut output_frame) = gfx.create_output_frame() else {
+            return;
+        };
+        output_frame.set_texture_filter(FilterMode::Linear);
+        // /output_frame.draw( ... );
 
-            gfx.bake(&mut output_frame);
-            gfx.present_output_frame();
-        }
+        gfx.bake(&mut output_frame);
+        gfx.present_output_frame();
     }
 
     fn update(&mut self,context: &mut AppContext<SharedState>) -> UpdateResult<SharedState> {

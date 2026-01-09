@@ -173,7 +173,7 @@ impl Default for Layout {
     fn default() -> Self {
         Self {
             x: LayoutDimension::default(),
-            y:  LayoutDimension::default(),
+            y: LayoutDimension::default(),
         }
     }
 }

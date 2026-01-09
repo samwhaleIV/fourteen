@@ -3,9 +3,15 @@ use std::{
     ptr
 };
 
-use crate::{shared::{
-    Area, Color
-}, wgpu::{WGPUHandle, graphics_context::GraphicsContextInternal}};
+use crate::{
+    shared::{
+        Area, Color
+    },
+    wgpu::{
+        WGPUHandle,
+        graphics_context::GraphicsContextInternal
+    }
+};
 
 use super::graphics_context::{
     QuadInstance,
@@ -36,7 +42,7 @@ pub struct Frame {
     height: u32,
     index: FrameIndex,
     usage: FrameType,
-    command_buffer: VecDeque<FrameCommand>,
+    command_buffer: VecDeque<FrameCommand>, //Look into smallvec...
     write_lock: LockStatus
 }
 
