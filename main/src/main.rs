@@ -6,7 +6,7 @@ use env_logger::{
 };
 
 use std::env;
-use wimpy::wgpu::GraphicsContextConfiguration;
+use wimpy::wgpu::GraphicsContextConfig;
 
 use winit::event_loop::{
     ControlFlow,
@@ -31,10 +31,10 @@ fn create_event_loop() -> anyhow::Result<()> {
     let mut app = App::create(AppConfiguration::<SharedState> {
         state_generator: generate_test_state,
         shared_state_generator: SharedState::generator,
-        context_options: Some(GraphicsContextConfiguration {
+        context_options: Some(GraphicsContextConfig {
             quad_instance_capacity: 10000,
             uniform_capacity: 32,
-            cache_options: None,
+            cache: None,
         }),
         log_trace_config: None,
     });

@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 image = { workspace = true }
-generational-arena = "0.2"
 wgpu = { workspace = true }
 log = { workspace = true }
 bytemuck =  { workspace = true }

@@ -8,6 +8,7 @@ use crate::{
         Area, Color
     },
     wgpu::{
+        FrameCacheReference,
         WGPUHandle,
         graphics_context::GraphicsContextInternal
     }
@@ -18,7 +19,7 @@ use super::graphics_context::{
     GraphicsContext,
 };
 
-use generational_arena::Index;
+
 
 #[derive(Clone,Copy,PartialEq)]
 pub enum FrameType {
@@ -26,8 +27,6 @@ pub enum FrameType {
     Normal,
     Texture
 }
-
-type FrameIndex = generational_arena::Index;
 
 #[derive(PartialEq)]
 pub enum LockStatus {
@@ -40,7 +39,7 @@ pub enum LockStatus {
 pub struct Frame {
     width: u32,
     height: u32,
-    index: FrameIndex,
+    cache_reference: FrameCacheReference,
     usage: FrameType,
     command_buffer: VecDeque<FrameCommand>, //Look into smallvec...
     write_lock: LockStatus
@@ -51,11 +50,11 @@ pub trait FrameInternal {
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_writable(&self) -> bool;
 
-    fn create_output(size: (u32,u32),index: Index) -> Self;
+    fn create_output(size: (u32,u32),cache_reference: FrameCacheReference) -> Self;
     fn create(size: (u32,u32),options: FrameCreationOptions) -> Self;
-    fn create_texture(size: (u32,u32),index: Index) -> Self;
+    fn create_texture(size: (u32,u32),cache_reference: FrameCacheReference) -> Self;
 
-    fn get_index(&self) -> Index;
+    fn get_cache_reference(&self) -> FrameCacheReference;
 
     fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>);
 }
@@ -72,7 +71,7 @@ enum SrcDstCmpResult {
 pub struct FrameCreationOptions {
     pub persistent: bool,
     pub write_once: bool,
-    pub index: Index,
+    pub cache_reference: FrameCacheReference,
 }
 
 impl FrameInternal for Frame {
@@ -87,8 +86,8 @@ impl FrameInternal for Frame {
         }
     }
 
-    fn get_index(&self) -> Index {
-        return self.index;
+    fn get_cache_reference(&self) -> FrameCacheReference {
+        return self.cache_reference;
     }
 
     fn get_command_buffer(&self) -> &VecDeque<FrameCommand> {
@@ -110,26 +109,26 @@ impl FrameInternal for Frame {
                     false => LockStatus::FutureLock,
                 },
             },
-            index: options.index,
+            cache_reference: options.cache_reference,
             width: size.0,
             height: size.1,
             command_buffer: VecDeque::default()
         };
     }
 
-    fn create_texture(size: (u32,u32),index: Index) -> Self {
+    fn create_texture(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
         validate_size(size);
         return Self {
             width: size.0,
             height: size.1,
-            index: index,
+            cache_reference,
             usage: FrameType::Texture,
             command_buffer: Default::default(),
             write_lock: LockStatus::Locked,
         }
     }
 
-    fn create_output(size: (u32,u32),index: Index) -> Self {
+    fn create_output(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
         validate_size(size);
         return Self {
             usage: FrameType::Output,
@@ -137,7 +136,7 @@ impl FrameInternal for Frame {
             height: size.1,
             command_buffer: Default::default(),
             write_lock: LockStatus::FutureLock,
-            index,
+            cache_reference,
         };
     }
 
@@ -165,11 +164,11 @@ impl FrameInternal for Frame {
 pub enum FrameCommand {
     /* Single Fire Draw Commands */
 
-    DrawFrame(FrameIndex,DrawData),
+    DrawFrame(FrameCacheReference,DrawData),
 
     /* Set Based Draw Commands */
 
-    DrawFrameSet(FrameIndex,Vec<DrawData>),
+    DrawFrameSet(FrameCacheReference,Vec<DrawData>),
 
     /* Other */
 
@@ -297,14 +296,14 @@ impl Frame {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrame(source_frame.index,draw_data));
+        self.command_buffer.push_back(FrameCommand::DrawFrame(source_frame.cache_reference,draw_data));
     }
 
     pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrameSet(source_frame.index,draw_data));
+        self.command_buffer.push_back(FrameCommand::DrawFrameSet(source_frame.cache_reference,draw_data));
     }
 
     /* Size Getters */

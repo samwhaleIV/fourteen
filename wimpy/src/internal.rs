@@ -1,3 +1,3 @@
-mod lease_arena;
+mod keyed_arena;
 
-pub use lease_arena::LeaseArena;
+pub use keyed_arena::KeyedArena;

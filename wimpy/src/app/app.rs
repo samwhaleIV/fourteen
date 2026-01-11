@@ -10,7 +10,7 @@ use crate::{
     app::VirtualDevice,
     wgpu::{
         GraphicsContext,
-        GraphicsContextConfiguration,
+        GraphicsContextConfig,
         GraphicsContextInternal,
     }
 };
@@ -66,7 +66,7 @@ pub struct App<TSharedState> {
     mouse_point: (f32,f32),
 
     log_trace_config: LogTraceConfig,
-    context_options: Option<GraphicsContextConfiguration>,
+    context_options: Option<GraphicsContextConfig>,
 
     received_resume_call: bool
 }
@@ -97,7 +97,7 @@ fn placeholder_state_generator<TSharedState>(_context: &mut AppContext<TSharedSt
 pub struct AppConfiguration<TSharedState> {
     pub state_generator: AppStateGenerator<TSharedState>,
     pub shared_state_generator: SharedStateGenerator<TSharedState>,
-    pub context_options: Option<GraphicsContextConfiguration>,
+    pub context_options: Option<GraphicsContextConfig>,
     pub log_trace_config: Option<LogTraceConfig>,
 }
 
@@ -400,7 +400,7 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
 
         let mut graphics_context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
             Some(options) => options,
-            None => GraphicsContextConfiguration::default(),
+            None => GraphicsContextConfig::default(),
         });
 
         graphics_context.insert_wgpu_handle(device);

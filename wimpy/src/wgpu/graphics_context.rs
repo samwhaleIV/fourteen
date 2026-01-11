@@ -1,15 +1,9 @@
 use core::panic;
-use std::collections::{
-    HashMap,
-    VecDeque
-};
 
 use bytemuck::{
     Pod,
     Zeroable
 };
-
-use generational_arena::{Arena, Index};
 
 use wgpu::{
     BindGroup,
@@ -28,7 +22,7 @@ use wgpu::{
 };
 
 use crate::{
-    internal::LeaseArena,
+    internal::KeyedArena,
     wgpu::{
         FilterMode,
         WrapMode,
@@ -50,6 +44,10 @@ use super::{
 
 const UNIFORM_BUFFER_ALIGNMENT: u32 = 256;
 
+slotmap::new_key_type! {
+    pub struct FrameCacheReference;
+}
+
 pub struct GraphicsContext<THandle> {
     render_pipeline: RenderPipeline,
 
@@ -63,8 +61,8 @@ pub struct GraphicsContext<THandle> {
 
     uniform_bind_group: BindGroup,
 
-    instance_buffer_counter: u32,
-    uniform_buffer_counter: u32,
+    instance_buffer_write_offset: u32,
+    uniform_buffer_write_offset: u32,
 
     frame_cache: FrameCache,
 
@@ -75,32 +73,32 @@ pub struct GraphicsContext<THandle> {
 }
 
 struct OutputFrame {
-    index: Index,
+    cache_reference: FrameCacheReference,
     surface: SurfaceTexture
 }
 
-type FrameCache = LeaseArena<(u32,u32),TextureContainer>;
+type FrameCache = KeyedArena<(u32,u32),FrameCacheReference,TextureContainer>;
 
-pub struct GraphicsContextConfiguration {
+pub struct GraphicsContextConfig<'a> {
     pub quad_instance_capacity: u32,
     pub uniform_capacity: u32,
-    pub cache_options: Option<CacheOptions>
+    pub cache: Option<CacheConfig<'a>>
 }
 
 /* Reasonable-ish defaults. Callers, do it yourself! */
-impl Default for GraphicsContextConfiguration {
+impl Default for GraphicsContextConfig<'_> {
     fn default() -> Self {
         Self {
             quad_instance_capacity: 640,
             uniform_capacity: 16,
-            cache_options: None
+            cache: None
         }
     }
 }
 
-pub struct CacheOptions {
+pub struct CacheConfig<'a> {
     pub instances: u32,
-    pub sizes: Vec<(u32,u32)>
+    pub sizes: &'a[(u32,u32)]
 }
 
 pub enum FrameLifetime {
@@ -121,7 +119,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
 
     pub fn create(
         wgpu_handle: &THandle,
-        options: GraphicsContextConfiguration
+        options: GraphicsContextConfig
     ) -> Self {
         return create_graphics_context(wgpu_handle,options);
     }
@@ -147,7 +145,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
             let texture_container = TextureContainer::create_output(&surface,size);
             let index = self.frame_cache.insert_keyless(texture_container);
 
-            self.output_frame = Some(OutputFrame { index, surface });
+            self.output_frame = Some(OutputFrame { cache_reference: index, surface });
             return Some(FrameInternal::create_output(size,index));
         } else {
             log::warn!("Unable to create output texture.");
@@ -170,11 +168,11 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
 
             self.frame_cache.end_all_leases();
 
-            self.instance_buffer_counter = 0;
-            self.uniform_buffer_counter = 0;
+            self.instance_buffer_write_offset = 0;
+            self.uniform_buffer_write_offset = 0;
 
             if let Some(output_frame) = self.output_frame.take() {
-                self.frame_cache.remove(output_frame.index);
+                self.frame_cache.remove(output_frame.cache_reference);
                 output_frame.surface.present();
             } else {
                 log::warn!("Output frame not found during frame finish.");
@@ -195,23 +193,26 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         let index = self.frame_cache.insert_keyless(frame);
         return FrameInternal::create(size,FrameCreationOptions {
             persistent: true,
-            index,
+            cache_reference: index,
             write_once
         });
     }
 
     fn get_temp_frame(&mut self,wgpu_handle: &THandle,size: (u32,u32),write_once: bool) -> Frame {
-        if let Some(index) = self.frame_cache.try_request_lease(size) {
-            return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
-        } else {
-            let new_texture = TextureContainer::create_mutable(
-                wgpu_handle,
-                &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
-                size
-            );
-            let index = self.frame_cache.insert_leasable_and_take(size,new_texture);
-            return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, index });
-        }
+        return match self.frame_cache.open_lease(size) {
+            Some(cache_reference) => {
+                FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference })
+            },
+            None => {
+                let new_texture = TextureContainer::create_mutable(
+                    wgpu_handle,
+                    &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
+                    size
+                );
+                let index = self.frame_cache.insert_and_lease(size,new_texture);
+                FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference: index })
+            },
+        };
     }
 
     pub fn get_frame(&mut self,config: FrameConfig) -> Option<Frame> {
@@ -230,6 +231,10 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
             log::error!("Failure to create frame. Missing WGPU handle.");
             return None;
         }
+    }
+
+    pub fn ensure_cached_frames(&mut self,sizes: &[(u32,u32)],instances: u32) {
+
     }
 
     pub fn load_texture(&mut self,bytes: &[u8]) -> Option<Frame> {
@@ -251,19 +256,19 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
     }
 
     fn request_instance_buffer_start(&mut self,quad_count: u32) -> u32 {
-        let index = self.instance_buffer_counter;
-        self.instance_buffer_counter += quad_count;
+        let index = self.instance_buffer_write_offset;
+        self.instance_buffer_write_offset += quad_count;
         return index;
     }
 
     fn request_uniform_buffer_start(&mut self) -> u32 {
-        let index = self.uniform_buffer_counter;
-        self.uniform_buffer_counter += 1;
+        let index = self.uniform_buffer_write_offset;
+        self.uniform_buffer_write_offset += 1;
         return index;
     }
 
-    fn get_texture_container(&self,reference: Index) -> &TextureContainer {
-        return self.frame_cache.get(reference);
+    fn get_texture_container(&self,cache_reference: FrameCacheReference) -> &TextureContainer {
+        return self.frame_cache.get(cache_reference);
     }
 
     fn create_render_pass<'a>(
@@ -273,7 +278,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         encoder: &'a mut CommandEncoder,
     ) -> RenderPass<'a> {
 
-        let texture_view = self.frame_cache.get(frame.get_index()).get_view();
+        let texture_view = self.frame_cache.get(frame.get_cache_reference()).get_view();
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -357,7 +362,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
         let mut filter_mode: FilterMode = FilterMode::Nearest;
         let mut wrap_mode: WrapMode = WrapMode::Clamp;
 
-        let mut current_sampling_frame: Option<Index> = None;
+        let mut current_sampling_frame: Option<FrameCacheReference> = None;
 
         /* Some deeply complex optimization option could coalesce commands together, but set commands should cover any optimization concerns. */
 
@@ -416,7 +421,7 @@ pub trait GraphicsContextInternal<THandle> {
     fn render_frame(&mut self,frame: &Frame);
 }
 
-impl<THandle: WGPUHandle> GraphicsContextInternal<THandle> for GraphicsContext<THandle> {
+impl<THandle> GraphicsContextInternal<THandle> for GraphicsContext<THandle> where THandle: WGPUHandle {
     fn insert_wgpu_handle(&mut self,wgpu_handle: THandle) {
         self.wgpu_handle = Some(wgpu_handle);
     }
@@ -456,7 +461,7 @@ fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
 
 fn create_graphics_context<THandle: WGPUHandle> (
     wgpu_handle: &THandle,
-    options: GraphicsContextConfiguration
+    config: GraphicsContextConfig
 ) -> GraphicsContext<THandle> {
 
     let device = wgpu_handle.get_device();
@@ -498,7 +503,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
 
     let instance_buffer = device.create_buffer(&BufferDescriptor{
         label: Some("Instance Buffer"),
-        size: (size_of::<QuadInstance>() * options.quad_instance_capacity as usize) as u64,
+        size: (size_of::<QuadInstance>() * config.quad_instance_capacity as usize) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -506,7 +511,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     let uniform_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("View Projection Buffer"),
         //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
-        size: (UNIFORM_BUFFER_ALIGNMENT * options.uniform_capacity) as u64,
+        size: (UNIFORM_BUFFER_ALIGNMENT * config.uniform_capacity) as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false
     });
@@ -520,24 +525,17 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         label: Some("View Projection Bind Group"),
     });
 
-    let frame_cache: FrameCache = match options.cache_options {
-        None => FrameCache::default(),
-        Some(cache_options) => {
-            let capacity = cache_options.sizes.len();
-            let instances = cache_options.instances;
+    
+    let mut frame_cache = FrameCache::default();
 
-            if instances < 1 {
-                log::warn!("Frame cache instances is 0. No caches will be created.");
-            }
-
-            let mut textures = Arena::with_capacity(capacity);
-            let mut mutable_textures = HashMap::with_capacity(capacity);
-
+    if let Some(cache_config) = config.cache {
+        let instances = cache_config.instances;
+        if instances >= 1 {
+            log::warn!("Frame cache instances is 0. No caches will be created.");
+        } else {
             let bind_group_layout = &render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX);
 
-            for size in cache_options.sizes.iter() {
-                let mut queue = VecDeque::with_capacity(instances as usize);
-
+            for size in cache_config.sizes.iter() {
                 for _ in 0..instances {
 
                     let mutable_texture = TextureContainer::create_mutable(
@@ -545,15 +543,9 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
                         bind_group_layout,
                         *size
                     );
-
-                    let index = textures.insert(mutable_texture);
-                    queue.push_back(index);
+                    frame_cache.insert(*size,mutable_texture);
                 }
-
-                mutable_textures.insert(*size,queue);
             }
-
-            FrameCache::create_with_values(textures,mutable_textures)
         }
     };
 
@@ -569,8 +561,8 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         encoder: None,
         active: false,
         output_frame: None,
-        instance_buffer_counter: 0,
-        uniform_buffer_counter: 0
+        instance_buffer_write_offset: 0,
+        uniform_buffer_write_offset: 0
     };
 }
 
