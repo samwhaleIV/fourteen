@@ -22,7 +22,7 @@ use wgpu::{
 };
 
 use crate::{
-    internal::KeyedArena,
+    internal::CachesArena,
     wgpu::{
         FilterMode,
         WrapMode,
@@ -77,7 +77,7 @@ struct OutputFrame {
     surface: SurfaceTexture
 }
 
-type FrameCache = KeyedArena<(u32,u32),FrameCacheReference,TextureContainer>;
+type FrameCache = CachesArena<(u32,u32),FrameCacheReference,TextureContainer>;
 
 pub struct GraphicsContextConfig<'a> {
     pub quad_instance_capacity: u32,
@@ -199,7 +199,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
     }
 
     fn get_temp_frame(&mut self,wgpu_handle: &THandle,size: (u32,u32),write_once: bool) -> Frame {
-        return match self.frame_cache.open_lease(size) {
+        return match self.frame_cache.start_lease(size) {
             Some(cache_reference) => {
                 FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference })
             },
@@ -209,7 +209,7 @@ impl<THandle: WGPUHandle> GraphicsContext<THandle> {
                     &self.render_pipeline.get_bind_group_layout(TEXTURE_BIND_GROUP_INDEX),
                     size
                 );
-                let index = self.frame_cache.insert_and_lease(size,new_texture);
+                let index = self.frame_cache.insert_with_lease(size,new_texture);
                 FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference: index })
             },
         };
