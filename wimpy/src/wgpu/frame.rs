@@ -1,25 +1,10 @@
-use std::{
-    collections::VecDeque,
-    ptr
-};
-
 use crate::{
     shared::{
-        Area, Color
-    },
-    wgpu::{
-        FrameCacheReference,
-        WGPUHandle,
-        graphics_context::GraphicsContextInternal
-    }
+        Area,
+        Color
+    }, 
+    wgpu::frame_cache::FrameCacheReference
 };
-
-use super::graphics_context::{
-    QuadInstance,
-    GraphicsContext,
-};
-
-
 
 #[derive(Clone,Copy,PartialEq)]
 pub enum FrameType {
@@ -41,12 +26,11 @@ pub struct Frame {
     height: u32,
     cache_reference: FrameCacheReference,
     usage: FrameType,
-    command_buffer: VecDeque<FrameCommand>, //Look into smallvec...
+    command_buffer: Vec<FrameCommand>, //Look into smallvec...
     write_lock: LockStatus
 }
 
 pub trait FrameInternal {
-    fn get_command_buffer(&self) -> &VecDeque<FrameCommand>;
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_writable(&self) -> bool;
 
@@ -56,7 +40,8 @@ pub trait FrameInternal {
 
     fn get_cache_reference(&self) -> FrameCacheReference;
 
-    fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>);
+    fn get_command_buffer(&self) -> Result<&Vec<FrameCommand>,&'static str>;
+    fn clear(&mut self);
 }
 
 #[derive(PartialEq)]
@@ -90,10 +75,6 @@ impl FrameInternal for Frame {
         return self.cache_reference;
     }
 
-    fn get_command_buffer(&self) -> &VecDeque<FrameCommand> {
-        return &self.command_buffer;
-    }
-
     fn is_writable(&self) -> bool {
         return self.write_lock != LockStatus::Locked;
     }
@@ -112,7 +93,7 @@ impl FrameInternal for Frame {
             cache_reference: options.cache_reference,
             width: size.0,
             height: size.1,
-            command_buffer: VecDeque::default()
+            command_buffer: Default::default()
         };
     }
 
@@ -140,17 +121,17 @@ impl FrameInternal for Frame {
         };
     }
 
-    fn finish<THandle: WGPUHandle>(&mut self,context: &mut GraphicsContext<THandle>) {
+    fn get_command_buffer(&self) -> Result<&Vec<FrameCommand>,&'static str> {
         if !self.is_writable() {
-            log::error!("Frame is readonly!");
-            self.command_buffer.clear();
-            return;
+            return Err("Frame is readonly!");
         }
         if self.command_buffer.is_empty() {
-            log::warn!("Frame command buffer is empty!");
-        }    
-        context.render_frame(&self);
+            return Err("Frame command buffer is empty!");
+        }
+        return Ok(&self.command_buffer);
+    }
 
+    fn clear(&mut self) {
         match self.write_lock {
             LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,
             LockStatus::FutureLock => self.write_lock = LockStatus::Locked,
@@ -207,38 +188,11 @@ impl Default for DrawData {
     }
 }
 
-impl DrawData {
-    pub fn to_quad_instance(&self) -> QuadInstance {
-        let area = self.area.to_center_encoded();
-        return QuadInstance {
-            position: [
-                area.x,
-                area.y,
-            ],
-            size: [
-                area.width,
-                area.height,
-            ],
-            uv_position: [
-                self.uv.x,
-                self.uv.y,
-            ],
-            uv_size: [
-                self.uv.width,
-                self.uv.height,
-            ],
-            color: self.color.to_float_array(),
-            rotation: self.rotation,
-            _padding: [0.0,0.0,0.0],
-        }
-    }
-}
-
-fn validate_size(size: (u32,u32)) {
+fn validate_size(size: (u32,u32)) -> Result<(),&'static str> {
     if size.0 > 0 && size.1 > 0 {
-        return;
+        return Err("Invalid frame size. Width and height must be greater than 1.");
     }
-    panic!("Invalid frame size. Width and height must be greater than 1.");
+    return Ok(());
 }
 
 fn get_src_dst_cmp_result(destination: &Frame,source: &Frame) -> SrcDstCmpResult {
@@ -259,7 +213,7 @@ fn get_src_dst_cmp_result(destination: &Frame,source: &Frame) -> SrcDstCmpResult
         return SrcDstCmpResult::ReadonlyDestination;
     }
 
-    if ptr::eq::<Frame>(destination,source) {
+    if destination.cache_reference == source.cache_reference {
         return SrcDstCmpResult::CircularReference;
     }
 
@@ -284,11 +238,11 @@ fn validate_src_dst_op(destination: &Frame,source: &Frame) -> bool {
 impl Frame {
 
     pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
-        self.command_buffer.push_back(FrameCommand::SetTextureFilter(filter_mode));
+        self.command_buffer.push(FrameCommand::SetTextureFilter(filter_mode));
     }
 
     pub fn set_texture_wrap(&mut self,wrap_mode: WrapMode) {
-        self.command_buffer.push_back(FrameCommand::SetTextureWrap(wrap_mode));
+        self.command_buffer.push(FrameCommand::SetTextureWrap(wrap_mode));
     }
 
     /* Draw Commands */
@@ -296,14 +250,14 @@ impl Frame {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrame(source_frame.cache_reference,draw_data));
+        self.command_buffer.push(FrameCommand::DrawFrame(source_frame.cache_reference,draw_data));
     }
 
     pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
         if !validate_src_dst_op(self,source_frame) {
             return;
         }
-        self.command_buffer.push_back(FrameCommand::DrawFrameSet(source_frame.cache_reference,draw_data));
+        self.command_buffer.push(FrameCommand::DrawFrameSet(source_frame.cache_reference,draw_data));
     }
 
     /* Size Getters */

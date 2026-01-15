@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use crate::internal::caches_arena::CapacityConfig;
+
+use crate::shared::cache_arena::CacheArenaConfig;
 
 pub type Pool<T> = Vec<T>;
 
+#[derive(PartialEq)]
 pub enum PoolTarget {
     Cache,
     Lease,
 }
 
-pub struct MoveToCache;
 pub struct MoveToLease;
+pub struct MoveToCache;
+
 
 pub struct KeyedPools<TKey,T,TConfig> {
     leases: Pool<T>,
@@ -30,14 +33,9 @@ pub struct PoolOriginDestination<'a,T> {
     pub target: PoolTarget,
 }
 
-pub struct PoolDestination<'a,T> {
-    pub value: &'a mut Pool<T>,
-    pub target: PoolTarget,
-}
-
 impl<TKey,T,TConfig> KeyedPools<TKey,T,TConfig> where
     TKey: Eq + Hash,
-    TConfig: CapacityConfig 
+    TConfig: CacheArenaConfig 
 {
     fn create_pool() -> Pool<T> {
         return Vec::with_capacity(TConfig::POOL_SIZE);
@@ -63,7 +61,7 @@ impl<TKey,T,TConfig> KeyedPools<TKey,T,TConfig> where
         return self.cache_container.get_mut(key);
     }
 
-    pub fn get_cache_and_lease_mut(&mut self,key: &TKey) -> Option<PoolPair<T>> {
+    pub fn get_cache_and_lease_mut<'a>(&'a mut self,key: &TKey) -> Option<PoolPair<'a,T>> {
         return match self.cache_container.get_mut(key) {
             Some(cache_pool) => Some(PoolPair {
                 cache: cache_pool,
@@ -101,7 +99,7 @@ impl<TKey,T> PoolSelector<TKey,T> for MoveToLease {
         return PoolOriginDestination {
             origin: pool_pair.cache,
             destination: pool_pair.lease,
-            target: PoolTarget::Cache
+            target: PoolTarget::Lease
         };
     }
 }

@@ -6,7 +6,7 @@ use env_logger::{
 };
 
 use std::env;
-use wimpy::wgpu::GraphicsContextConfig;
+use wimpy::{shared::CacheArenaConfig, wgpu::GraphicsContextConfig};
 
 use winit::event_loop::{
     ControlFlow,
@@ -24,18 +24,22 @@ use crate::test_state::{
     generate_test_state
 };
 
+struct EngineConfig;
+
+impl GraphicsContextConfig for EngineConfig {
+    const INSTANCE_CAPACITY: usize = 256;
+    const UNIFORM_CAPACITY: usize = 64;
+    const CACHE_INSTANCES: usize = 0;
+    const CACHE_SIZES: &[(u32,u32)] = &[];
+}
+
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::create(AppConfiguration::<SharedState> {
+    let mut app = App::create(AppConfiguration::<SharedState,TConfig> {
         state_generator: generate_test_state,
         shared_state_generator: SharedState::generator,
-        context_options: Some(GraphicsContextConfig {
-            quad_instance_capacity: 10000,
-            uniform_capacity: 32,
-            cache: None,
-        }),
         log_trace_config: None,
     });
 

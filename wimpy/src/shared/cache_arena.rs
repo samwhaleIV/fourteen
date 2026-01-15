@@ -1,6 +1,7 @@
 use std::{
     hash::Hash,
-    marker::PhantomData
+    marker::PhantomData,
+    fmt::Debug
 };
 
 use slotmap::{
@@ -8,7 +9,7 @@ use slotmap::{
     SlotMap,
 };
 
-use crate::internal::keyed_pools::{
+use crate::shared::keyed_pools::{
     KeyedPools,
     MoveToCache,
     MoveToLease,
@@ -28,53 +29,63 @@ struct SlotMapItem<TKey,TValue> {
     key_data: Option<KeyData<TKey>>,
 }
 
-pub struct CachesArena<TKey,TReference,TItem,TConfig> where
-    TReference: Key 
-{
-    slotmap: SlotMap<TReference,SlotMapItem<TKey,TItem>>,
-    pools: KeyedPools<TKey,TReference,TConfig>,
-    phantom_config: std::marker::PhantomData<TConfig>
-}
-
-pub enum CachesArenaError<TKey,TReference> {
+#[derive(Debug)]
+pub enum CacheArenaError<TKey,TReference> {
     ExpiredReference(TReference),
     KeylessReference(TReference),
-    NoActiveLease(TReference,TKey),
     EmptyKeyedPool(TKey),
     MissingKeyedPool(TKey),
-    PoolSwapMiss(TKey,usize),
-    Generic
+    NotInLease(TReference,TKey),
+    NotInCache(TReference,TKey),
+    PoolSwapAliasing(TKey,usize),
 }
 
-pub trait CapacityConfig {
+pub trait CacheArenaConfig {
     const ENTRIES: usize;
     const POOL_COUNT: usize;
     const POOL_SIZE: usize;
     const LEASES: usize;
 }
 
-pub struct DefaultCapacityConfig;
-impl CapacityConfig for DefaultCapacityConfig {
-    const ENTRIES: usize = 128;
-    const LEASES: usize = 128;
-    const POOL_COUNT: usize = 16;
-    const POOL_SIZE: usize = 16;
+pub struct CacheArena<TKey,TReference,TItem,TConfig> where
+    TReference: Key,
+{
+    slotmap: SlotMap<TReference,SlotMapItem<TKey,TItem>>,
+    pools: KeyedPools<TKey,TReference,TConfig>,
+    phantom_config: std::marker::PhantomData<TConfig>
 }
 
-impl<TKey,TReference,TItem,TConfig> Default for CachesArena<TKey,TReference,TItem,TConfig> where
+impl<TKey,TReference,TItem,TConfig> Default for CacheArena<TKey,TReference,TItem,TConfig> where
     TReference: Key,
     TKey: Eq + Copy + Hash,
-    TConfig: CapacityConfig
+    TConfig: CacheArenaConfig
 {
     fn default() -> Self {
         return Self::new();
     }
 }
 
-impl<TKey,TReference,TItem,TConfig> CachesArena<TKey,TReference,TItem,TConfig> where
+impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> where
+    TReference: Key
+{
+    pub fn get(&self,reference: TReference) -> Result<&TItem,CacheArenaError<TKey,TReference>> {
+        let Some(item) = self.slotmap.get(reference) else {
+            return Err(CacheArenaError::ExpiredReference(reference));
+        };
+        return Ok(&item.value);
+    }
+    pub fn get_mut(&mut self,reference: TReference) -> Result<&mut TItem,CacheArenaError<TKey,TReference>> {
+        let Some(item) = self.slotmap.get_mut(reference) else {
+            return Err(CacheArenaError::ExpiredReference(reference));
+        };
+        return Ok(&mut item.value);
+    }
+}
+
+impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> where
     TReference: Key,
     TKey: Eq + Copy + Hash,
-    TConfig: CapacityConfig 
+    TConfig: CacheArenaConfig 
 {
 
     pub fn new() -> Self {
@@ -89,7 +100,7 @@ impl<TKey,TReference,TItem,TConfig> CachesArena<TKey,TReference,TItem,TConfig> w
         return self.slotmap.insert(SlotMapItem { value: item, key_data: None });
     }
 
-    pub fn insert(&mut self,item: TItem,key: TKey) {
+    pub fn insert(&mut self,key: TKey,item: TItem) {
         let cache_pool = self.pools.get_or_create_cache_mut(key);
         let pool_target = PoolTarget::Cache;
 
@@ -125,18 +136,18 @@ impl<TKey,TReference,TItem,TConfig> CachesArena<TKey,TReference,TItem,TConfig> w
         return reference;
     }
 
-    pub fn remove(&mut self,reference: TReference) -> Result<TItem,CachesArenaError<TKey,TReference>> {
+    pub fn remove(&mut self,reference: TReference) -> Result<TItem,CacheArenaError<TKey,TReference>> {
         let Some(item) = self.slotmap.remove(reference) else {
-            return Err(CachesArenaError::ExpiredReference(reference));
+            return Err(CacheArenaError::ExpiredReference(reference));
         };
-        let Some(KeyData{ key, index, pool_target: lease_state }) = item.key_data else {
+        let Some(KeyData{ key, index, pool_target }) = item.key_data else {
             return Ok(item.value);
         };
 
-        let pool = match lease_state {
+        let pool = match pool_target {
             PoolTarget::Cache => {
                 let Some(cache) = self.pools.get_cache_mut(&key) else {
-                    return Err(CachesArenaError::MissingKeyedPool(key));
+                    return Err(CacheArenaError::MissingKeyedPool(key));
                 };
                 cache
             },
@@ -146,45 +157,38 @@ impl<TKey,TReference,TItem,TConfig> CachesArena<TKey,TReference,TItem,TConfig> w
         pool.swap_remove(index);
 
         let Some(swapped_item_reference) = pool.get(index).cloned() else {
-            return Err(CachesArenaError::PoolSwapMiss(key,index));
+            return Err(CacheArenaError::PoolSwapAliasing(key,index));
         };
         let Some(swapped_item) = self.slotmap.get_mut(swapped_item_reference) else {
-            return Err(CachesArenaError::ExpiredReference(swapped_item_reference)); 
+            return Err(CacheArenaError::ExpiredReference(swapped_item_reference)); 
         };
         let Some(swapped_item_key_data) = &mut swapped_item.key_data else {
-            return Err(CachesArenaError::KeylessReference(swapped_item_reference));
+            return Err(CacheArenaError::KeylessReference(swapped_item_reference));
         };
         swapped_item_key_data.index = index;
 
         return Ok(item.value);
     }
 
-    pub fn get(&self,reference: TReference) -> Result<&TItem,CachesArenaError<TKey,TReference>> {
-        let Some(item) = self.slotmap.get(reference) else {
-            return Err(CachesArenaError::ExpiredReference(reference));
-        };
-        return Ok(&item.value);
-    }
-
-    pub fn get_mut(&mut self,reference: TReference) -> Result<&mut TItem,CachesArenaError<TKey,TReference>> {
+    fn pool_swap<PoolStrategy: PoolSelector<TKey,TReference>>(&mut self,reference: TReference) -> Result<(),CacheArenaError<TKey,TReference>> {
         let Some(item) = self.slotmap.get_mut(reference) else {
-            return Err(CachesArenaError::ExpiredReference(reference));
-        };
-        return Ok(&mut item.value);
-    }
-
-    fn pool_swap<PoolStrategy: PoolSelector<TKey,TReference>>(&mut self,reference: TReference) -> Result<(),CachesArenaError<TKey,TReference>> {
-        let Some(item) = self.slotmap.get_mut(reference) else {
-            return Err(CachesArenaError::ExpiredReference(reference)); 
+            return Err(CacheArenaError::ExpiredReference(reference)); 
         };
         let Some(key_data) = &mut item.key_data else {
-            return Err(CachesArenaError::KeylessReference(reference));
+            return Err(CacheArenaError::KeylessReference(reference));
         };
 
         let PoolOriginDestination { origin, destination, target } = PoolStrategy::order(match self.pools.get_cache_and_lease_mut(&key_data.key) {
             Some(value) => value,
-            None => return Err(CachesArenaError::MissingKeyedPool(key_data.key)),
+            None => return Err(CacheArenaError::MissingKeyedPool(key_data.key)),
         });
+
+        if key_data.pool_target == target {
+            return match target {
+                PoolTarget::Cache => Err(CacheArenaError::NotInLease(reference,key_data.key)),
+                PoolTarget::Lease => Err(CacheArenaError::NotInCache(reference,key_data.key)),
+            }
+        }
 
         let origin_index = key_data.index;
         key_data.index = destination.len();
@@ -194,31 +198,31 @@ impl<TKey,TReference,TItem,TConfig> CachesArena<TKey,TReference,TItem,TConfig> w
         origin.swap_remove(key_data.index);
 
         let Some(swapped_item_reference) = origin.get(origin_index).cloned() else {
-            return Err(CachesArenaError::PoolSwapMiss(key_data.key,origin_index));
+            return Err(CacheArenaError::PoolSwapAliasing(key_data.key,origin_index));
         };
         let Some(swapped_item) = self.slotmap.get_mut(swapped_item_reference) else {
-            return Err(CachesArenaError::ExpiredReference(swapped_item_reference)); 
+            return Err(CacheArenaError::ExpiredReference(swapped_item_reference)); 
         };
         let Some(swapped_item_key_data) = &mut swapped_item.key_data else {
-            return Err(CachesArenaError::KeylessReference(swapped_item_reference));
+            return Err(CacheArenaError::KeylessReference(swapped_item_reference));
         };
         swapped_item_key_data.index = origin_index;
         
         return Ok(());
     }
 
-    pub fn start_lease(&mut self,key: TKey) -> Result<TReference,CachesArenaError<TKey,TReference>> {
+    pub fn start_lease(&mut self,key: TKey) -> Result<TReference,CacheArenaError<TKey,TReference>> {
         let Some(cache) = self.pools.get_cache_mut(&key) else {
-            return Err(CachesArenaError::MissingKeyedPool(key));
+            return Err(CacheArenaError::MissingKeyedPool(key));
         };
         let Some(reference) = cache.last().cloned() else {
-            return Err(CachesArenaError::EmptyKeyedPool(key));
+            return Err(CacheArenaError::EmptyKeyedPool(key));
         };
         self.pool_swap::<MoveToLease>(reference)?;
         return Ok(reference);
     }
 
-    pub fn end_lease(&mut self,reference: TReference) -> Result<(),CachesArenaError<TKey,TReference>> {
+    pub fn end_lease(&mut self,reference: TReference) -> Result<(),CacheArenaError<TKey,TReference>> {
         return self.pool_swap::<MoveToCache>(reference);
     }
 

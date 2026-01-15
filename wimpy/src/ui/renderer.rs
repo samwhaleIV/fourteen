@@ -1,8 +1,6 @@
 use crate::{
-    app::VirtualDevice,
     shared::{
         Area,
-        Layout
     },
     ui::{
         LocateTexture,
@@ -12,7 +10,6 @@ use crate::{
     },
     wgpu::{
         Frame,
-        GraphicsContext
     }
 };
 
@@ -58,10 +55,10 @@ impl NodeOutputBuilder<UINodeInput,UINodeOutput> for UIRenderer {
     }
 }
 
-impl UIRenderer {
-    pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: GraphicsContext<VirtualDevice>) {
-        // for command in &self.command_buffer {
+// impl UIRenderer {
+//     pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: GraphicsContext<VirtualDevice>) {
+//         // for command in &self.command_buffer {
 
-        // }
-    }
-}
+//         // }
+//     }
+// }

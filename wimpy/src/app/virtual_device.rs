@@ -1,16 +1,16 @@
-use std::sync::Arc;
 use winit::window::Window;
 use crate::wgpu::WGPUHandle;
 
-pub struct VirtualDevice {
-    surface: wgpu::Surface<'static>,
+pub struct VirtualDevice<'window> {
+    window: Window,
+    surface: wgpu::Surface<'window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 }
 
-impl VirtualDevice {
-    pub async fn new(window: Arc<Window>) -> anyhow::Result<VirtualDevice> {
+impl<'window> VirtualDevice<'window> {
+    pub async fn new(window: Window) -> anyhow::Result<VirtualDevice<'window>> {
 
         let size = window.inner_size();
 
@@ -54,7 +54,7 @@ impl VirtualDevice {
             desired_maximum_frame_latency: 2
         };
 
-        return Ok(Self { surface, device, queue, config });
+        return Ok(Self { window, surface, device, queue, config });
     }
 
     pub fn configure_surface_size(&mut self,width: u32,height: u32) {
@@ -64,7 +64,7 @@ impl VirtualDevice {
     }
 }
 
-impl WGPUHandle for VirtualDevice {
+impl<'window> WGPUHandle for VirtualDevice<'window> {
     fn get_device(&self) -> &wgpu::Device {
         return &self.device;
     }

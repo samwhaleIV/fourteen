@@ -1,4 +1,4 @@
-const WINDOW_TITLE: &'static str = "Twelve Engine - Hello, World!";
+const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 const MAX_STATE_LOAD_PASSES: u32 = 32;
 
@@ -8,51 +8,73 @@ use super::app_state::*;
 
 use crate::{
     app::VirtualDevice,
+    shared::CacheArenaConfig,
     wgpu::{
         GraphicsContext,
         GraphicsContextConfig,
-        GraphicsContextInternal,
     }
 };
 
 use winit::{
     application::ApplicationHandler,
-    dpi::{PhysicalPosition, PhysicalSize, Position},
+    dpi::{
+        PhysicalPosition,
+        PhysicalSize,
+        Position
+    },
     event::*,
-    event_loop::{ActiveEventLoop},
-    keyboard::{PhysicalKey},
-    window::{Window,WindowId}
+    event_loop::ActiveEventLoop,
+    keyboard::PhysicalKey,
+    window::{
+        Window,
+        WindowId,
+    }
 };
+
+pub enum UpdateResult<TSharedState> {
+    Continue,
+    Terminate,
+    Transition(AppStateGenerator<TSharedState>)
+}
+
+pub trait AppStateInterface<TSharedState> {
+    fn input(&mut self,input_event: InputEvent,context: &mut AppContext<TSharedState>);
+    fn unload(&mut self,context: &mut AppContext<TSharedState>);
+    fn render(&mut self,context: &mut AppContext<TSharedState>);
+    fn update(&mut self,context: &mut AppContext<TSharedState>) -> UpdateResult<TSharedState>;
+}
 
 pub type AppState<TSharedState> = Box<dyn AppStateInterface<TSharedState>>;
 pub type AppStateGenerator<TSharedState> = fn(&mut AppContext<TSharedState>) -> AppState<TSharedState>;
 pub type SharedStateGenerator<TSharedState> = fn(&mut GraphicsContext<VirtualDevice>) -> TSharedState;
 
-struct TransientBlock<TSharedState> {
-    window: Option<Arc<Window>>,
-    device: Option<VirtualDevice>,
-    graphics_context: Option<GraphicsContext<VirtualDevice>>,
+pub struct AppContext<'a,TShared> {
+
+}
+
+struct InternalAppContext<TSharedState,TConfig> {
+    graphics: Option<GraphicsContext<VirtualDevice,TConfig>>,
     app_state: Option<AppState<TSharedState>>,
     shared_state: Option<TSharedState>,
 }
 
-impl<TSharedState> Default for TransientBlock<TSharedState> {
+impl<TSharedState,TConfig> Default for AppContext<TSharedState,TConfig> {
     fn default() -> Self {
         return Self {
             window: None,
             device: None,
-            graphics_context: None,
+            graphics: None,
             app_state: None,
             shared_state: None
         }
     }
 }
-pub struct App<TSharedState> {
+pub struct App<TSharedState,TConfig> {
 
-    transient_block: TransientBlock<TSharedState>,
+    internal_app_context: InternalAppContext<TSharedState,TConfig>,
 
-    state_generator: AppStateGenerator<TSharedState>,
-    shared_state_generator: SharedStateGenerator<TSharedState>,
+    state_generator: AppStateGenerator<TSharedState,TConfig>,
+    shared_state_generator: SharedStateGenerator<TSharedState,TConfig>,
 
     surface_configured: bool,
     app_exiting: bool,
@@ -66,7 +88,6 @@ pub struct App<TSharedState> {
     mouse_point: (f32,f32),
 
     log_trace_config: LogTraceConfig,
-    context_options: Option<GraphicsContextConfig>,
 
     received_resume_call: bool
 }
@@ -77,27 +98,25 @@ enum EventLoopOperation {
     Repeat
 }
 
-#[derive(Default)]
-pub struct LogTraceConfig {
-    pub redraw: bool,
-    pub mouse_move: bool,
-    pub window_move: bool,
-    pub resize: bool,
-    pub mouse_over_window: bool,
-    pub mouse_click: bool,
-    pub key_change: bool,
-    pub window_focus: bool,
-    pub other: bool
+pub trait LogTraceConfig {
+    const REDRAW: bool;
+    const MOUSE_MOVE: bool;
+    const WINDOW_MOVE: bool;
+    const RESIZE: bool;
+    const MOUSE_OVER_WINDOW: bool;
+    const MOUSE_CLICK: bool;
+    const KEY_CHANGE: bool;
+    const WINDOW_FOCUS: bool;
+    const OTHER: bool;
 }
 
-fn placeholder_state_generator<TSharedState>(_context: &mut AppContext<TSharedState>) -> AppState<TSharedState> {
+fn placeholder_state_generator<TSharedState,TConfig>(_context: &mut AppContext<TSharedState>) -> AppState<TSharedState,TConfig> {
     panic!("Cannot generate an AppState using the placeholder state generator");
 }
 
 pub struct AppConfiguration<TSharedState> {
     pub state_generator: AppStateGenerator<TSharedState>,
     pub shared_state_generator: SharedStateGenerator<TSharedState>,
-    pub context_options: Option<GraphicsContextConfig>,
     pub log_trace_config: Option<LogTraceConfig>,
 }
 
@@ -107,67 +126,20 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
     return Position::Physical(PhysicalPosition::new(x as i32,y as i32));
 }
 
-struct BorrowingBlock<TSharedState> {
+struct BorrowingBlock<TSharedState,TConfig> {
     window: Arc<Window>,
     app_state: AppState<TSharedState>,
     device: Option<VirtualDevice>,
-    graphics_context: Option<GraphicsContext<VirtualDevice>>,
+    graphics_context: Option<GraphicsContext<VirtualDevice,TConfig>>,
     shared_state: Option<TSharedState>,
 }
 
-impl<TSharedState> BorrowingBlock<TSharedState> {
-    pub fn try_get_app_context(&mut self) -> Option<AppContext<TSharedState>> {
-        if
-            let (Some(shared_state),Some(mut graphics_context),Some(device)) = (self.shared_state.take(),self.graphics_context.take(),self.device.take())
-        {
-            graphics_context.insert_wgpu_handle(device);
-            return Some(AppContext::construct(shared_state,graphics_context));
-        } else {
-            log::warn!("Borrowing block is missing parts of the app context.");
-            return None;
-        }
-    }
-    pub fn return_app_context(&mut self,app_context: AppContext<TSharedState>) {
-        let (shared_state,mut graphics_context) = app_context.deconstruct();
-        self.shared_state = Some(shared_state);
-        self.device = graphics_context.remove_wgpu_handle();
-        self.graphics_context = Some(graphics_context);
-    }
-}
-
-impl<TSharedState> App<TSharedState> {
-    fn try_get_borrowing_block(&mut self) -> Option<BorrowingBlock<TSharedState>> {
-        let TransientBlock {
-            window: Some(window),
-            device: Some(device),
-            graphics_context: Some(graphics_context),
-            app_state: Some(app_state),
-            shared_state: Some(shared_state),
-        } = std::mem::take(&mut self.transient_block) else {
-            return None;
-        };
-        return Some(BorrowingBlock {
-            window,
-            app_state,
-            device: Some(device),
-            graphics_context: Some(graphics_context),
-            shared_state: Some(shared_state),
-        });
-    }
-
-    fn return_borrowing_block(&mut self,borrowing_block: BorrowingBlock<TSharedState>) {
-        self.transient_block = TransientBlock {
-            window: Some(borrowing_block.window),
-            app_state: Some(borrowing_block.app_state),
-            device: borrowing_block.device,
-            graphics_context: borrowing_block.graphics_context,
-            shared_state: borrowing_block.shared_state
-        };
-    }
-
+impl<TSharedState,TConfig> App<TSharedState,TConfig> where
+    TConfig: GraphicsContextConfig
+{
     pub fn create(options: AppConfiguration<TSharedState>) -> Self {
         return Self {
-            transient_block: TransientBlock::<TSharedState>::default(),
+            internal_app_context: AppContext::default(),
 
             shared_state_generator: options.shared_state_generator,
             state_generator: options.state_generator,
@@ -176,8 +148,6 @@ impl<TSharedState> App<TSharedState> {
             received_resume_call: false,
 
             app_exiting: false,
-
-            context_options: options.context_options,
 
             window_width: 0,
             window_height: 0,
@@ -204,9 +174,9 @@ impl<TSharedState> App<TSharedState> {
             return false;
         }
 
-        if let Some(mut device) = self.transient_block.device.take() {
+        if let Some(mut device) = self.internal_app_context.device.take() {
             device.configure_surface_size(width,height);
-            self.transient_block.device = Some(device);
+            self.internal_app_context.device = Some(device);
         } else {
             log::error!("Virtual device not found.");
             return false;
@@ -227,7 +197,7 @@ impl<TSharedState> App<TSharedState> {
             borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
 
-            self.transient_block.app_state = Some(new_state);
+            self.internal_app_context.app_state = Some(new_state);
         } else {
             return false;
         }
@@ -236,7 +206,7 @@ impl<TSharedState> App<TSharedState> {
 
     fn update(&mut self) -> EventLoopOperation {
         /* Load a state if ones does not exist. */
-        if self.transient_block.app_state.is_none() && !self.try_load_new_state() {
+        if self.internal_app_context.app_state.is_none() && !self.try_load_new_state() {
             return EventLoopOperation::Terminate;
         }
         if 
@@ -247,24 +217,13 @@ impl<TSharedState> App<TSharedState> {
             borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
 
-            let event_loop_operation = match update_result.get_operation() {
-                AppStateOperation::Continue => {
-                    EventLoopOperation::Continue
-                },
-
-                AppStateOperation::Terminate => {
-                    EventLoopOperation::Terminate
-                },
-
-                AppStateOperation::Transition => {
-                    if let Some(state_generator) = update_result.get_state_generator() {
-                        self.unload_state();
-                        self.state_generator = state_generator;
-                        EventLoopOperation::Repeat
-                    } else {
-                        log::error!("Missing app state transition data!");
-                        EventLoopOperation::Terminate
-                    }
+            let event_loop_operation = match update_result {
+                UpdateResult::Continue => EventLoopOperation::Continue,
+                UpdateResult::Terminate => EventLoopOperation::Terminate,
+                UpdateResult::Transition(state_generator) => {
+                    self.unload_state();
+                    self.state_generator = state_generator;
+                    EventLoopOperation::Repeat
                 }
             };
             return event_loop_operation;
@@ -320,7 +279,7 @@ impl<TSharedState> App<TSharedState> {
             borrowing_block.app_state.unload(&mut app_context);
             borrowing_block.return_app_context(app_context);
             self.return_borrowing_block(borrowing_block);
-            self.transient_block.app_state = None;
+            self.internal_app_context.app_state = None;
         }
     }
 
@@ -350,7 +309,10 @@ impl<TSharedState> App<TSharedState> {
     }
 }
 
-impl<TSharedState> ApplicationHandler for App<TSharedState> {
+impl<TSharedState,TConfig> ApplicationHandler for App<TSharedState,TConfig>
+where
+    TConfig: GraphicsContextConfig + CacheArenaConfig
+{
 
     fn resumed(&mut self,event_loop: &ActiveEventLoop) {
 
@@ -398,19 +360,16 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
         };
         window.set_visible(true);
 
-        let mut graphics_context = GraphicsContext::create(&device,match self.context_options.take() { /* We take so the underlying vectors (if any) are dropped. */
-            Some(options) => options,
-            None => GraphicsContextConfig::default(),
-        });
+        let mut graphics_context = GraphicsContext::create(&device);
 
         graphics_context.insert_wgpu_handle(device);
         let shared_state = (self.shared_state_generator)(&mut graphics_context);
 
-        self.transient_block.window = Some(window);
-        self.transient_block.device = graphics_context.remove_wgpu_handle();
+        self.internal_app_context.window = Some(window);
+        self.internal_app_context.device = graphics_context.remove_wgpu_handle();
 
-        self.transient_block.graphics_context = Some(graphics_context);
-        self.transient_block.shared_state = Some(shared_state);
+        self.internal_app_context.graphics = Some(graphics_context);
+        self.internal_app_context.shared_state = Some(shared_state);
 
         log::info!("App graphics context and shared state are configured.");
     }
@@ -421,7 +380,7 @@ impl<TSharedState> ApplicationHandler for App<TSharedState> {
     }
 
     fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
-        if self.app_exiting || self.transient_block.app_state.is_none() {
+        if self.app_exiting || self.internal_app_context.app_state.is_none() {
             return;
         }
         match event {
