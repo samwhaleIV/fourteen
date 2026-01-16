@@ -1,5 +1,5 @@
 use super::{
-    wgpu_handle::WGPUHandle,
+    graphics_provider::GraphicsProvider,
     frame::{
         FilterMode,
         WrapMode
@@ -104,7 +104,7 @@ struct TextureCreationParameters {
 }
 
 fn create_texture(
-    wgpu_handle: &impl WGPUHandle,
+    wgpu_handle: &impl GraphicsProvider,
     bind_group_layout: &BindGroupLayout,
     image_data: Option<&[u8]>,
     parameters: TextureCreationParameters
@@ -183,7 +183,7 @@ impl TextureContainer {
     }
 
     pub fn create_mutable(
-        wgpu_handle: &impl WGPUHandle,
+        wgpu_handle: &impl GraphicsProvider,
         bind_group_layout: &BindGroupLayout,
         dimensions: (u32,u32)
     ) -> TextureContainer {
@@ -193,7 +193,7 @@ impl TextureContainer {
         });
     }
 
-    pub fn from_image(wgpu_handle: &impl WGPUHandle,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
+    pub fn from_image(wgpu_handle: &impl GraphicsProvider,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
         let dimensions = image.dimensions();
 
         //TODO: Make sure alpha channel is premultiplied ... Somehow.

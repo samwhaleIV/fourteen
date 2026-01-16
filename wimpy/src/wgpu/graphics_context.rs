@@ -37,7 +37,7 @@ use crate::wgpu::{
 
 use super::{
     texture_container::TextureContainer,
-    wgpu_handle::WGPUHandle,
+    graphics_provider::GraphicsProvider,
     frame::{
         Frame,
         FrameInternal,
@@ -87,15 +87,24 @@ struct OutputBuilder {
     frame: OutputFrame
 }
 
-pub struct GraphicsContext<THandle,TConfig> {
+pub struct GraphicsContext<TGraphicsProvider,TConfig> {
+    graphics_provider: TGraphicsProvider,
     render_pipeline: RenderPipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
-    wgpu_handle: THandle,
     uniform_bind_group: BindGroup,
     frame_cache: FrameCache<TConfig>,
     output_buffers: DoubleBufferSet,
     output_builder: Option<OutputBuilder>,
+}
+
+impl<TGraphicsProvider,TConfig> GraphicsContext<TGraphicsProvider,TConfig> {
+    pub fn get_graphics_provider(&self) -> &TGraphicsProvider {
+        return &self.graphics_provider;
+    }
+    pub fn get_graphics_provider_mut(&mut self) -> &mut TGraphicsProvider {
+        return &mut self.graphics_provider;
+    }
 }
 
 struct OutputFrame {
@@ -121,21 +130,25 @@ pub struct FrameConfig {
     pub draw_once: bool
 }
 
-impl<THandle,TConfig> GraphicsContext<THandle,TConfig>
+pub trait GraphicsContextController {
+    fn create_output_frame(&mut self) -> Result<Frame,&'static str>;
+    fn load_texture(&mut self,bytes: &[u8]) -> Frame;
+    fn bake(&mut self,frame: &mut Frame);
+    fn present_output_frame(&mut self);
+    fn get_frame(&mut self,config: FrameConfig) -> Frame;
+}
+
+impl<TGraphicsProvider,TConfig> GraphicsContextController for GraphicsContext<TGraphicsProvider,TConfig>
 where
-    THandle: WGPUHandle,
+    TGraphicsProvider: GraphicsProvider,
     TConfig: GraphicsContextConfig
 {
-    pub fn create(wgpu_handle: THandle) -> Self {
-        return create_graphics_context(wgpu_handle);
-    }
-
-    pub fn create_output_frame(&mut self) -> Result<Frame,&'static str> {
+    fn create_output_frame(&mut self) -> Result<Frame,&'static str> {
         if self.output_builder.is_some() {
             return Err("Pipeline is already started. There is already a command encoder active.");
         }
 
-        let Some(surface) = self.wgpu_handle.get_output_surface() else {
+        let Some(surface) = self.graphics_provider.get_output_surface() else {
             return Err("Unable to create output surface.");
         };
 
@@ -146,16 +159,16 @@ where
 
         self.output_builder = Some(OutputBuilder {
             frame: OutputFrame { cache_reference, surface },
-            encoder: self.wgpu_handle.get_device().create_command_encoder(&CommandEncoderDescriptor {
+            encoder: self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder")
             })
         });
         return Ok(FrameInternal::create_output(size,cache_reference));
     }
 
-    pub fn load_texture(&mut self,bytes: &[u8]) -> Frame {
+    fn load_texture(&mut self,bytes: &[u8]) -> Frame {
         let texture_container = TextureContainer::from_image(
-            &self.wgpu_handle,
+            &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
             &image::load_from_memory(bytes).unwrap()
         );
@@ -165,7 +178,7 @@ where
         );
     }
 
-    pub fn bake(&mut self,frame: &mut Frame) {
+    fn bake(&mut self,frame: &mut Frame) {
         'block: {  
             let Some(frame_builder) = &mut self.output_builder else {
                 log::error!("Graphics context is not in a frame building state.");
@@ -219,12 +232,12 @@ where
         frame.clear();
     }
 
-    pub fn present_output_frame(&mut self) {
+    fn present_output_frame(&mut self) {
         let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
             log::error!("Graphics context is not in an active frame building state; an encoder and output frame do not exist.");
             return;
         };
-        let queue = self.wgpu_handle.get_queue();
+        let queue = self.graphics_provider.get_queue();
         self.output_buffers.write_out_all(queue);
         queue.submit(std::iter::once(output_builder.encoder.finish()));
         if let Err(error) = self.frame_cache.remove(output_builder.frame.cache_reference) {
@@ -235,10 +248,31 @@ where
         self.output_buffers.reset_all();
     }
 
-    /* Persistent frames do not reuse the underlying mutable_textures pool. It is safe to use them across display frames. */
+    fn get_frame(&mut self,config: FrameConfig) -> Frame {
+        let frame = match config.lifetime {
+            FrameLifetime::Temporary => {
+                self.get_temp_frame(config.size,config.draw_once)
+            },
+            FrameLifetime::Persistent => {
+                self.get_persistent_frame(config.size,config.draw_once)
+            },
+        };
+        return frame;
+    }
+}
+
+impl<TGraphicsProvider,TConfig> GraphicsContext<TGraphicsProvider,TConfig>
+where
+    TGraphicsProvider: GraphicsProvider,
+    TConfig: GraphicsContextConfig
+{
+    pub fn create(graphics_provider: TGraphicsProvider) -> Self {
+        return create_graphics_context(graphics_provider);
+    }
+
     fn get_persistent_frame(&mut self,size: (u32,u32),write_once: bool) -> Frame {
         let frame = TextureContainer::create_mutable(
-            &self.wgpu_handle,
+            &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
             size
         );
@@ -256,7 +290,7 @@ where
             Err(error) => {
                 log::info!("Graphics context creating a new temp frame. Reason: {:?}",error);
                 let new_texture = TextureContainer::create_mutable(
-                    &self.wgpu_handle,
+                    &self.graphics_provider,
                     &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
                     size
                 );
@@ -265,22 +299,6 @@ where
         };
         return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference });
     }
-
-    pub fn get_frame(&mut self,config: FrameConfig) -> Frame {
-        let frame = match config.lifetime {
-            FrameLifetime::Temporary => {
-                self.get_temp_frame(config.size,config.draw_once)
-            },
-            FrameLifetime::Persistent => {
-                self.get_persistent_frame(config.size,config.draw_once)
-            },
-        };
-        return frame;
-    }
-
-    // pub fn ensure_cached_frames(&mut self,sizes: &[(u32,u32)],instances: u32) {
-        // TODO
-    // }
 }
 
 fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
@@ -298,15 +316,13 @@ fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
     return CameraUniform { view_projection };
 }
 
-fn create_graphics_context<THandle,TConfig>(wgpu_handle: THandle) -> GraphicsContext<THandle,TConfig>
+fn create_graphics_context<TGraphicsProvider,TConfig>(graphics_provider: TGraphicsProvider) -> GraphicsContext<TGraphicsProvider,TConfig>
 where
-    THandle: WGPUHandle,
+    TGraphicsProvider: GraphicsProvider,
     TConfig: GraphicsContextConfig
 {
-
-    let device = wgpu_handle.get_device();
-    let render_pipeline = create_wgpu_pipeline(&wgpu_handle);
-
+    let device = graphics_provider.get_device();
+    let render_pipeline = create_wgpu_pipeline(&graphics_provider);
 /*
 Triangle list should generate 0-1-2 2-1-3 in CCW
 
@@ -371,10 +387,10 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         match cache_instances >= 1 {
             true => {
                 let bind_group_layout = &render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE);
-                let count = 0;
+                let mut count = 0;
                 for size in TConfig::CACHE_SIZES {
                     for _ in 0..cache_instances {
-                        let mutable_texture = TextureContainer::create_mutable(&wgpu_handle,bind_group_layout,*size);
+                        let mutable_texture = TextureContainer::create_mutable(&graphics_provider,bind_group_layout,*size);
                         frame_cache.insert(*size,mutable_texture);
                         count += 1;
                     }
@@ -392,7 +408,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 
     return GraphicsContext {
-        wgpu_handle,
+        graphics_provider,
         render_pipeline,
         vertex_buffer,
         index_buffer,
@@ -403,12 +419,11 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 }
 
-fn create_wgpu_pipeline<THandle>(wgpu_handle: &THandle) -> RenderPipeline
+fn create_wgpu_pipeline<TGraphicsProvider>(graphics_provider: &TGraphicsProvider) -> RenderPipeline
 where 
-    THandle: WGPUHandle
+    TGraphicsProvider: GraphicsProvider
 {
-
-    let device = wgpu_handle.get_device();
+    let device = graphics_provider.get_device();
 
     let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("Texture Bind Group Layout"),
@@ -479,7 +494,7 @@ where
             entry_point: Some("fs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu_handle.get_output_format(),
+                format: graphics_provider.get_output_format(),
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })]

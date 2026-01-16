@@ -27,7 +27,7 @@ pub struct QuadInstance { //Aligned to 64
 #[repr(C)]
 #[derive(Debug,Copy,Clone,Pod,Zeroable)]
 pub struct CameraUniform {
-    view_projection: [[f32;4];4]
+    pub view_projection: [[f32;4];4]
 }
 
 #[non_exhaustive]

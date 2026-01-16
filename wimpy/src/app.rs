@@ -1,7 +1,6 @@
-mod app_state;
-mod virtual_device;
-mod app;
+mod wimpy_app;
+mod desktop_app;
+mod desktop_device;
 
-pub use app_state::*;
-pub use app::*;
-pub use virtual_device::*;
+pub use desktop_app::*;
+pub use desktop_device::*;

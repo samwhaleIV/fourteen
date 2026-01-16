@@ -1,27 +1,21 @@
-mod test_state;
-
 use env_logger::{
     Builder,
     Target
 };
 
 use std::env;
-use wimpy::{shared::CacheArenaConfig, wgpu::GraphicsContextConfig};
+use wimpy::{
+    app::{
+        DesktopApp,
+        WindowEventTraceConfig
+    },
+    wgpu::GraphicsContextConfig
+};
 
 use winit::event_loop::{
     ControlFlow,
     DeviceEvents,
     EventLoop
-};
-
-use wimpy::app::{
-    App,
-    AppConfiguration
-};
-
-use crate::test_state::{
-    SharedState,
-    generate_test_state
 };
 
 struct EngineConfig;
@@ -33,16 +27,23 @@ impl GraphicsContextConfig for EngineConfig {
     const CACHE_SIZES: &[(u32,u32)] = &[];
 }
 
+impl WindowEventTraceConfig for EngineConfig {
+    const LOG_REDRAW: bool = false;
+    const LOG_MOUSE_MOVE: bool = false;
+    const LOG_WINDOW_MOVE: bool = false;
+    const LOG_RESIZE: bool = true;
+    const LOG_MOUSE_OVER_WINDOW: bool = true;
+    const LOG_MOUSE_CLICK: bool = true;
+    const KEY_CHANGE: bool = true;
+    const LOG_WINDOW_FOCUS: bool = true;
+    const LOG_OTHER: bool = true;
+}
+
 fn create_event_loop() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::create(AppConfiguration::<SharedState,TConfig> {
-        state_generator: generate_test_state,
-        shared_state_generator: SharedState::generator,
-        log_trace_config: None,
-    });
-
+    let mut app = DesktopApp::<EngineConfig>::new();
     event_loop.listen_device_events(DeviceEvents::WhenFocused);
 
     log::info!("Starting event loop! Here we go. No going back now.");

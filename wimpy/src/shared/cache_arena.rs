@@ -80,6 +80,9 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
         };
         return Ok(&mut item.value);
     }
+    pub fn insert_keyless(&mut self,item: TItem) -> TReference {
+        return self.slotmap.insert(SlotMapItem { value: item, key_data: None });
+    }
 }
 
 impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> where
@@ -94,10 +97,6 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
             pools: KeyedPools::new(),
             phantom_config: PhantomData
         }
-    }
-
-    pub fn insert_keyless(&mut self,item: TItem) -> TReference {
-        return self.slotmap.insert(SlotMapItem { value: item, key_data: None });
     }
 
     pub fn insert(&mut self,key: TKey,item: TItem) {

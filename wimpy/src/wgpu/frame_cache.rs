@@ -7,7 +7,7 @@ use crate::{
     wgpu::{GraphicsContextConfig, texture_container::TextureContainer}
 };
 
-struct FrameCacheConfig<TConfig> { phantom_data: PhantomData<TConfig> }
+pub struct FrameCacheConfig<TConfig> { phantom_data: PhantomData<TConfig> }
 
 impl<TConfig> CacheArenaConfig for FrameCacheConfig<TConfig> where TConfig: GraphicsContextConfig {
     //May need to optimize these. For example, double the size of entries to reduce arena insertion pressure.

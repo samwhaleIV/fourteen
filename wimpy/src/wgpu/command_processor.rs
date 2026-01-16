@@ -15,29 +15,29 @@ use crate::wgpu::{
     shader_definitions::QuadInstance
 };
 
-pub struct CommandProcessor<'a,TFrameCacheLookup> {
+pub struct CommandProcessor<'render_pass,TFrameCacheLookup> {
     needs_sampler_update: bool,
     filter_mode: FilterMode,
     wrap_mode: WrapMode,
     current_sampling_frame: FrameCacheReference,
-    frame_cache: &'a TFrameCacheLookup,
+    frame_cache: &'render_pass TFrameCacheLookup,
 }
 
-enum CommandReturnFlow<'a> {
+enum CommandReturnFlow<'command> {
     Skip,
-    Proceed(SamplerStatus<'a>)
+    Proceed(SamplerStatus<'command>)
 }
 
-enum SamplerStatus<'a> {
+enum SamplerStatus<'command> {
     Unchanged,
-    UpdateNeeded(&'a BindGroup)
+    UpdateNeeded(&'command BindGroup)
 }
 
-impl<'a,TFrameCacheLookup> CommandProcessor<'a,TFrameCacheLookup>
+impl<TFrameCacheLookup> CommandProcessor<'_,TFrameCacheLookup>
 where
     TFrameCacheLookup: FrameCacheLookup
 {
-    fn update_sampler(&mut self,reference: FrameCacheReference) -> CommandReturnFlow {
+    fn update_sampler(&mut self,reference: FrameCacheReference) -> CommandReturnFlow<'_> {
         if !self.needs_sampler_update && self.current_sampling_frame == reference {
             return CommandReturnFlow::Proceed(SamplerStatus::Unchanged);
         }
@@ -55,7 +55,7 @@ where
 
     fn execute(
         &mut self,
-        instance_buffer: &'a mut DoubleBuffer<QuadInstance>,
+        instance_buffer: &mut DoubleBuffer<QuadInstance>,
         render_pass: &mut RenderPass,
         commands: &[FrameCommand]
     ) {

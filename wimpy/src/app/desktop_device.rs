@@ -1,16 +1,25 @@
+use std::sync::Arc;
 use winit::window::Window;
-use crate::wgpu::WGPUHandle;
 
-pub struct VirtualDevice<'window> {
-    window: Window,
-    surface: wgpu::Surface<'window>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+use wgpu::{
+    Surface,
+    Queue,
+    Device,
+    SurfaceConfiguration
+};
+
+use crate::wgpu::GraphicsProvider;
+
+pub struct DesktopDevice {
+    window: Arc<Window>,
+    surface: Surface<'static>,
+    device: Device,
+    queue: Queue,
+    config: SurfaceConfiguration,
 }
 
-impl<'window> VirtualDevice<'window> {
-    pub async fn new(window: Window) -> anyhow::Result<VirtualDevice<'window>> {
+impl DesktopDevice {
+    pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
 
         let size = window.inner_size();
 
@@ -19,7 +28,7 @@ impl<'window> VirtualDevice<'window> {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window)?;
+        let surface = instance.create_surface(window.clone())?;
 
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptionsBase {
             power_preference: wgpu::PowerPreference::None,
@@ -56,15 +65,20 @@ impl<'window> VirtualDevice<'window> {
 
         return Ok(Self { window, surface, device, queue, config });
     }
+}
 
-    pub fn configure_surface_size(&mut self,width: u32,height: u32) {
+impl DesktopDevice {
+    pub fn set_size(&mut self,width: u32,height: u32) {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device,&self.config);
     }
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
 }
 
-impl<'window> WGPUHandle for VirtualDevice<'window> {
+impl GraphicsProvider for DesktopDevice {
     fn get_device(&self) -> &wgpu::Device {
         return &self.device;
     }
