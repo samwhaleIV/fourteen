@@ -6,7 +6,9 @@ use std::sync::Arc;
 use crate::{
     app::{
         DesktopDevice,
-        wimpy_app::WimpyApp
+        wimpy_app::{
+            WimpyAppHandler,
+        }
     },
     wgpu::{
         GraphicsContext,
@@ -30,18 +32,18 @@ use winit::{
     }
 };
 
-pub struct DesktopApp<TConfig> {
+pub struct DesktopApp<TWimpyApp,TConfig> {
     graphics_context: Option<GraphicsContext<DesktopDevice,TConfig>>,
-    app: WimpyApp,
+    wimpy_app: TWimpyApp,
     frame_number: u128,
     event_number: u128,
 }
 
-impl<TConfig> DesktopApp<TConfig> {
-    pub fn new() -> Self {
+impl<TWimpyApp,TConfig> DesktopApp<TWimpyApp,TConfig> {
+    pub fn new(wimpy_app: TWimpyApp) -> Self {
         return Self {
             graphics_context: None,
-            app: Default::default(),
+            wimpy_app,
             frame_number: Default::default(),
             event_number: Default::default(),
         }
@@ -66,9 +68,10 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
     return Position::Physical(PhysicalPosition::new(x as i32,y as i32));
 }
 
-impl<TConfig> ApplicationHandler for DesktopApp<TConfig>
+impl<TWimpyApp,TConfig> ApplicationHandler for DesktopApp<TWimpyApp,TConfig>
 where
-    TConfig: GraphicsContextConfig + WindowEventTraceConfig
+    TConfig: GraphicsContextConfig + WindowEventTraceConfig,
+    TWimpyApp: WimpyAppHandler,
 {
 
     fn resumed(&mut self,event_loop: &ActiveEventLoop) {
