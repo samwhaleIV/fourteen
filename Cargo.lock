@@ -599,13 +599,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
-name = "debug"
-version = "0.1.0"
-dependencies = [
- "wimpy",
-]
-
-[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1280,17 +1273,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
-]
-
-[[package]]
-name = "main"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "env_logger",
- "log",
- "wimpy",
- "winit",
 ]
 
 [[package]]
@@ -2963,7 +2945,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wimpy"
+name = "wimpy-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2972,11 +2954,37 @@ dependencies = [
  "gilrs",
  "image",
  "log",
- "pollster",
+ "rand",
  "slotmap",
  "smallvec",
  "wgpu",
+]
+
+[[package]]
+name = "wimpy-native"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "pollster",
+ "wgpu",
+ "wimpy-engine",
  "winit",
+]
+
+[[package]]
+name = "wimpy-web"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "js-sys",
+ "log",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
+ "wimpy-engine",
 ]
 
 [[package]]

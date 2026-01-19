@@ -8,7 +8,7 @@ use wgpu::{
     SurfaceConfiguration
 };
 
-use crate::wgpu::GraphicsProvider;
+use wimpy_engine::wgpu::GraphicsProvider;
 
 pub struct DesktopDevice {
     window: Arc<Window>,

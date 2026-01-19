@@ -1,15 +1,15 @@
+mod desktop_app;
+mod desktop_device;
+
+use std::env;
+
+use wimpy_engine::{
+    WimpyAppHandler, wgpu::GraphicsContextConfig
+};
+
 use env_logger::{
     Builder,
     Target
-};
-
-use std::env;
-use wimpy::{
-    app::{
-        DesktopApp,
-        WindowEventTraceConfig
-    },
-    wgpu::GraphicsContextConfig
 };
 
 use winit::event_loop::{
@@ -17,6 +17,8 @@ use winit::event_loop::{
     DeviceEvents,
     EventLoop
 };
+
+use crate::desktop_app::{DesktopApp, WindowEventTraceConfig};
 
 struct EngineConfig;
 
@@ -39,20 +41,10 @@ impl WindowEventTraceConfig for EngineConfig {
     const LOG_OTHER: bool = true;
 }
 
-fn create_event_loop() -> anyhow::Result<()> {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
+struct PlaceholderApp { }
+impl WimpyAppHandler for PlaceholderApp { }
 
-    let mut app = DesktopApp::<EngineConfig>::new();
-    event_loop.listen_device_events(DeviceEvents::WhenFocused);
-
-    log::info!("Starting event loop! Here we go. No going back now.");
-
-    event_loop.run_app(&mut app)?;
-    return Ok(());
-}
-
-pub fn main() {
+pub fn main() -> anyhow::Result<()> {
     let log_variable = "RUST_LOG";
 
     match env::var(log_variable) {
@@ -64,5 +56,16 @@ pub fn main() {
     builder.target(Target::Stdout);
     builder.init();
 
-    let _ = create_event_loop();
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    let wimpy_app = PlaceholderApp {};
+
+    let mut desktop_app = DesktopApp::<PlaceholderApp,EngineConfig>::new(wimpy_app);
+    event_loop.listen_device_events(DeviceEvents::Always);
+
+    log::info!("Starting event loop! Here we go. No going back now.");
+
+    event_loop.run_app(&mut desktop_app)?;
+    return Ok(());
 }

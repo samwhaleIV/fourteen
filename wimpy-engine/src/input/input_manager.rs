@@ -27,7 +27,6 @@ impl Default for InputType {
     }
 }
 
-#[derive(Default)]
 pub struct InputManager {
     gamepad_manager: Option<GamepadManager>,
     recent_input_method: InputType,
@@ -36,8 +35,8 @@ pub struct InputManager {
     recent_impulses: SmallVec<[ImpulseEvent;16]>,
 }
 
-impl InputManager {
-    pub fn new() -> Self {
+impl Default for InputManager {
+    fn default() -> Self {
         let gamepad_manager = match GamepadManager::new() {
             Ok(value) => Some(value),
             Err(error) => {
@@ -52,12 +51,18 @@ impl InputManager {
                 None
             },
         };
-        return Self {
+        Self {
             gamepad_manager,
-            ..Default::default()
+            recent_input_method: Default::default(),
+            impulse_state: Default::default(),
+            last_directions: Default::default(),
+            recent_impulses: Default::default(),
+            
         }
     }
+}
 
+impl InputManager {
     pub fn update(&mut self,keyboard_state: ImpulseSet) {
         let new_state =  match &mut self.gamepad_manager {
             Some(gamepad_manager) => {
@@ -89,15 +94,15 @@ impl InputManager {
         self.impulse_state = new_state;
     }
 
-    pub fn iter_recent_events(&self) -> impl Iterator<Item = ImpulseEvent> {
-        self.recent_impulses.iter().copied()
-    }
-
     fn get_gamepad_axes_or_default(&self) -> InterpretiveAxes {
         match &self.gamepad_manager {
             Some(value) => value.get_axes(),
             None => Default::default(),
         }
+    }
+
+    pub fn iter_recent_events(&self) -> impl Iterator<Item = ImpulseEvent> {
+        self.recent_impulses.iter().copied()
     }
 
     pub fn get_axes(&self) -> InterpretiveAxes {
@@ -112,10 +117,10 @@ impl InputManager {
     }
 
     pub fn get_strict_direction(&self) -> Direction {
-        return self.last_directions.peek();
+        self.last_directions.peek()
     }
 
     pub fn get_active_input_type(&self) -> InputType {
-        return self.recent_input_method;
+        self.recent_input_method
     }
 }

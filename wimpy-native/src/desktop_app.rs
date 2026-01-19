@@ -3,19 +3,7 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 
 use std::sync::Arc;
 
-use crate::{
-    app::{
-        DesktopDevice,
-        wimpy_app::{
-            WimpyAppHandler,
-        }
-    },
-    wgpu::{
-        GraphicsContext,
-        GraphicsContextConfig,
-    }
-};
-
+use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig}};
 use winit::{
     application::ApplicationHandler,
     dpi::{
@@ -32,8 +20,11 @@ use winit::{
     }
 };
 
+use crate::desktop_device::DesktopDevice;
+
 pub struct DesktopApp<TWimpyApp,TConfig> {
     graphics_context: Option<GraphicsContext<DesktopDevice,TConfig>>,
+    input_manager: InputManager,
     wimpy_app: TWimpyApp,
     frame_number: u128,
     event_number: u128,
@@ -46,6 +37,7 @@ impl<TWimpyApp,TConfig> DesktopApp<TWimpyApp,TConfig> {
             wimpy_app,
             frame_number: Default::default(),
             event_number: Default::default(),
+            input_manager: Default::default(),
         }
     }
 }

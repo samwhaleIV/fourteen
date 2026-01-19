@@ -1,0 +1,14 @@
+[package]
+name = "wimpy-native"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+log = { workspace = true }
+wgpu = { workspace = true }
+wimpy-engine = { path = "../wimpy-engine" }
+
+winit = { version = "0.30.12" }
+env_logger = { version = "0.11.8" }
+pollster = "0.4.0"
