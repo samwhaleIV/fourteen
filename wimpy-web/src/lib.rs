@@ -1,4 +1,5 @@
 mod web_app;
+mod key_code;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;

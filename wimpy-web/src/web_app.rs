@@ -138,6 +138,14 @@ where
         //log::trace!("Mouse Down - ({},{})",x,y);
     }
 
+    fn key_down(&mut self,code: String) {
+
+    }
+
+    fn key_up(&mut self) {
+
+    }
+
     fn update_size(&mut self) {
         let Ok(window) = get_window() else {
             log::error!("Web app: Window does not exist!");
@@ -189,6 +197,14 @@ where
                 app.borrow_mut().mouse_move(event.offset_x(),event.offset_y());
             });
             get_document()?.add_event_listener_with_callback("mousemove",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
+            closure.forget();
+        }
+        {
+            let app = app.clone();
+            let closure = Closure::<dyn FnMut(_)>::new(move|event: KeyboardEvent| {
+                app.borrow_mut().key_down(event.code());
+            });
+            get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
             closure.forget();
         }
         if resize_config == ResizeConfig::FitWindow {

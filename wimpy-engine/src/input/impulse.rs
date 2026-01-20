@@ -21,14 +21,14 @@ pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
 
 #[derive(Clone,Copy,PartialEq,Eq)]
 pub enum Impulse {
-    Up,
-    Down,
-    Left,
-    Right,
-    Confirm,
-    Back,
-    Focus,
-    Context
+    Up = 0,
+    Down = 1,
+    Left = 2,
+    Right = 3,
+    Confirm = 4,
+    Back = 5,
+    Focus = 6,
+    Context = 7
 }
 
 impl Impulse {
@@ -47,6 +47,21 @@ impl Impulse {
 pub enum ImpulseState {
     Pressed,
     Released,
+}
+
+impl From<ImpulseState> for bool {
+    fn from(value: ImpulseState) -> Self {
+        value == ImpulseState::Pressed
+    }
+}
+
+impl From<bool> for ImpulseState {
+    fn from(value: bool) -> Self {
+        match value {
+            true => ImpulseState::Pressed,
+            false => ImpulseState::Released,
+        }
+    }
 }
 
 impl ImpulseState {

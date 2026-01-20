@@ -2,9 +2,13 @@ use smallvec::SmallVec;
 
 use crate::input::{
     Direction,
+    Impulse,
     ImpulseEvent,
     ImpulseState,
     InterpretiveAxes,
+    KeyCode,
+    KeyboardState,
+    KeyboardTranslator,
     UserActivity,
     gamepad_manager::{
         GamepadManager,
@@ -29,6 +33,8 @@ impl Default for InputType {
 
 pub struct InputManager {
     gamepad_manager: Option<GamepadManager>,
+    keyboard_state: KeyboardState,
+    keyboard_translator: KeyboardTranslator,
     recent_input_method: InputType,
     impulse_state: ImpulseSet,
     last_directions: MoveToFrontStack<Direction,4>,
@@ -54,16 +60,38 @@ impl Default for InputManager {
         Self {
             gamepad_manager,
             recent_input_method: Default::default(),
+            keyboard_state: Default::default(),
             impulse_state: Default::default(),
             last_directions: Default::default(),
             recent_impulses: Default::default(),
-            
+            keyboard_translator: Default::default()
         }
     }
 }
 
 impl InputManager {
-    pub fn update(&mut self,keyboard_state: ImpulseSet) {
+
+    pub fn set_key_code_pressed(&mut self,key_code: KeyCode) {
+        self.keyboard_state.set_pressed(key_code);
+        self.recent_input_method = InputType::Keyboard;
+    }
+
+    pub fn set_key_code_released(&mut self,key_code: KeyCode) {
+        self.keyboard_state.set_released(key_code);
+        self.recent_input_method = InputType::Keyboard;
+    }
+
+    pub fn clear_captured_key_code(&mut self) {
+        self.keyboard_state.clear_captured_key_code();
+    }
+
+    pub fn get_captured_key_code(&self) -> Option<KeyCode> {
+        self.keyboard_state.get_captured_key_code()
+    }
+
+    pub fn update(&mut self) {
+        let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);
+
         let new_state =  match &mut self.gamepad_manager {
             Some(gamepad_manager) => {
                 let gamepad_activity = gamepad_manager.update();
@@ -122,5 +150,25 @@ impl InputManager {
 
     pub fn get_active_input_type(&self) -> InputType {
         self.recent_input_method
+    }
+
+    pub fn add_key_bind(&mut self,key_code: KeyCode,impulse: Impulse) {
+        self.keyboard_translator.add_key_bind(key_code,impulse);
+        self.keyboard_state.release_all();
+    }
+
+    pub fn remove_bind_for_key_code(&mut self,key_code: KeyCode) {
+        self.keyboard_translator.remove_bind_for_key_code(key_code);
+        self.keyboard_state.release_all();
+    }
+
+    pub fn remove_binds_for_impulse(&mut self,impulse: Impulse) {
+        self.keyboard_translator.remove_binds_for_impulse(impulse);
+        self.keyboard_state.release_all();
+    }
+
+    pub fn clear_all_key_binds(&mut self) {
+        self.keyboard_translator.clear_all_key_binds();
+        self.keyboard_state.release_all();
     }
 }
