@@ -16,7 +16,7 @@
             },
             "args": [],
             "env": {
-                "RUST_LOG": "main=trace"
+                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
             }
         },
     ]

@@ -146,7 +146,7 @@ where
                 let Some(graphics_context) = &mut self.graphics_context else {
                     return;
                 };
-                graphics_context.get_graphics_provider_mut().update_size(size.width,size.height);
+                graphics_context.get_graphics_provider_mut().set_size(size.width,size.height);
             },
 
             WindowEvent::KeyboardInput {

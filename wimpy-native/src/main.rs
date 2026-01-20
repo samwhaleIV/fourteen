@@ -47,8 +47,8 @@ pub fn main() -> anyhow::Result<()> {
     let log_variable = "RUST_LOG";
 
     match env::var(log_variable) {
-        Ok(value) => println!("{}: {:?}", log_variable, value),
-        Err(error) => println!("Error {}: {}", log_variable, error),
+        Ok(value) => println!("{}: {:?}",log_variable,value),
+        Err(error) => println!("Error {}: {}",log_variable,error),
     }
 
     let mut builder = Builder::from_default_env();
