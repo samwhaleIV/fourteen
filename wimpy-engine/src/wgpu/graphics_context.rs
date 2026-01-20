@@ -8,7 +8,6 @@ use wgpu::{
     BufferUsages,
     CommandEncoder,
     CommandEncoderDescriptor,
-    Queue,
     RenderPass,
     RenderPipeline,
     SurfaceTexture,

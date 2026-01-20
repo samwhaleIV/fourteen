@@ -241,6 +241,6 @@ where
             _ => {}
         };
 
-        self.event_number.wrapping_add(1);
+        self.event_number = self.event_number.wrapping_add(1);
     }
 }

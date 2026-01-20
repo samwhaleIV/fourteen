@@ -36,11 +36,12 @@ pub enum WebAppError {
     DocumentNotFound,
     CanvasNotFound,
     InvalidCanvasElement,
+    #[allow(unused)]
     WGPUInitFailure(GraphicsProviderError),
     SurfaceCreationFailure,
     MouseEventBindFailure,
     RequestAnimationFrameFailure,
-    ResizeEventBindFailure
+    ResizeEventBindFailure,
 }
 
 const CANVAS_ID: &'static str = "main-canvas";
@@ -51,6 +52,7 @@ pub struct WebApp<TWimpyApp,TConfig> {
     wimpy_app: TWimpyApp,
 }
 
+#[allow(unused)]
 #[derive(PartialEq)]
 pub enum ResizeConfig {
     Static,
@@ -77,16 +79,18 @@ where
             Err(_) => return Err(WebAppError::SurfaceCreationFailure),
         };
 
-        let graphics_context = GraphicsContext::<TConfig>::create(match GraphicsProvider::new(GraphicsProviderConfig {
+        let graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
             limits: Limits::downlevel_webgl2_defaults(),
             instance,
             surface,
             width,
             height,
         }).await {
-            Ok(value) => value,
-            Err(error) => return Err(WebAppError::WGPUInitFailure(error)),
-        });
+            Ok(value) => Ok(value),
+            Err(error) => Err(WebAppError::WGPUInitFailure(error)),
+        }?;
+
+        let graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
 
         let input_manager = InputManager::default();
 

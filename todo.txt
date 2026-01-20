@@ -1,0 +1,19 @@
+Highest priority
+----------------
+Platform unified texture loading
+Platform unified key-value store
+
+High priority
+----------------
+Implement keyboard events for web_app.rs
+Map keyboard events to input manager's update for web app
+Map keyboard events to input manager's update for native app
+Implement UI page against graphics context
+
+
+Lower priority
+----------------
+Multi-platform custom cursors (Dynamic hit states)
+Implement combination mouse + joystick input (Render Virtual Cursor)
+Optimize uniform buffer copying
+
