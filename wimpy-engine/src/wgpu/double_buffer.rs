@@ -74,4 +74,9 @@ where
             buffer_view.copy_from_slice(bytemuck::cast_slice(&self.input_buffer));
         }
     }
+    pub fn write_out_with_padding(&self,queue: &Queue,padding: usize) {
+        for (i,item) in self.input_buffer.iter().enumerate() {
+            queue.write_buffer(&self.output_buffer,(i * padding) as u64,bytemuck::bytes_of(item));
+        }
+    }
 }

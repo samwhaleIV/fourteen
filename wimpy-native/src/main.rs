@@ -1,5 +1,4 @@
 mod desktop_app;
-mod desktop_device;
 
 use std::env;
 

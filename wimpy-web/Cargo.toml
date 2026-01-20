@@ -9,14 +9,17 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = { workspace = true }
 log = { workspace = true }
-wgpu = { workspace = true }
+wgpu = { workspace = true, features = ["webgl"]}
 wimpy-engine = { path = "../wimpy-engine" }
-
-wasm-bindgen = "0.2"
+wasm-bindgen = "0.2.108"
 wasm-bindgen-futures ="0.4"
 web-sys = { version = "0.3", features = [
+    "Document",
+    "Event",
     "HtmlCanvasElement",
-    "Window",
-    "Document"
+    "KeyboardEvent",
+    "MouseEvent",
+    "Window"
 ]}
-js-sys = "0.3"
+console_error_panic_hook = "0.1.7"
+console_log = "1.0"

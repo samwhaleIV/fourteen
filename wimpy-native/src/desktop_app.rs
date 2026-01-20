@@ -3,7 +3,8 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 
 use std::sync::Arc;
 
-use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig}};
+use wgpu::Limits;
+use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsProvider, GraphicsProviderConfig}};
 use winit::{
     application::ApplicationHandler,
     dpi::{
@@ -20,10 +21,9 @@ use winit::{
     }
 };
 
-use crate::desktop_device::DesktopDevice;
-
 pub struct DesktopApp<TWimpyApp,TConfig> {
-    graphics_context: Option<GraphicsContext<DesktopDevice,TConfig>>,
+    window: Option<Arc<Window>>,
+    graphics_context: Option<GraphicsContext<TConfig>>,
     input_manager: InputManager,
     wimpy_app: TWimpyApp,
     frame_number: u128,
@@ -33,6 +33,7 @@ pub struct DesktopApp<TWimpyApp,TConfig> {
 impl<TWimpyApp,TConfig> DesktopApp<TWimpyApp,TConfig> {
     pub fn new(wimpy_app: TWimpyApp) -> Self {
         return Self {
+            window: None,
             graphics_context: None,
             wimpy_app,
             frame_number: Default::default(),
@@ -81,50 +82,61 @@ where
             .with_inner_size(window_size)
             .with_visible(false);
 
-        let window = Arc::new(match event_loop.create_window(window_attributes) {
-            Ok(window) => window,
-            Err(error) => {
-                log::error!("Could not create window through event loop: {}",error);
-                todo!();
-                return;
-            }
-        });
+        let window = Arc::new(event_loop.create_window(window_attributes).expect("window creation"));
 
         if let Some(monitor) = window.current_monitor() {
             let position = get_center_position(monitor.size(),window.outer_size());
             window.set_outer_position(position);
         }
 
-        let desktop_device = match pollster::block_on(DesktopDevice::new(window.clone())) {
+        let size = window.inner_size();
+
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+
+        let surface = instance.create_surface(window.clone()).expect("surface creation");
+
+        self.window = Some(window.clone());
+
+        let graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
+            instance,
+            surface,
+            width: size.width,
+            height: size.height,
+            limits: Limits::defaults(),
+        })) {
             Ok(device) => device,
             Err(error) => {
-                log::error!("Scary error: {}",error);
+                log::error!("Failure to initialize wgpu: {:?}",error);
                 todo!();
-                return;
             }
         };
         window.set_visible(true);
 
-        self.graphics_context = Some(GraphicsContext::create(desktop_device));
+        self.graphics_context = Some(GraphicsContext::create(graphics_provider));
 
         log::info!("App graphics context and shared state are configured.");
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        todo!();
+        //todo!();
     }
 
     fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,_event: DeviceEvent) {
-        todo!();
+        //todo!();
     }
 
     fn window_event(&mut self,_event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
         match event {
             WindowEvent::RedrawRequested => {
-                let Some(graphics_context) = &self.graphics_context else {
-                    return;
+                if let Some(_graphics_context) = &self.graphics_context {
+                    // TODO: DRAW SHIT
                 };
-                graphics_context.get_graphics_provider().request_redraw();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                };
             },
 
             WindowEvent::Resized(size) => {    
@@ -134,7 +146,7 @@ where
                 let Some(graphics_context) = &mut self.graphics_context else {
                     return;
                 };
-                graphics_context.get_graphics_provider_mut().set_size(size.width,size.height);
+                graphics_context.get_graphics_provider_mut().update_size(size.width,size.height);
             },
 
             WindowEvent::KeyboardInput {

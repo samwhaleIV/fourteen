@@ -57,13 +57,6 @@ impl DoubleBufferSet {
     }
 }
 
-impl DoubleBufferSet {
-    pub fn write_out_all(&self,queue: &Queue) {
-        self.instances.write_out(queue);
-        self.uniforms.write_out(queue);
-    }
-}
-
 impl DoubleBuffer<QuadInstance> {
     pub fn write_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData) {
         let range = self.push_convert(draw_data.into());
@@ -87,8 +80,8 @@ struct OutputBuilder {
     frame: OutputFrame
 }
 
-pub struct GraphicsContext<TGraphicsProvider,TConfig> {
-    graphics_provider: TGraphicsProvider,
+pub struct GraphicsContext<TConfig> {
+    graphics_provider: GraphicsProvider,
     render_pipeline: RenderPipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -98,11 +91,11 @@ pub struct GraphicsContext<TGraphicsProvider,TConfig> {
     output_builder: Option<OutputBuilder>,
 }
 
-impl<TGraphicsProvider,TConfig> GraphicsContext<TGraphicsProvider,TConfig> {
-    pub fn get_graphics_provider(&self) -> &TGraphicsProvider {
+impl<TConfig> GraphicsContext<TConfig> {
+    pub fn get_graphics_provider(&self) -> &GraphicsProvider {
         return &self.graphics_provider;
     }
-    pub fn get_graphics_provider_mut(&mut self) -> &mut TGraphicsProvider {
+    pub fn get_graphics_provider_mut(&mut self) -> &mut GraphicsProvider {
         return &mut self.graphics_provider;
     }
 }
@@ -138,9 +131,8 @@ pub trait GraphicsContextController {
     fn get_frame(&mut self,config: FrameConfig) -> Frame;
 }
 
-impl<TGraphicsProvider,TConfig> GraphicsContextController for GraphicsContext<TGraphicsProvider,TConfig>
+impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
 where
-    TGraphicsProvider: GraphicsProvider,
     TConfig: GraphicsContextConfig
 {
     fn create_output_frame(&mut self) -> Result<Frame,&'static str> {
@@ -218,7 +210,9 @@ where
             render_pass.set_vertex_buffer(1,self.output_buffers.instances.get_output_buffer().slice(..)); // Instance Buffer
 
             let uniform_buffer_range = self.output_buffers.uniforms.push(get_camera_uniform(frame.size()));
-            render_pass.set_bind_group(BindGroupIndices::UNIFORM,&self.uniform_bind_group,&[uniform_buffer_range.start as u32]); // Uniform Buffer Bind Group
+
+            let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
+            render_pass.set_bind_group(BindGroupIndices::UNIFORM,&self.uniform_bind_group,&[dynamic_offset as u32]); // Uniform Buffer Bind Group
 
             let command_buffer = match frame.get_command_buffer() {
                 Ok(value) => value,
@@ -238,7 +232,8 @@ where
             return;
         };
         let queue = self.graphics_provider.get_queue();
-        self.output_buffers.write_out_all(queue);
+        self.output_buffers.instances.write_out(queue);
+        self.output_buffers.uniforms.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
         queue.submit(std::iter::once(output_builder.encoder.finish()));
         if let Err(error) = self.frame_cache.remove(output_builder.frame.cache_reference) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
@@ -261,12 +256,11 @@ where
     }
 }
 
-impl<TGraphicsProvider,TConfig> GraphicsContext<TGraphicsProvider,TConfig>
+impl<TConfig> GraphicsContext<TConfig>
 where
-    TGraphicsProvider: GraphicsProvider,
     TConfig: GraphicsContextConfig
 {
-    pub fn create(graphics_provider: TGraphicsProvider) -> Self {
+    pub fn create(graphics_provider: GraphicsProvider) -> Self {
         return create_graphics_context(graphics_provider);
     }
 
@@ -316,9 +310,8 @@ fn get_camera_uniform(size: (u32,u32)) -> CameraUniform {
     return CameraUniform { view_projection };
 }
 
-fn create_graphics_context<TGraphicsProvider,TConfig>(graphics_provider: TGraphicsProvider) -> GraphicsContext<TGraphicsProvider,TConfig>
+fn create_graphics_context<TConfig>(graphics_provider: GraphicsProvider) -> GraphicsContext<TConfig>
 where
-    TGraphicsProvider: GraphicsProvider,
     TConfig: GraphicsContextConfig
 {
     let device = graphics_provider.get_device();
@@ -419,10 +412,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
     };
 }
 
-fn create_wgpu_pipeline<TGraphicsProvider>(graphics_provider: &TGraphicsProvider) -> RenderPipeline
-where 
-    TGraphicsProvider: GraphicsProvider
-{
+fn create_wgpu_pipeline(graphics_provider: &GraphicsProvider) -> RenderPipeline {
     let device = graphics_provider.get_device();
 
     let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {

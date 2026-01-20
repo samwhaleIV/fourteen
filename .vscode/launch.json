@@ -5,31 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug executable 'main'",
+            "name": "Debug executable 'wimpy-native'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
                 "args": [
                     "run",
-                    "--bin=main"
+                    "--bin=wimpy-native"
                 ]
             },
             "args": [],
             "env": {
                 "RUST_LOG": "main=trace"
             }
-            
         },
-        {
-            "name": "Debug unit tests in executable 'main'",
-            "type": "lldb",
-            "request": "launch",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--bin=main"
-                ]
-            }
-        }
     ]
 }
