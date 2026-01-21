@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use crate::{
     shared::{
         Area,
@@ -21,12 +23,14 @@ pub enum LockStatus {
     Locked,
 }
 
+const DEFAULT_COMMAND_BUFFER_SIZE: usize = 32;
+
 pub struct Frame {
     width: u32,
     height: u32,
     cache_reference: FrameCacheReference,
     usage: FrameType,
-    command_buffer: Vec<FrameCommand>, //Look into smallvec...
+    command_buffer: SmallVec<[FrameCommand;DEFAULT_COMMAND_BUFFER_SIZE]>,
     write_lock: LockStatus
 }
 
@@ -40,7 +44,7 @@ pub trait FrameInternal {
 
     fn get_cache_reference(&self) -> FrameCacheReference;
 
-    fn get_command_buffer(&self) -> Result<&Vec<FrameCommand>,&'static str>;
+    fn get_command_buffer(&self) -> Result<&[FrameCommand],&'static str>;
     fn clear(&mut self);
 }
 
@@ -64,10 +68,8 @@ impl FrameInternal for Frame {
     //TODO: Implement color selection
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         return match self.write_lock {
-            LockStatus::FutureUnlock => Some(wgpu::Color::BLACK),
-            LockStatus::FutureLock => Some(wgpu::Color::BLACK),
-            LockStatus::Unlocked => None,
-            LockStatus::Locked => None,
+            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::RED),
+            LockStatus::Unlocked | LockStatus::Locked => None,
         }
     }
 
@@ -121,7 +123,7 @@ impl FrameInternal for Frame {
         };
     }
 
-    fn get_command_buffer(&self) -> Result<&Vec<FrameCommand>,&'static str> {
+    fn get_command_buffer(&self) -> Result<&[FrameCommand],&'static str> {
         if !self.is_writable() {
             return Err("Frame is readonly!");
         }
@@ -141,7 +143,6 @@ impl FrameInternal for Frame {
     }
 }
 
- //Conveniently enough, 64 bytes wide.
 pub enum FrameCommand {
     /* Single Fire Draw Commands */
 

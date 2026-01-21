@@ -4,7 +4,7 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
 use std::sync::Arc;
 
 use wgpu::Limits;
-use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsProvider, GraphicsProviderConfig}};
+use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig}};
 use winit::{
     application::ApplicationHandler,
     dpi::{
@@ -12,7 +12,7 @@ use winit::{
         PhysicalSize,
         Position
     },
-    event::*,
+    event::{self, *},
     event_loop::ActiveEventLoop,
     keyboard::PhysicalKey,
     window::{
@@ -20,6 +20,8 @@ use winit::{
         WindowId,
     }
 };
+
+use crate::key_code::translate_key_code;
 
 pub struct DesktopApp<TWimpyApp,TConfig> {
     window: Option<Arc<Window>>,
@@ -121,22 +123,50 @@ where
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        //todo!();
+        log::info!("Application suspended. This shouldn't happen on desktop platforms.");
     }
 
-    fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,_event: DeviceEvent) {
-        //todo!();
+    fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
+        return;
+        #[allow(unused)]
+        match event {
+            DeviceEvent::Added => todo!(),
+            DeviceEvent::Removed => todo!(),
+            DeviceEvent::MouseMotion { delta } => todo!(),
+            DeviceEvent::MouseWheel { delta } => todo!(),
+            DeviceEvent::Motion { axis, value } => todo!(),
+            DeviceEvent::Button { button, state } => todo!(),
+            DeviceEvent::Key(raw_key_event) => todo!(),
+        }
     }
 
-    fn window_event(&mut self,_event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
+    fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
+        log::trace!("{:?}",event);
         match event {
             WindowEvent::RedrawRequested => {
-                if let Some(_graphics_context) = &self.graphics_context {
-                    // TODO: DRAW SHIT
+                let Some(window) = &self.window else {
+                    log::error!("Redraw requested, but window could not be located.");
+                    return;
                 };
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+
+                let Some(graphics_context) = &mut self.graphics_context else {
+                    log::error!("Redraw requested, but graphics context could not be located.");
+                    return;
                 };
+
+                let mut output_frame = match graphics_context.create_output_frame() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        log::error!("Could not create output frame: {}",error);
+                        return;
+                    }
+                };
+
+                //TODO.... stuff
+
+                graphics_context.bake(&mut output_frame);
+                graphics_context.present_output_frame(); 
+                window.request_redraw();
             },
 
             WindowEvent::Resized(size) => {    
@@ -152,27 +182,31 @@ where
             WindowEvent::KeyboardInput {
                 is_synthetic: false,
                 event: KeyEvent {
-                    physical_key: PhysicalKey::Code(_code),
+                    physical_key: PhysicalKey::Code(winit_key_code),
                     state: ElementState::Pressed,
                     repeat: false,
                     ..
                 },
                 device_id: _
             } => {
-                // self.send_input(InputEvent::KeyPress(code))
+                if let Some(wimpy_key_code) = translate_key_code(winit_key_code) {
+                    self.input_manager.set_key_code_pressed(wimpy_key_code);
+                }
             },
 
             WindowEvent::KeyboardInput {
                 is_synthetic: false,
                 event: KeyEvent {
-                    physical_key: PhysicalKey::Code(_code),
+                    physical_key: PhysicalKey::Code(winit_key_code),
                     state: ElementState::Released,
                     repeat: false,
                     ..
                 },
                 device_id: _
             } => {
-                // self.send_input(InputEvent::KeyRelease(code));
+                if let Some(wimpy_key_code) = translate_key_code(winit_key_code) {
+                    self.input_manager.set_key_code_released(wimpy_key_code);
+                }
             },
 
             WindowEvent::MouseInput {
@@ -235,7 +269,7 @@ where
             },
 
             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-
+                event_loop.exit();
             },
 
             _ => {}

@@ -26,9 +26,11 @@ use wimpy_engine::{
     WimpyAppHandler,
     input::InputManager,
     wgpu::{
-        GraphicsContext, GraphicsContextConfig, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError, validate_surface_dimension
+        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError, validate_surface_dimension
     }
 };
+
+use crate::key_code::KEY_CODES;
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -123,27 +125,45 @@ where
     }
 
     fn mouse_down(&mut self,x: i32,y: i32) {
-        log::trace!("Web app: Mouse Down - ({},{})",x,y);
+
     }
 
     fn mouse_up(&mut self,x: i32,y: i32) {
-        log::trace!("Web app: Mouse Up - ({},{})",x,y);
+
     }
 
     fn mouse_move(&mut self,x: i32,y: i32) {
-        log::trace!("Web app: Mouse Move - ({},{})",x,y);
+
     }
 
     fn render_frame(&mut self) {
-        //log::trace!("Mouse Down - ({},{})",x,y);
+
+        let mut output_frame = match self.graphics_context.create_output_frame() {
+            Ok(value) => value,
+            Err(error) => {
+                log::error!("Could not create output frame: {}",error);
+                return;
+            }
+        };
+
+        //TODO.... stuff
+
+        self.graphics_context.bake(&mut output_frame);
+        self.graphics_context.present_output_frame(); 
     }
 
     fn key_down(&mut self,code: String) {
-
+        let Some(key_code) = KEY_CODES.get(&code) else {
+            return;
+        };
+        self.input_manager.set_key_code_pressed(*key_code);
     }
 
-    fn key_up(&mut self) {
-
+    fn key_up(&mut self,code: String) {
+        let Some(key_code) = KEY_CODES.get(&code) else {
+            return;
+        };
+        self.input_manager.set_key_code_released(*key_code);
     }
 
     fn update_size(&mut self) {
@@ -202,9 +222,23 @@ where
         {
             let app = app.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move|event: KeyboardEvent| {
+                if event.repeat() {
+                    return;
+                }
                 app.borrow_mut().key_down(event.code());
             });
             get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
+            closure.forget();
+        }
+        {
+            let app = app.clone();
+            let closure = Closure::<dyn FnMut(_)>::new(move|event: KeyboardEvent| {
+                if event.repeat() {
+                    return;
+                }
+                app.borrow_mut().key_up(event.code());
+            });
+            get_document()?.add_event_listener_with_callback("keyup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
             closure.forget();
         }
         if resize_config == ResizeConfig::FitWindow {

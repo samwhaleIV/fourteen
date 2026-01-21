@@ -1,5 +1,5 @@
 #[repr(u8)]
-#[derive(PartialEq,Eq,Copy,Clone,Hash)]
+#[derive(PartialEq,Eq,Copy,Clone,Hash,Debug)]
 pub enum KeyCode {
     Backquote = 1,
     Backslash = 2,

@@ -74,11 +74,13 @@ impl InputManager {
     pub fn set_key_code_pressed(&mut self,key_code: KeyCode) {
         self.keyboard_state.set_pressed(key_code);
         self.recent_input_method = InputType::Keyboard;
+        log::trace!("Key code pressed: {:?}",key_code);
     }
 
     pub fn set_key_code_released(&mut self,key_code: KeyCode) {
         self.keyboard_state.set_released(key_code);
         self.recent_input_method = InputType::Keyboard;
+        log::trace!("Key code released: {:?}",key_code);
     }
 
     pub fn clear_captured_key_code(&mut self) {

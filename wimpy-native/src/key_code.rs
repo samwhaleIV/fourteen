@@ -1,7 +1,7 @@
 use winit::keyboard::KeyCode as WinitKey;
 use wimpy_engine::input::KeyCode as WimpyKey;
 
-pub fn get_key_code(key_code: WinitKey) -> Option<WimpyKey> {
+pub fn translate_key_code(key_code: WinitKey) -> Option<WimpyKey> {
     match key_code {
         WinitKey::Backquote => Some(WimpyKey::Backquote),
         WinitKey::Backslash => Some(WimpyKey::Backslash),

@@ -54,7 +54,8 @@ impl GraphicsProvider {
             Err(error) => return Err(GraphicsProviderError::DeviceCreationError(error)),
         };
 
-        log::info!("INFO: Min uniform buffer offset alignment: {}",adapter.limits().min_uniform_buffer_offset_alignment);
+        log::info!("LIMITS INFO: min_uniform_buffer_offset_alignment: {}",adapter.limits().min_uniform_buffer_offset_alignment);
+        log::info!("LIMITS INFO: max_texture_dimension_2d: {}",adapter.limits().max_texture_dimension_2d);
 
         let surface_capabilities = config.surface.get_capabilities(&adapter);
 
