@@ -1,4 +1,5 @@
 use smallvec::SmallVec;
+use wgpu::{AddressMode, FilterMode};
 
 use crate::{
     shared::{
@@ -67,7 +68,7 @@ impl FrameInternal for Frame {
 
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         return match self.write_lock {
-            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::BLACK),
+            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::RED),
             LockStatus::Unlocked | LockStatus::Locked => None,
         }
     }
@@ -148,20 +149,7 @@ pub enum FrameCommand {
     /* Other */
 
     SetTextureFilter(FilterMode),
-    SetTextureWrap(WrapMode),
-}
-
-#[derive(Copy,Clone,PartialEq)]
-pub enum WrapMode {
-    Clamp,
-    Repeat,
-    MirrorRepeat
-}
-
-#[derive(Copy,Clone,PartialEq)]
-pub enum FilterMode {
-    Nearest,
-    Linear,
+    SetTextureAddressing(AddressMode),
 }
 
 pub struct DrawData {
@@ -211,8 +199,8 @@ impl Frame {
         self.command_buffer.push(FrameCommand::SetTextureFilter(filter_mode));
     }
 
-    pub fn set_texture_wrap(&mut self,wrap_mode: WrapMode) {
-        self.command_buffer.push(FrameCommand::SetTextureWrap(wrap_mode));
+    pub fn set_texture_addressing(&mut self,address_mode: AddressMode) {
+        self.command_buffer.push(FrameCommand::SetTextureAddressing(address_mode));
     }
 
     /* Draw Commands */

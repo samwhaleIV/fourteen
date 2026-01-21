@@ -26,7 +26,7 @@ use wimpy_engine::{
     WimpyAppHandler,
     input::InputManager,
     wgpu::{
-        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError, validate_surface_dimension
+        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError,
     }
 };
 
@@ -69,8 +69,6 @@ where
     pub async fn create_app(wimpy_app: TWimpyApp) -> Result<Rc<RefCell<Self>>,WebAppError> {
         let canvas = get_canvas()?;
 
-        let (width,height) = (canvas.width(),canvas.height());
-
         let instance = wgpu::Instance::new(&InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..InstanceDescriptor::default()
@@ -85,8 +83,6 @@ where
             limits: Limits::downlevel_webgl2_defaults(),
             instance,
             surface,
-            width,
-            height,
         }).await {
             Ok(value) => Ok(value),
             Err(error) => Err(WebAppError::WGPUInitFailure(error)),
@@ -177,13 +173,17 @@ where
             return;
         };
 
-        let width = get_safe_canvas_dimension(window.inner_width());
-        let height = get_safe_canvas_dimension(window.inner_height());
+        let graphics_provider = self.graphics_context.get_graphics_provider_mut();
+
+        graphics_provider.set_size(
+            translate_html_size(window.inner_width()),
+            translate_html_size(window.inner_height())
+        );
+
+        let (width,height) = graphics_provider.get_size();
 
         canvas.set_width(width);
         canvas.set_height(height);
-
-        self.graphics_context.get_graphics_provider_mut().set_size(width,height);
 
         log::trace!("Web app: Update Size - ({},{})",width,height);
     }
@@ -253,14 +253,6 @@ where
     }
 }
 
-fn get_safe_canvas_dimension(value: Result<::wasm_bindgen::JsValue, JsValue>) -> u32 {
-    validate_surface_dimension(value
-        .unwrap_or(JsValue::from_f64(0.0))
-        .as_f64()
-        .unwrap_or(0.0) as u32
-    )
-}
-
 fn get_window() -> Result<Window,WebAppError> {
     return web_sys::window().ok_or(WebAppError::WindowNotFound);
 }
@@ -285,4 +277,8 @@ fn get_canvas() -> Result<HtmlCanvasElement,WebAppError> {
         },
         None => Err(WebAppError::CanvasNotFound),
     }
+}
+
+fn translate_html_size(value: Result<::wasm_bindgen::JsValue,JsValue>) -> u32 {
+    value.unwrap_or(JsValue::from_f64(0.0)).as_f64().unwrap_or(0.0) as u32
 }

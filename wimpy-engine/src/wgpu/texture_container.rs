@@ -1,9 +1,5 @@
 use super::{
     graphics_provider::GraphicsProvider,
-    frame::{
-        FilterMode,
-        WrapMode
-    }
 };
 
 use image::{
@@ -13,12 +9,7 @@ use image::{
 };
 
 use wgpu::{
-    BindGroup,
-    BindGroupLayout,
-    Device,
-    SurfaceTexture,
-    TextureUsages,
-    TextureView
+    AddressMode, BindGroup, BindGroupLayout, Device, Features, FilterMode, SurfaceTexture, TextureUsages, TextureView
 };
 pub struct TextureContainer {
     width: u32,
@@ -27,79 +18,62 @@ pub struct TextureContainer {
     bind_groups: Vec<BindGroup>
 }
 
-pub enum SamplerMode {
-    NearestClamp = 0,
-    NearestRepeat = 1,
-    NearestMirrorRepeat = 2,
-    LinearClamp = 3,
-    LinearRepeat = 4,
-    LinearMirrorRepeat = 5
-}
+const BIND_GROUP_SETS: [(FilterMode,AddressMode);6] = [
+    (FilterMode::Nearest,AddressMode::ClampToEdge),
+    (FilterMode::Nearest,AddressMode::Repeat),
+    (FilterMode::Nearest,AddressMode::MirrorRepeat),
+    (FilterMode::Linear,AddressMode::ClampToEdge),
+    (FilterMode::Linear,AddressMode::Repeat),
+    (FilterMode::Linear,AddressMode::MirrorRepeat),
+];
 
-impl SamplerMode {
-    pub fn get_mode(filter_mode: FilterMode,wrap_mode: WrapMode) -> SamplerMode {
-        return match (filter_mode,wrap_mode) {
-            (FilterMode::Nearest,WrapMode::Clamp) => SamplerMode::NearestClamp,
-            (FilterMode::Nearest,WrapMode::Repeat) => SamplerMode::NearestRepeat,
-            (FilterMode::Nearest,WrapMode::MirrorRepeat) => SamplerMode::NearestMirrorRepeat,
-            (FilterMode::Linear,WrapMode::Clamp) => SamplerMode::LinearClamp,
-            (FilterMode::Linear,WrapMode::Repeat) => SamplerMode::LinearRepeat,
-            (FilterMode::Linear,WrapMode::MirrorRepeat) => SamplerMode::LinearMirrorRepeat,
-        };
+const fn get_bind_group_index(filter_mode: FilterMode,address_mode: AddressMode) -> usize {
+    match (filter_mode,address_mode) {
+        (FilterMode::Nearest, AddressMode::ClampToEdge) => 0,
+        (FilterMode::Nearest, AddressMode::Repeat) => 1,
+        (FilterMode::Nearest, AddressMode::MirrorRepeat) => 2,
+
+        (FilterMode::Linear, AddressMode::ClampToEdge) => 3,
+        (FilterMode::Linear, AddressMode::Repeat) => 4,
+        (FilterMode::Linear, AddressMode::MirrorRepeat) => 5,
+
+        (FilterMode::Nearest, AddressMode::ClampToBorder) => 0, // Mask to ClampToEdge
+        (FilterMode::Linear, AddressMode::ClampToBorder) => 3, // Mask to ClampToEdge
     }
 }
 
 fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout: &BindGroupLayout) -> Vec<BindGroup> {
-
-    use wgpu::{FilterMode,AddressMode};
-    let bind_groups: Vec<BindGroup> = vec![
-        /* Must match index order of SamplerMode */
-        (FilterMode::Nearest,AddressMode::ClampToEdge),
-        (FilterMode::Nearest,AddressMode::Repeat),
-        (FilterMode::Nearest,AddressMode::MirrorRepeat),
-        (FilterMode::Linear,AddressMode::ClampToEdge),
-        (FilterMode::Linear,AddressMode::Repeat),
-        (FilterMode::Linear,AddressMode::MirrorRepeat),
-    ].iter().map(|(filter,address)|{
-        let (a,f) = (*address,*filter);
-        device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: a,
-            address_mode_v: a,
-            address_mode_w: a,
-            mag_filter: f,
-            min_filter: f,
-            mipmap_filter: f,
+    let bind_groups = BIND_GROUP_SETS.iter().copied().map(|(filter,address)| {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: address,
+            address_mode_v: address,
+            address_mode_w: address,
+            mag_filter: filter,
+            min_filter: filter,
+            mipmap_filter: filter,
             ..Default::default()
+        });
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                }
+            ],
+            label: Some("Texture Bind Group"),
         })
-    }).map(|sampler|device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            }
-        ],
-        label: Some("Texture Bind Group"),
-    })).collect();
+    }).collect();
+
     return bind_groups;
 }
 
-fn validate_dimensions(dimensions: (u32,u32)) {
-    if dimensions.0 > 0 && dimensions.1 > 0 {
-        return;
-    }
-
-    //TODO: Validate max dimension size with WGPU capabilities
-
-    panic!("Invalid texture container dimensions. Dimensions must be greater than 0.");
-}
-
 struct TextureCreationParameters {
-    dimensions: (u32,u32),
+    size: (u32,u32),
     mutable: bool
 }
 
@@ -110,13 +84,11 @@ fn create_texture(
     parameters: TextureCreationParameters
 ) -> TextureContainer {
 
-    let dimensions = parameters.dimensions;
-
-    validate_dimensions(dimensions);
+    let size = parameters.size;
 
     let texture_size = wgpu::Extent3d {
-        width: dimensions.0,
-        height: dimensions.1,
+        width: size.0,
+        height: size.1,
         depth_or_array_layers: 1,
     };
 
@@ -157,8 +129,8 @@ fn create_texture(
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
-                bytes_per_row: Some(4*dimensions.0), 
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4*size.0), 
+                rows_per_image: Some(size.1),
             },
             texture_size,
         );
@@ -169,8 +141,8 @@ fn create_texture(
     let bind_groups = get_bind_groups(&view,&device,bind_group_layout);
 
     return TextureContainer {
-        width: dimensions.0,
-        height: dimensions.1,
+        width: size.0,
+        height: size.1,
         view,
         bind_groups
     };
@@ -185,22 +157,22 @@ impl TextureContainer {
     pub fn create_mutable(
         graphics_provider: &GraphicsProvider,
         bind_group_layout: &BindGroupLayout,
-        dimensions: (u32,u32)
+        size: (u32,u32)
     ) -> TextureContainer {
         return create_texture(graphics_provider,bind_group_layout,None,TextureCreationParameters {
-            dimensions,
+            size,
             mutable: true
         });
     }
 
     pub fn from_image(graphics_provider: &GraphicsProvider,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
-        let dimensions = image.dimensions();
+        let size = image.dimensions();
 
         //TODO: Make sure alpha channel is premultiplied ... Somehow.
         let image_data = image.to_rgba8();
 
         return create_texture(graphics_provider,bind_group_layout,Some(image_data.as_bytes()),TextureCreationParameters {
-            dimensions,
+            size,
             mutable: false
         });
     }
@@ -220,14 +192,10 @@ impl TextureContainer {
 
 impl TextureContainer {
     pub fn size(&self) -> (u32,u32) {
-        return (self.width,self.height);
+        (self.width,self.height)
     }
 
-    pub fn get_bind_group(&self,sampler_mode: SamplerMode) -> &BindGroup {
-        if let Some(bind_group) = self.bind_groups.get(sampler_mode as usize) {
-            return bind_group;
-        } else {
-            panic!("Bind group not found for this sampler mode.");
-        }
+    pub fn get_bind_group(&self,filter_mode: FilterMode,address_mode: AddressMode) -> Option<&BindGroup> {
+        self.bind_groups.get(get_bind_group_index(filter_mode,address_mode))
     }
 }

@@ -1,6 +1,5 @@
 Highest priority
 ----------------
-Get max surface dimension from the adapter and apply it to frame creation AND graphics provider
 Platform unified texture loading
 Platform unified key-value store
 
@@ -11,9 +10,7 @@ Implement UI page against graphics context
 
 Lower priority
 ----------------
-Filter console.log logger to owned crates
 Multi-platform custom cursors (Dynamic hit states)
 Implement combination mouse + joystick input (Render Virtual Cursor)
 Optimize uniform buffer copying
 Implement frame clear color customization
-

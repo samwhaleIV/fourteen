@@ -1,5 +1,5 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
-const MINIMUM_WINDOW_SIZE: (u32,u32) = (800,600);
+const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
 use std::sync::Arc;
 
@@ -102,11 +102,9 @@ where
 
         self.window = Some(window.clone());
 
-        let graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
+        let mut graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
             instance,
             surface,
-            width: size.width,
-            height: size.height,
             limits: Limits::defaults(),
         })) {
             Ok(device) => device,
@@ -115,10 +113,11 @@ where
                 todo!();
             }
         };
-        window.set_visible(true);
+        graphics_provider.set_size(size.width,size.height);
 
         self.graphics_context = Some(GraphicsContext::create(graphics_provider));
 
+        window.set_visible(true);
         log::info!("App graphics context and shared state are configured.");
     }
 
@@ -141,7 +140,6 @@ where
     }
 
     fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
-        log::trace!("{:?}",event);
         match event {
             WindowEvent::RedrawRequested => {
                 let Some(window) = &self.window else {

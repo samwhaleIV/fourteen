@@ -1,15 +1,11 @@
 use wgpu::{
-    BindGroup,
-    RenderPass
+    AddressMode, BindGroup, FilterMode, RenderPass
 };
 
 use crate::wgpu::{
-    FilterMode,
     FrameCommand,
-    WrapMode,
     constants::BindGroupIndices,
     frame_cache::FrameCacheLookup,
-    texture_container::SamplerMode,
     frame_cache::FrameCacheReference,
     double_buffer::DoubleBuffer,
     shader_definitions::QuadInstance
@@ -18,7 +14,7 @@ use crate::wgpu::{
 pub struct CommandProcessor<'render_pass,TFrameCacheLookup> {
     needs_sampler_update: bool,
     filter_mode: FilterMode,
-    wrap_mode: WrapMode,
+    address_mode: AddressMode,
     current_sampling_frame: FrameCacheReference,
     frame_cache: &'render_pass TFrameCacheLookup,
 }
@@ -41,10 +37,17 @@ where
         if !self.needs_sampler_update && self.current_sampling_frame == reference {
             return CommandReturnFlow::Proceed(SamplerStatus::Unchanged);
         }
+
         let sampler_bind_group = match self.frame_cache.get_texture_container(reference) {
-            Ok(texture_container) => texture_container.get_bind_group(SamplerMode::get_mode(self.filter_mode,self.wrap_mode)),
+            Ok(texture_container) => match texture_container.get_bind_group(self.filter_mode,self.address_mode) {
+                Some(value) => value,
+                None => {
+                    log::warn!("Unable to get sampler ({:?},{:?}) from texture container.",self.filter_mode,self.address_mode);
+                    return CommandReturnFlow::Skip;
+                }
+            },
             Err(error) => {
-                log::error!("Unable to get sampler from texture container; the texture container cannot be found: {:?}",error);
+                log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
                 return CommandReturnFlow::Skip;
             }
         };
@@ -90,10 +93,10 @@ where
                     }
                 },
 
-                FrameCommand::SetTextureWrap(value) => {
+                FrameCommand::SetTextureAddressing(value) => {
                     let value = *value;
-                    if self.wrap_mode != value {
-                        self.wrap_mode = value;
+                    if self.address_mode != value {
+                        self.address_mode = value;
                         self.needs_sampler_update = true;
                     }
                 },
@@ -110,7 +113,7 @@ where
     let mut processor = CommandProcessor {
         needs_sampler_update: true,
         filter_mode: FilterMode::Nearest,
-        wrap_mode: WrapMode::Clamp,
+        address_mode: AddressMode::ClampToEdge,
         current_sampling_frame: Default::default(),
         frame_cache,     
     };

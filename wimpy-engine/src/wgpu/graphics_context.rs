@@ -261,6 +261,7 @@ where
     }
 
     fn get_persistent_frame(&mut self,size: (u32,u32),write_once: bool) -> Frame {
+        let size = self.graphics_provider.get_safe_texture_size(size);
         let frame = TextureContainer::create_mutable(
             &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
@@ -275,6 +276,7 @@ where
     }
 
     fn get_temp_frame(&mut self,size: (u32,u32),write_once: bool) -> Frame {
+        let size = self.graphics_provider.get_safe_texture_size(size);
         let cache_reference = match self.frame_cache.start_lease(size) {
             Ok(cache_reference) => cache_reference,
             Err(error) => {
@@ -378,9 +380,10 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
                 let bind_group_layout = &render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE);
                 let mut count = 0;
                 for size in TConfig::CACHE_SIZES {
+                    let size = graphics_provider.get_safe_texture_size(*size);
                     for _ in 0..cache_instances {
-                        let mutable_texture = TextureContainer::create_mutable(&graphics_provider,bind_group_layout,*size);
-                        frame_cache.insert(*size,mutable_texture);
+                        let mutable_texture = TextureContainer::create_mutable(&graphics_provider,bind_group_layout,size);
+                        frame_cache.insert(size,mutable_texture);
                         count += 1;
                     }
                 }
