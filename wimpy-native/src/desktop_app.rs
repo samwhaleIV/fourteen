@@ -157,15 +157,21 @@ where
                 let mut output_frame = match graphics_context.create_output_frame() {
                     Ok(value) => value,
                     Err(error) => {
-                        log::error!("Could not create output frame: {}",error);
+                        log::error!("Could not create output frame: {:?}",error);
                         return;
                     }
                 };
 
                 //TODO.... stuff
 
-                graphics_context.bake(&mut output_frame);
-                graphics_context.present_output_frame(); 
+                if let Err(error) = graphics_context.bake(&mut output_frame) {
+                    log::error!("{:?}",error);
+                }
+
+                if let Err(error) = graphics_context.present_output_frame() {
+                    log::error!("{:?}",error);
+                }
+
                 window.request_redraw();
             },
 

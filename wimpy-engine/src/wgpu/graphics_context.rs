@@ -1,26 +1,14 @@
 use std::ops::Range;
 
 use wgpu::{
-    BindGroup,
-    BindGroupLayoutDescriptor,
-    Buffer,
-    BufferDescriptor,
-    BufferUsages,
-    CommandEncoder,
-    CommandEncoderDescriptor,
-    RenderPass,
-    RenderPipeline,
-    SurfaceTexture,
-    util::{
+    BindGroup, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, RenderPass, RenderPipeline, SurfaceError, SurfaceTexture, util::{
         BufferInitDescriptor,
         DeviceExt
     }
 };
 
-use crate::wgpu::{
-    DrawData,
-    command_processor::process_frame_commands,
-    constants::{
+use crate::{shared::CacheArenaError, wgpu::{
+    DrawData, FrameError, command_processor::process_frame_commands, constants::{
         BindGroupIndices,
         INDEX_BUFFER_SIZE,
         UNIFORM_BUFFER_ALIGNMENT
@@ -32,7 +20,7 @@ use crate::wgpu::{
         QuadInstance,
         Vertex
     }
-};
+}};
 
 use super::{
     texture_container::TextureContainer,
@@ -123,24 +111,34 @@ pub struct FrameConfig {
 }
 
 pub trait GraphicsContextController {
-    fn create_output_frame(&mut self) -> Result<Frame,&'static str>;
+    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError>;
     fn load_texture(&mut self,bytes: &[u8]) -> Frame;
-    fn bake(&mut self,frame: &mut Frame);
-    fn present_output_frame(&mut self);
+    fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
+    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError>;
     fn get_frame(&mut self,config: FrameConfig) -> Frame;
+}
+
+#[derive(Debug)]
+pub enum GraphicsContextError {
+    PipelineAlreadyActive,
+    PipelineNotActive,
+    CantCreateOutputSurface(SurfaceError),
+    FrameBakeFailure(FrameError),
+    FrameCacheError(CacheArenaError<(u32,u32),FrameCacheReference>)
 }
 
 impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
-    fn create_output_frame(&mut self) -> Result<Frame,&'static str> {
+    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError> {
         if self.output_builder.is_some() {
-            return Err("Pipeline is already started. There is already a command encoder active.");
+            return Err(GraphicsContextError::PipelineAlreadyActive);
         }
 
-        let Some(surface) = self.graphics_provider.get_output_surface() else {
-            return Err("Unable to create output surface.");
+        let surface = match self.graphics_provider.get_output_surface() {
+            Ok(value) => value,
+            Err(error) => return Err(GraphicsContextError::CantCreateOutputSurface(error)),
         };
 
         let size = (surface.texture.width(),surface.texture.height());
@@ -169,66 +167,64 @@ where
         );
     }
 
-    fn bake(&mut self,frame: &mut Frame) {
-        'block: {  
-            let Some(frame_builder) = &mut self.output_builder else {
-                log::error!("Graphics context is not in a frame building state.");
-                break 'block;
-            };
+    fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError> {
+        let Some(frame_builder) = &mut self.output_builder else {
+            frame.clear();
+            return Err(GraphicsContextError::PipelineNotActive);
+        };
 
-            let texture_view = match self.frame_cache.get(frame.get_cache_reference()) {
-                Ok(value) => value.get_view(),
-                Err(error) => {
-                    log::error!("{:?}",error);
-                    break 'block;
-                }
-            };
+        let texture_view = match self.frame_cache.get(frame.get_cache_reference()) {
+            Ok(value) => value.get_view(),
+            Err(error) => {
+                frame.clear();
+                return Err(GraphicsContextError::FrameCacheError(error));
+            }
+        };
 
-            let mut render_pass = frame_builder.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: texture_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: match frame.get_clear_color() {
-                            Some(color) => wgpu::LoadOp::Clear(color),
-                            None => wgpu::LoadOp::Load,
-                        },
-                        store: wgpu::StoreOp::Store,
+        let mut render_pass = frame_builder.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: texture_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: match frame.get_clear_color() {
+                        Some(color) => wgpu::LoadOp::Clear(color),
+                        None => wgpu::LoadOp::Load,
                     },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-         
-            render_pass.set_pipeline(&self.render_pipeline); 
-            render_pass.set_index_buffer(self.index_buffer.slice(..),wgpu::IndexFormat::Uint32); // Index Buffer
-            render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..)); // Vertex Buffer
-            render_pass.set_vertex_buffer(1,self.output_buffers.instances.get_output_buffer().slice(..)); // Instance Buffer
-
-            let uniform_buffer_range = self.output_buffers.uniforms.push(get_camera_uniform(frame.size()));
-
-            let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-            render_pass.set_bind_group(BindGroupIndices::UNIFORM,&self.uniform_bind_group,&[dynamic_offset as u32]); // Uniform Buffer Bind Group
-
-            let command_buffer = match frame.get_command_buffer() {
-                Ok(value) => value,
-                Err(error) => {
-                    log::error!("Can't bake frame: {}",error);
-                    break 'block;
+                    store: wgpu::StoreOp::Store,
                 },
-            };
-            process_frame_commands(&self.frame_cache,&mut self.output_buffers.instances,&mut render_pass,command_buffer);
-        }
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        
+        render_pass.set_pipeline(&self.render_pipeline); 
+        render_pass.set_index_buffer(self.index_buffer.slice(..),wgpu::IndexFormat::Uint32); // Index Buffer
+        render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..)); // Vertex Buffer
+        render_pass.set_vertex_buffer(1,self.output_buffers.instances.get_output_buffer().slice(..)); // Instance Buffer
+
+        let uniform_buffer_range = self.output_buffers.uniforms.push(get_camera_uniform(frame.size()));
+
+        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
+        render_pass.set_bind_group(BindGroupIndices::UNIFORM,&self.uniform_bind_group,&[dynamic_offset as u32]); // Uniform Buffer Bind Group
+
+        let command_buffer = match frame.get_command_buffer() {
+            Ok(value) => value,
+            Err(error) => {
+                frame.clear();
+                return Err(GraphicsContextError::FrameBakeFailure(error));
+            },
+        };
+        process_frame_commands(&self.frame_cache,&mut self.output_buffers.instances,&mut render_pass,command_buffer);
         frame.clear();
+        return Ok(());
     }
 
-    fn present_output_frame(&mut self) {
+    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError> {
         let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
-            log::error!("Graphics context is not in an active frame building state; an encoder and output frame do not exist.");
-            return;
+            return Err(GraphicsContextError::PipelineNotActive);
         };
         let queue = self.graphics_provider.get_queue();
         self.output_buffers.instances.write_out(queue);
@@ -240,6 +236,7 @@ where
         output_builder.frame.surface.present();
         self.frame_cache.end_all_leases();
         self.output_buffers.reset_all();
+        return Ok(());
     }
 
     fn get_frame(&mut self,config: FrameConfig) -> Frame {

@@ -27,7 +27,7 @@ impl KeyboardTranslator {
         if let Some(bind_set) = self.reverse_lookup.get_mut(impulse as usize) {
             bind_set.insert(key_code);
         } else {
-            log::error!("Missing reverse lookup set for impulse!");
+            log::warn!("Missing reverse lookup set for impulse!");
         }
     }
 
@@ -38,7 +38,7 @@ impl KeyboardTranslator {
         if let Some(bind_set) = self.reverse_lookup.get_mut(impulse as usize) {
             bind_set.remove(&key_code);
         } else {
-            log::error!("Missing reverse lookup set for impulse!");
+            log::warn!("Missing reverse lookup set for impulse!");
         }
     }
 
@@ -48,7 +48,7 @@ impl KeyboardTranslator {
                 self.binds.remove(key_code);
             }
         } else {
-            log::error!("Missing reverse lookup set for impulse!");
+            log::warn!("Missing reverse lookup set for impulse!");
         }
     }
 

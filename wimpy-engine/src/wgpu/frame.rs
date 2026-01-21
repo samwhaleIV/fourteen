@@ -44,13 +44,13 @@ pub trait FrameInternal {
 
     fn get_cache_reference(&self) -> FrameCacheReference;
 
-    fn get_command_buffer(&self) -> Result<&[FrameCommand],&'static str>;
+    fn get_command_buffer(&self) -> Result<&[FrameCommand],FrameError>;
     fn clear(&mut self);
 }
 
-#[derive(PartialEq)]
-enum SrcDstCmpResult {
-    Success,
+#[derive(Debug)]
+pub enum FrameError {
+    ReadonlyFrame,
     CircularReference,
     ReadonlyDestination,
     EmptySource,
@@ -65,10 +65,9 @@ pub struct FrameCreationOptions {
 
 impl FrameInternal for Frame {
 
-    //TODO: Implement color selection
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         return match self.write_lock {
-            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::RED),
+            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::BLACK),
             LockStatus::Unlocked | LockStatus::Locked => None,
         }
     }
@@ -82,7 +81,6 @@ impl FrameInternal for Frame {
     }
 
     fn create(size: (u32,u32),options: FrameCreationOptions) -> Self {
-        validate_size(size);
         return Self {
             usage: FrameType::Normal,
             write_lock: match options.write_once {
@@ -100,7 +98,6 @@ impl FrameInternal for Frame {
     }
 
     fn create_texture(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
-        validate_size(size);
         return Self {
             width: size.0,
             height: size.1,
@@ -112,7 +109,6 @@ impl FrameInternal for Frame {
     }
 
     fn create_output(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
-        validate_size(size);
         return Self {
             usage: FrameType::Output,
             width: size.0,
@@ -123,12 +119,9 @@ impl FrameInternal for Frame {
         };
     }
 
-    fn get_command_buffer(&self) -> Result<&[FrameCommand],&'static str> {
+    fn get_command_buffer(&self) -> Result<&[FrameCommand],FrameError> {
         if !self.is_writable() {
-            return Err("Frame is readonly!");
-        }
-        if self.command_buffer.is_empty() {
-            return Err("Frame command buffer is empty!");
+            return Err(FrameError::ReadonlyFrame);
         }
         return Ok(&self.command_buffer);
     }
@@ -189,51 +182,27 @@ impl Default for DrawData {
     }
 }
 
-fn validate_size(size: (u32,u32)) -> Result<(),&'static str> {
-    if size.0 > 0 && size.1 > 0 {
-        return Err("Invalid frame size. Width and height must be greater than 1.");
-    }
-    return Ok(());
-}
-
-fn get_src_dst_cmp_result(destination: &Frame,source: &Frame) -> SrcDstCmpResult {
+fn validate_src_dst_op(destination: &Frame,source: &Frame) -> Result<(),FrameError> {
     if source.usage == FrameType::Output {
-        return SrcDstCmpResult::OutputMisuse;
+        return Err(FrameError::OutputMisuse);
     }
 
     if match source.write_lock {
-        LockStatus::FutureUnlock => true,
-        LockStatus::FutureLock => true,
-        LockStatus::Unlocked => false,
-        LockStatus::Locked => false,
+        LockStatus::FutureUnlock | LockStatus::FutureLock => true,
+        LockStatus::Unlocked | LockStatus::Locked  => false,
     } {
-        return SrcDstCmpResult::EmptySource;
+        return Err(FrameError::EmptySource);
     }
 
     if !destination.is_writable() {
-        return SrcDstCmpResult::ReadonlyDestination;
+        return Err(FrameError::ReadonlyDestination);
     }
 
     if destination.cache_reference == source.cache_reference {
-        return SrcDstCmpResult::CircularReference;
+        return Err(FrameError::CircularReference);
     }
 
-    return SrcDstCmpResult::Success;
-}
-
-fn validate_src_dst_op(destination: &Frame,source: &Frame) -> bool {
-    let result = get_src_dst_cmp_result(destination,source);
-    let valid = result == SrcDstCmpResult::Success;
-    if !valid {
-        log::error!("Frame draw error: {}",match result {
-            SrcDstCmpResult::Success => "Success... but not?",
-            SrcDstCmpResult::CircularReference => "Source and destination are the same.",
-            SrcDstCmpResult::ReadonlyDestination => "Destination is readonly.",
-            SrcDstCmpResult::EmptySource => "Frame source is empty/unrendered.",
-            SrcDstCmpResult::OutputMisuse => "Cannot use the output frame as a rendering source.",
-        });
-    }
-    return valid;
+    return Ok(());
 }
 
 impl Frame {
@@ -247,18 +216,16 @@ impl Frame {
     }
 
     /* Draw Commands */
-    pub fn draw(&mut self,source_frame: &Frame,draw_data: DrawData) {
-        if !validate_src_dst_op(self,source_frame) {
-            return;
-        }
+    pub fn draw(&mut self,source_frame: &Frame,draw_data: DrawData) -> Result<(),FrameError> {
+        validate_src_dst_op(self, source_frame)?;
         self.command_buffer.push(FrameCommand::DrawFrame(source_frame.cache_reference,draw_data));
+        return Ok(());
     }
 
-    pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) {
-        if !validate_src_dst_op(self,source_frame) {
-            return;
-        }
+    pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) -> Result<(),FrameError> {
+       validate_src_dst_op(self, source_frame)?;
         self.command_buffer.push(FrameCommand::DrawFrameSet(source_frame.cache_reference,draw_data));
+        return Ok(());
     }
 
     /* Size Getters */

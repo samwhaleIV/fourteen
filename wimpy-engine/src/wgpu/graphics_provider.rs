@@ -1,5 +1,5 @@
 use wgpu::{
-    Device, Instance, Limits, Queue, RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration
+    Device, Instance, Limits, Queue, RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceError, SurfaceTexture, TextureFormat
 };
 
 pub struct GraphicsProvider {
@@ -84,30 +84,19 @@ impl GraphicsProvider {
         self.surface.configure(&self.device,&self.config);
     }
 
-    pub fn get_device(&self) -> &wgpu::Device {
+    pub fn get_device(&self) -> &Device {
         return &self.device;
     }
 
-    pub fn get_queue(&self) -> &wgpu::Queue {
+    pub fn get_queue(&self) -> &Queue {
         return &self.queue;
     }
 
-    pub fn get_output_format(&self) -> wgpu::TextureFormat {
+    pub fn get_output_format(&self) -> TextureFormat {
         return self.config.format;
     }
     
-    pub fn get_output_surface(&self) -> Option<wgpu::SurfaceTexture> {
-        match self.surface.get_current_texture() {
-            Ok(surface) => {
-                return Some(surface);
-            },
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                log::warn!("WebGPU surface error. Is the surface lost or outdated? Attempting to configure surface again.");
-            },
-            Err(error) => {
-                log::error!("Unable to render: {}",error);
-            }
-        }
-        return None;
+    pub fn get_output_surface(&self) -> Result<SurfaceTexture,SurfaceError> {
+       self.surface.get_current_texture()
     }
 }

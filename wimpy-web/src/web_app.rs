@@ -141,7 +141,7 @@ where
         let mut output_frame = match self.graphics_context.create_output_frame() {
             Ok(value) => value,
             Err(error) => {
-                log::error!("Could not create output frame: {}",error);
+                log::error!("Could not create output frame: {:?}",error);
                 return;
             }
         };
