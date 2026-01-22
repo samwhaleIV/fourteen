@@ -111,10 +111,8 @@ pub struct FrameConfig {
 }
 
 pub trait GraphicsContextController {
-    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError>;
     fn load_texture(&mut self,bytes: &[u8]) -> Frame;
     fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
-    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError>;
     fn get_frame(&mut self,config: FrameConfig) -> Frame;
 }
 
@@ -127,7 +125,12 @@ pub enum GraphicsContextError {
     FrameCacheError(CacheArenaError<(u32,u32),FrameCacheReference>)
 }
 
-impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
+pub trait GraphicsContextInternalController {
+    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError>;
+    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError>;
+}
+
+impl<TConfig> GraphicsContextInternalController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
@@ -155,6 +158,28 @@ where
         return Ok(FrameInternal::create_output(size,cache_reference));
     }
 
+    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError> {
+        let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
+            return Err(GraphicsContextError::PipelineNotActive);
+        };
+        let queue = self.graphics_provider.get_queue();
+        self.output_buffers.instances.write_out(queue);
+        self.output_buffers.uniforms.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
+        queue.submit(std::iter::once(output_builder.encoder.finish()));
+        if let Err(error) = self.frame_cache.remove(output_builder.frame.cache_reference) {
+            log::warn!("Output frame was not present in the frame cache: {:?}",error);
+        };
+        output_builder.frame.surface.present();
+        self.frame_cache.end_all_leases();
+        self.output_buffers.reset_all();
+        return Ok(());
+    }
+}
+
+impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
+where
+    TConfig: GraphicsContextConfig
+{
     fn load_texture(&mut self,bytes: &[u8]) -> Frame {
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
@@ -219,23 +244,6 @@ where
         };
         process_frame_commands(&self.frame_cache,&mut self.output_buffers.instances,&mut render_pass,command_buffer);
         frame.clear();
-        return Ok(());
-    }
-
-    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError> {
-        let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
-            return Err(GraphicsContextError::PipelineNotActive);
-        };
-        let queue = self.graphics_provider.get_queue();
-        self.output_buffers.instances.write_out(queue);
-        self.output_buffers.uniforms.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
-        queue.submit(std::iter::once(output_builder.encoder.finish()));
-        if let Err(error) = self.frame_cache.remove(output_builder.frame.cache_reference) {
-            log::warn!("Output frame was not present in the frame cache: {:?}",error);
-        };
-        output_builder.frame.surface.present();
-        self.frame_cache.end_all_leases();
-        self.output_buffers.reset_all();
         return Ok(());
     }
 

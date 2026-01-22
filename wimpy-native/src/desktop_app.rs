@@ -4,7 +4,7 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 use std::sync::Arc;
 
 use wgpu::Limits;
-use wimpy_engine::{WimpyAppHandler, input::InputManager, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig}};
+use wimpy_engine::{WimpyApp, WimpyIO, input::{InputManager, InputManagerAppController}, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig}};
 use winit::{
     application::ApplicationHandler,
     dpi::{
@@ -63,12 +63,27 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
     return Position::Physical(PhysicalPosition::new(x as i32,y as i32));
 }
 
+struct DekstopAppIO;
+
+impl WimpyIO for DekstopAppIO {
+    fn save_key_value_store(kvs: &wimpy_engine::storage::KeyValueStore) {
+        todo!()
+    }
+
+    fn load_key_value_store(kvs: &mut wimpy_engine::storage::KeyValueStore) {
+        todo!()
+    }
+
+    fn get_file_bytes(file: &'static str) -> Result<Vec<u8>,wimpy_engine::WimpyIOError> {
+        todo!()
+    }
+}
+
 impl<TWimpyApp,TConfig> ApplicationHandler for DesktopApp<TWimpyApp,TConfig>
 where
     TConfig: GraphicsContextConfig + WindowEventTraceConfig,
-    TWimpyApp: WimpyAppHandler,
+    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>,
 {
-
     fn resumed(&mut self,event_loop: &ActiveEventLoop) {
         if self.graphics_context.is_some() {
             return;

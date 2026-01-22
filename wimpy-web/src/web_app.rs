@@ -19,16 +19,24 @@ use web_sys::{
 };
 
 use wgpu::{
-    InstanceDescriptor, Limits, SurfaceTarget
+    InstanceDescriptor,
+    Limits,
+    SurfaceTarget
 };
 
 use wimpy_engine::{
-    WimpyAppHandler,
-    input::InputManager,
-    wgpu::{
-        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError,
+    WimpyApp, WimpyContext, WimpyIO, input::{
+        InputManager,
+        InputManagerAppController
+    }, storage::{
+        KeyValueStore,
+        KeyValueStoreIO
+    }, wgpu::{
+        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError
     }
 };
+
+const CANVAS_ID: &'static str = "main-canvas";
 
 use crate::key_code::KEY_CODES;
 
@@ -46,12 +54,11 @@ pub enum WebAppError {
     ResizeEventBindFailure,
 }
 
-const CANVAS_ID: &'static str = "main-canvas";
-
 pub struct WebApp<TWimpyApp,TConfig> {
     graphics_context: GraphicsContext<TConfig>,
     input_manager: InputManager,
     wimpy_app: TWimpyApp,
+    key_value_store: KeyValueStore
 }
 
 #[allow(unused)]
@@ -61,9 +68,27 @@ pub enum ResizeConfig {
     FitWindow
 }
 
+pub struct WebAppIO;
+
+impl WimpyIO for WebAppIO {
+    fn save_key_value_store(kvs: &KeyValueStore) {
+        let data = kvs.export();
+        todo!()
+    }
+
+    fn load_key_value_store(kvs: &mut KeyValueStore) {
+        let data = todo!();
+        kvs.import(data);
+    }
+    
+    fn get_file_bytes(file: &'static str) -> Result<Vec<u8>,wimpy_engine::WimpyIOError> {
+        todo!()
+    }
+}
+
 impl<TWimpyApp,TConfig> WebApp<TWimpyApp,TConfig>
 where
-    TWimpyApp: WimpyAppHandler + 'static,
+    TWimpyApp: WimpyApp<WebAppIO,TConfig> + 'static,
     TConfig: GraphicsContextConfig + 'static
 {
     pub async fn create_app(wimpy_app: TWimpyApp) -> Result<Rc<RefCell<Self>>,WebAppError> {
@@ -96,6 +121,7 @@ where
             graphics_context,
             input_manager,
             wimpy_app,
+            key_value_store: Default::default(),
         })));
     }
 
@@ -121,18 +147,19 @@ where
     }
 
     fn mouse_down(&mut self,x: i32,y: i32) {
-
+        //TODO
     }
 
     fn mouse_up(&mut self,x: i32,y: i32) {
-
+        //TODO
     }
 
     fn mouse_move(&mut self,x: i32,y: i32) {
-
+        //TODO
     }
 
     fn render_frame(&mut self) {
+        self.input_manager.update();
 
         let mut output_frame = match self.graphics_context.create_output_frame() {
             Ok(value) => value,
@@ -142,10 +169,21 @@ where
             }
         };
 
-        //TODO.... stuff
+        let app_context = WimpyContext {
+            graphics: &mut self.graphics_context,
+            storage: &mut self.key_value_store,
+            input: &mut self.input_manager,
+        };
 
-        self.graphics_context.bake(&mut output_frame);
-        self.graphics_context.present_output_frame(); 
+        self.wimpy_app.render(&app_context);
+
+        if let Err(error) = self.graphics_context.bake(&mut output_frame) {
+            log::error!("{:?}",error);
+        }
+
+        if let Err(error) = self.graphics_context.present_output_frame() {
+            log::error!("{:?}",error);
+        }
     }
 
     fn key_down(&mut self,code: String) {
