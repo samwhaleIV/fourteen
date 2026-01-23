@@ -10,23 +10,50 @@ use wasm_bindgen::{
 };
 
 use wasm_bindgen_futures::JsFuture;
+
 use web_sys::{
-    Document, Event, HtmlCanvasElement, HtmlImageElement, ImageBitmap, ImageBitmapOptions, KeyboardEvent, MouseEvent, Window
+    Document,
+    Event,
+    HtmlCanvasElement,
+    HtmlImageElement,
+    ImageBitmap,
+    KeyboardEvent,
+    MouseEvent,
+    Window
 };
 
 use wgpu::{
-    CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, InstanceDescriptor, Limits, Origin2d, Origin3d, SurfaceTarget
+    CopyExternalImageDestInfo,
+    CopyExternalImageSourceInfo,
+    ExternalImageSource,
+    InstanceDescriptor,
+    Limits,
+    Origin2d,
+    SurfaceTarget
 };
 
 use wimpy_engine::{
-    WimpyApp, WimpyContext, WimpyIO, WimpyImageError, input::{
+    WimpyApp,
+    WimpyContext,
+    WimpyIO,
+    WimpyImageError,
+    input::{
         InputManager,
         InputManagerAppController
-    }, storage::{
+    },
+    storage::{
         KeyValueStore,
         KeyValueStoreIO
-    }, wgpu::{
-        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError, TextureData
+    },
+    wgpu::{
+        GraphicsContext,
+        GraphicsContextConfig,
+        GraphicsContextController,
+        GraphicsContextInternalController,
+        GraphicsProvider,
+        GraphicsProviderConfig,
+        GraphicsProviderError,
+        TextureData
     }
 };
 
@@ -216,7 +243,7 @@ where
 
         self.wimpy_app.render(&app_context);
 
-        if let Err(error) = self.graphics_context.bake(&mut output_frame) {
+        if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
             log::error!("{:?}",error);
         }
 

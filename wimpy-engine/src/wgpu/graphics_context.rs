@@ -1,26 +1,47 @@
 use std::ops::Range;
 
 use wgpu::{
-    BindGroup, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages, CommandEncoder, CommandEncoderDescriptor, RenderPass, RenderPipeline, SurfaceError, SurfaceTexture, util::{
+    BindGroup,
+    BindGroupLayoutDescriptor,
+    Buffer,
+    BufferDescriptor,
+    BufferUsages,
+    CommandEncoder,
+    CommandEncoderDescriptor,
+    RenderPass,
+    RenderPipeline,
+    SurfaceError,
+    SurfaceTexture,
+    util::{
         BufferInitDescriptor,
         DeviceExt
     }
 };
 
-use crate::{shared::CacheArenaError, wgpu::{
-    DrawData, FrameError, command_processor::process_frame_commands, constants::{
-        BindGroupIndices,
-        INDEX_BUFFER_SIZE,
-        UNIFORM_BUFFER_ALIGNMENT
-    }, double_buffer::DoubleBuffer, frame_cache::{
-        FrameCache,
-        FrameCacheReference
-    }, shader_definitions::{
-        CameraUniform,
-        QuadInstance,
-        Vertex
-    }, texture_container::TextureData
-}};
+use crate::{
+    shared::CacheArenaError,
+    wgpu::{
+        DrawData,
+        FrameError,
+        command_processor::process_frame_commands,
+        constants::{
+            BindGroupIndices,
+            INDEX_BUFFER_SIZE,
+            UNIFORM_BUFFER_ALIGNMENT
+        },
+        double_buffer::DoubleBuffer,
+        frame_cache::{
+            FrameCache,
+            FrameCacheReference
+        },
+        shader_definitions::{
+            CameraUniform,
+            QuadInstance,
+            Vertex
+        },
+        texture_container::TextureData
+    }
+};
 
 use super::{
     texture_container::TextureContainer,
@@ -112,7 +133,7 @@ pub struct FrameConfig {
 
 pub trait GraphicsContextController {
     fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Frame;
-    fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
+    fn render_frame(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
     fn get_frame(&mut self,config: FrameConfig) -> Frame;
 }
 
@@ -192,7 +213,7 @@ where
         );
     }
 
-    fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError> {
+    fn render_frame(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError> {
         let Some(frame_builder) = &mut self.output_builder else {
             frame.clear();
             return Err(GraphicsContextError::PipelineNotActive);

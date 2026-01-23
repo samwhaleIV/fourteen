@@ -1,21 +1,33 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::{fs::File, sync::Arc};
+use std::sync::Arc;
 
-use image::{DynamicImage, ImageError, ImageReader};
+use image::{
+    DynamicImage,
+    ImageError,
+    ImageReader
+};
+
 use wgpu::Limits;
+
 use wimpy_engine::{
-    WimpyApp, WimpyIO, WimpyImageError, input::{
+    WimpyApp,
+    WimpyIO,
+    WimpyImageError,
+    input::{
         InputManager,
         InputManagerAppController
-    }, wgpu::{
+    },
+    wgpu::{
         GraphicsContext,
         GraphicsContextConfig,
         GraphicsContextController,
         GraphicsContextInternalController,
         GraphicsProvider,
-        GraphicsProviderConfig, TextureData, TextureDataWriteParameters
+        GraphicsProviderConfig,
+        TextureData,
+        TextureDataWriteParameters
     }
 };
 
@@ -244,7 +256,7 @@ where
 
                 //TODO.... stuff
 
-                if let Err(error) = graphics_context.bake(&mut output_frame) {
+                if let Err(error) = graphics_context.render_frame(&mut output_frame) {
                     log::error!("{:?}",error);
                 }
 
