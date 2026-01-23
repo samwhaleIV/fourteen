@@ -1,10 +1,24 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::sync::Arc;
+use std::{fs::File, sync::Arc};
 
+use image::{DynamicImage, ImageError, ImageReader};
 use wgpu::Limits;
-use wimpy_engine::{WimpyApp, WimpyIO, input::{InputManager, InputManagerAppController}, wgpu::{GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig}};
+use wimpy_engine::{
+    WimpyApp, WimpyIO, WimpyImageError, input::{
+        InputManager,
+        InputManagerAppController
+    }, wgpu::{
+        GraphicsContext,
+        GraphicsContextConfig,
+        GraphicsContextController,
+        GraphicsContextInternalController,
+        GraphicsProvider,
+        GraphicsProviderConfig, TextureData, TextureDataWriteParameters
+    }
+};
+
 use winit::{
     application::ApplicationHandler,
     dpi::{
@@ -12,7 +26,7 @@ use winit::{
         PhysicalSize,
         Position
     },
-    event::{self, *},
+    event::*,
     event_loop::ActiveEventLoop,
     keyboard::PhysicalKey,
     window::{
@@ -65,6 +79,36 @@ fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Po
 
 struct DekstopAppIO;
 
+struct DynamicImageWrapper {
+    value: DynamicImage
+}
+
+impl TextureData for DynamicImageWrapper {
+
+    fn size(&self) -> (u32,u32) {
+        (self.value.width(),self.value.height())
+    }
+    
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
+        parameters.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: parameters.texture,
+                mip_level: parameters.mip_level,
+                origin: parameters.origin,
+                aspect: parameters.aspect,
+            },
+            self.value.as_bytes(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
+                bytes_per_row: Some(self.value.width() * 4), 
+                rows_per_image: Some(self.value.height()),
+            },
+            parameters.texture_size,
+        );
+    }
+}
+
 impl WimpyIO for DekstopAppIO {
     fn save_key_value_store(kvs: &wimpy_engine::storage::KeyValueStore) {
         todo!()
@@ -73,9 +117,32 @@ impl WimpyIO for DekstopAppIO {
     fn load_key_value_store(kvs: &mut wimpy_engine::storage::KeyValueStore) {
         todo!()
     }
-
-    fn get_file_bytes(file: &'static str) -> Result<Vec<u8>,wimpy_engine::WimpyIOError> {
-        todo!()
+    
+    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyImageError> {
+        match ImageReader::open(path) {
+            Ok(image_reader) => match image_reader.decode() {
+                Ok(value) => Ok(DynamicImageWrapper { value }),
+                Err(image_error) => Err(match image_error {
+                    ImageError::Decoding(decoding_error) => {
+                        log::error!("Image decode error: {:?}",decoding_error);
+                        WimpyImageError::Decode
+                    },
+                    ImageError::Unsupported(unsupported_error) => {
+                        log::error!("Image unsupported error: {:?}",unsupported_error);
+                        WimpyImageError::UnsupportedFormat
+                    },
+                    ImageError::IoError(error) => {
+                        log::error!("Image IO error: {:?}",error);
+                        WimpyImageError::Access
+                    },
+                    _ => WimpyImageError::Unknown
+                }),
+            },
+            Err(error) => Err({
+                log::error!("IO error: {:?}",error);
+                WimpyImageError::Access
+            }),
+        }
     }
 }
 

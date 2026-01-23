@@ -11,3 +11,8 @@ mod frame_cache;
 pub use graphics_provider::*;
 pub use frame::*;
 pub use graphics_context::*;
+pub use texture_container::{
+    TextureData,
+    TextureDataWriteParameters
+};
+

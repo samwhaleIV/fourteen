@@ -8,7 +8,6 @@ anyhow = { workspace = true }
 log = { workspace = true }
 wgpu = { workspace = true }
 bytemuck = {version = "1.24.0",features = ["derive"]}
-image = "0.25.9"
 cgmath = "0.18.0"
 slotmap = "1.1.1"
 smallvec = "1.15.1"

@@ -2,18 +2,12 @@ use super::{
     graphics_provider::GraphicsProvider,
 };
 
-use image::{
-    DynamicImage,
-    EncodableLayout,
-    GenericImageView
+use wgpu::{
+    AddressMode, BindGroup, BindGroupLayout, Device, Extent3d, FilterMode, Origin3d, Queue, SurfaceTexture, Texture, TextureAspect, TextureUsages, TextureView
 };
 
-use wgpu::{
-    AddressMode, BindGroup, BindGroupLayout, Device, Features, FilterMode, SurfaceTexture, TextureUsages, TextureView
-};
 pub struct TextureContainer {
-    width: u32,
-    height: u32,
+    size: Extent3d,
     view: TextureView,
     bind_groups: Vec<BindGroup>
 }
@@ -74,27 +68,39 @@ fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout:
 
 struct TextureCreationParameters {
     size: (u32,u32),
-    mutable: bool
+    mutable: bool,
+    with_data: bool
+}
+
+pub struct TextureDataWriteParameters<'a> {
+    pub queue: &'a Queue,
+    pub texture: &'a Texture,
+    pub texture_size: Extent3d,
+    pub aspect: TextureAspect,
+    pub mip_level: u32,
+    pub origin: Origin3d,
+}
+
+pub trait TextureData {
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters);
+    fn size(&self) -> (u32,u32);
 }
 
 fn create_texture(
     graphics_provider: &GraphicsProvider,
     bind_group_layout: &BindGroupLayout,
-    image_data: Option<&[u8]>,
-    parameters: TextureCreationParameters
+    parameters: TextureCreationParameters,
 ) -> TextureContainer {
 
-    let size = parameters.size;
-
-    let texture_size = wgpu::Extent3d {
-        width: size.0,
-        height: size.1,
+    let size = wgpu::Extent3d {
+        width: parameters.size.0,
+        height: parameters.size.1,
         depth_or_array_layers: 1,
     };
 
     let mut usage_flags = TextureUsages::TEXTURE_BINDING;
 
-    if image_data.is_some() {
+    if parameters.with_data {
         usage_flags |= TextureUsages::COPY_DST;
     }
 
@@ -104,7 +110,7 @@ fn create_texture(
 
     let device = graphics_provider.get_device();
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        size: texture_size,
+        size,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -117,32 +123,12 @@ fn create_texture(
         view_formats: &[],
     });
 
-    if let Some(data) = image_data {
-        graphics_provider.get_queue().write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
-                bytes_per_row: Some(4*size.0), 
-                rows_per_image: Some(size.1),
-            },
-            texture_size,
-        );
-    }
-
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let bind_groups = get_bind_groups(&view,&device,bind_group_layout);
 
     return TextureContainer {
-        width: size.0,
-        height: size.1,
+        size,
         view,
         bind_groups
     };
@@ -159,22 +145,36 @@ impl TextureContainer {
         bind_group_layout: &BindGroupLayout,
         size: (u32,u32)
     ) -> TextureContainer {
-        return create_texture(graphics_provider,bind_group_layout,None,TextureCreationParameters {
+        create_texture(graphics_provider,bind_group_layout,TextureCreationParameters {
             size,
+            with_data: false,
             mutable: true
-        });
+        })
     }
 
-    pub fn from_image(graphics_provider: &GraphicsProvider,bind_group_layout: &BindGroupLayout,image: &DynamicImage) -> TextureContainer {
-        let size = image.dimensions();
+    pub fn from_image(
+        graphics_provider: &GraphicsProvider,
+        bind_group_layout: &BindGroupLayout,
+        texture_data: impl TextureData
+    ) -> TextureContainer {
+        let size = texture_data.size();
 
-        //TODO: Make sure alpha channel is premultiplied ... Somehow.
-        let image_data = image.to_rgba8();
-
-        return create_texture(graphics_provider,bind_group_layout,Some(image_data.as_bytes()),TextureCreationParameters {
+        let texture_container = create_texture(graphics_provider,bind_group_layout,TextureCreationParameters {
             size,
+            with_data: true,
             mutable: false
         });
+
+        texture_data.write_to_queue(&TextureDataWriteParameters {
+            queue: graphics_provider.get_queue(),
+            texture: texture_container.view.texture(),
+            texture_size: texture_container.size,
+            aspect: TextureAspect::All,
+            mip_level: 0,
+            origin: Origin3d::ZERO
+        });
+
+        return texture_container;
     }
 
     pub fn create_output(surface: &SurfaceTexture,size: (u32,u32)) -> TextureContainer {
@@ -182,8 +182,11 @@ impl TextureContainer {
             &wgpu::TextureViewDescriptor::default()
         );
         return TextureContainer {
-            width: size.0,
-            height: size.1,
+            size: Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
             view,
             bind_groups: Vec::with_capacity(0)
         };
@@ -192,7 +195,7 @@ impl TextureContainer {
 
 impl TextureContainer {
     pub fn size(&self) -> (u32,u32) {
-        (self.width,self.height)
+        (self.size.width,self.size.height)
     }
 
     pub fn get_bind_group(&self,filter_mode: FilterMode,address_mode: AddressMode) -> Option<&BindGroup> {

@@ -1,17 +1,21 @@
 use crate::{
     input::InputManager,
     storage::KeyValueStore, 
-    wgpu::GraphicsContext
+    wgpu::{GraphicsContext, TextureData}
 };
 
-pub enum WimpyIOError {
-
+#[derive(Debug)]
+pub enum WimpyImageError {
+    Access,
+    Decode,
+    UnsupportedFormat,
+    Unknown,
 }
 
 pub trait WimpyIO {
     fn save_key_value_store(kvs: &KeyValueStore);
     fn load_key_value_store(kvs: &mut KeyValueStore);
-    fn get_file_bytes(file: &'static str) -> Result<Vec<u8>,WimpyIOError>;
+    fn get_image(path: &'static str) -> impl Future<Output = Result<impl TextureData,WimpyImageError>>;
 }
 
 pub struct WimpyContext<'a,TConfig> {

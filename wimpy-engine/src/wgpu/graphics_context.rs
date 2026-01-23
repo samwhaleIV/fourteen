@@ -19,7 +19,7 @@ use crate::{shared::CacheArenaError, wgpu::{
         CameraUniform,
         QuadInstance,
         Vertex
-    }
+    }, texture_container::TextureData
 }};
 
 use super::{
@@ -111,7 +111,7 @@ pub struct FrameConfig {
 }
 
 pub trait GraphicsContextController {
-    fn load_texture(&mut self,bytes: &[u8]) -> Frame;
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Frame;
     fn bake(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
     fn get_frame(&mut self,config: FrameConfig) -> Frame;
 }
@@ -180,11 +180,11 @@ impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
-    fn load_texture(&mut self,bytes: &[u8]) -> Frame {
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Frame {
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
-            &image::load_from_memory(bytes).unwrap()
+            texture_data
         );
         return FrameInternal::create_texture(
             texture_container.size(),

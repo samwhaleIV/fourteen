@@ -3069,7 +3069,6 @@ dependencies = [
  "bytemuck",
  "cgmath",
  "gilrs",
- "image",
  "log",
  "slotmap",
  "smallvec",
@@ -3082,6 +3081,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "image",
  "log",
  "pollster",
  "wgpu",

@@ -12,3 +12,4 @@ wimpy-engine = { path = "../wimpy-engine" }
 winit = { version = "0.30.12" }
 env_logger = { version = "0.11.8" }
 pollster = "0.4.0"
+image = "0.25.9"

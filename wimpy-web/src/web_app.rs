@@ -9,30 +9,24 @@ use wasm_bindgen::{
     prelude::Closure
 };
 
+use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    Document,
-    Event,
-    HtmlCanvasElement,
-    KeyboardEvent,
-    MouseEvent,
-    Window
+    Document, Event, HtmlCanvasElement, HtmlImageElement, ImageBitmap, ImageBitmapOptions, KeyboardEvent, MouseEvent, Window
 };
 
 use wgpu::{
-    InstanceDescriptor,
-    Limits,
-    SurfaceTarget
+    CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, InstanceDescriptor, Limits, Origin2d, Origin3d, SurfaceTarget
 };
 
 use wimpy_engine::{
-    WimpyApp, WimpyContext, WimpyIO, input::{
+    WimpyApp, WimpyContext, WimpyIO, WimpyImageError, input::{
         InputManager,
         InputManagerAppController
     }, storage::{
         KeyValueStore,
         KeyValueStoreIO
     }, wgpu::{
-        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError
+        GraphicsContext, GraphicsContextConfig, GraphicsContextController, GraphicsContextInternalController, GraphicsProvider, GraphicsProviderConfig, GraphicsProviderError, TextureData
     }
 };
 
@@ -70,6 +64,35 @@ pub enum ResizeConfig {
 
 pub struct WebAppIO;
 
+struct ExternalImageSourceWrapper {
+    value: ExternalImageSource
+}
+
+impl TextureData for ExternalImageSourceWrapper {
+    fn size(&self) -> (u32,u32) {
+        return (self.value.width(),self.value.height());
+    }
+    
+    fn write_to_queue(self,parameters: &wimpy_engine::wgpu::TextureDataWriteParameters) {
+        parameters.queue.copy_external_image_to_texture(
+            &CopyExternalImageSourceInfo {
+                source: self.value,
+                origin: Origin2d::ZERO,
+                flip_y: false,
+            },
+            CopyExternalImageDestInfo {
+                texture: parameters.texture,
+                mip_level: parameters.mip_level,
+                origin: parameters.origin,
+                aspect: parameters.aspect,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            parameters.texture_size
+        );
+    }
+}
+
 impl WimpyIO for WebAppIO {
     fn save_key_value_store(kvs: &KeyValueStore) {
         let data = kvs.export();
@@ -80,10 +103,26 @@ impl WimpyIO for WebAppIO {
         let data = todo!();
         kvs.import(data);
     }
-    
-    fn get_file_bytes(file: &'static str) -> Result<Vec<u8>,wimpy_engine::WimpyIOError> {
-        todo!()
+
+    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyImageError> {
+        let window = get_window().expect("window exists");
+
+        let image_element = HtmlImageElement::new().expect("html image element creation");
+        image_element.set_src(path);
+
+        let Ok(bitmap) = get_image_bitmap(&window,&image_element).await else {
+            log::error!("Could not create ImageBitmap for '{}'.",path);
+            return Err(WimpyImageError::Unknown); 
+        };
+
+        return Ok(ExternalImageSourceWrapper {
+            value: ExternalImageSource::ImageBitmap(bitmap),
+        });
     }
+}
+
+async fn get_image_bitmap(window: &Window,image_element: &HtmlImageElement) -> Result<ImageBitmap,JsValue> {
+    Ok(JsFuture::from(window.create_image_bitmap_with_html_image_element(image_element)?).await?.dyn_into::<ImageBitmap>()?)
 }
 
 impl<TWimpyApp,TConfig> WebApp<TWimpyApp,TConfig>

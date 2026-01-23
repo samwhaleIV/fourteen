@@ -1,7 +1,6 @@
 Highest priority
 ----------------
-Platform unified texture loading
-Platform unified key-value store
+Platform unified key-value store IO
 
 High priority
 ----------------
@@ -10,7 +9,8 @@ Implement UI page against graphics context
 
 Lower priority
 ----------------
+How does UI page handle page transitions?
 Multi-platform custom cursors (Dynamic hit states)
 Implement combination mouse + joystick input (Render Virtual Cursor)
-Optimize uniform buffer copying
-Implement frame clear color customization
+Optimize uniform buffer copying (use better capabilities if available)
+Implement frame clear color customization (right now, it's, like, Color::Red or something)
