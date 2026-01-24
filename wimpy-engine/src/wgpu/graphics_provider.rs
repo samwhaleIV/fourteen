@@ -23,6 +23,12 @@ pub enum GraphicsProviderError {
     DeviceCreationError(RequestDeviceError),
 }
 
+#[derive(Debug)]
+pub enum SizeError {
+    ZeroSizeDimension,
+    TooBig(u32)
+}
+
 impl GraphicsProvider {
     pub async fn new(mut config: GraphicsProviderConfig) -> Result<Self,GraphicsProviderError> {
         let adapter = match config.instance.request_adapter(&wgpu::RequestAdapterOptionsBase {
@@ -142,6 +148,19 @@ impl GraphicsProvider {
 
     pub fn max_texture_power_of_two(&self) -> u32 {
         return self.max_texture_power_of_two
+    }
+
+    pub fn test_size(&self,size: (u32,u32)) -> Result<(),SizeError> {      
+        if size.0 < 1 || size.1 < 1 {
+            return Err(SizeError::ZeroSizeDimension);
+        }
+        if size.0 > self.max_texture_dimension {
+            return Err(SizeError::TooBig(size.0));
+        }
+        if size.1 > self.max_texture_dimension {
+            return Err(SizeError::TooBig(size.1));
+        }
+        return Ok(());
     }
 }
 

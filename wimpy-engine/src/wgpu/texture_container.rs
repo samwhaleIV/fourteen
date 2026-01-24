@@ -1,3 +1,5 @@
+use crate::wgpu::SizeError;
+
 use super::{
     graphics_provider::GraphicsProvider,
 };
@@ -134,6 +136,11 @@ fn create_texture(
     };
 }
 
+#[derive(Debug)]
+pub enum TextureContainerError {
+    SizeError(SizeError)
+}
+
 impl TextureContainer {
 
     pub fn get_view(&self) -> &TextureView {
@@ -143,7 +150,7 @@ impl TextureContainer {
     pub fn create_mutable(
         graphics_provider: &GraphicsProvider,
         bind_group_layout: &BindGroupLayout,
-        size: (u32,u32)
+        size: (u32,u32) // Externally validated
     ) -> TextureContainer {
         create_texture(graphics_provider,bind_group_layout,TextureCreationParameters {
             size,
@@ -156,8 +163,12 @@ impl TextureContainer {
         graphics_provider: &GraphicsProvider,
         bind_group_layout: &BindGroupLayout,
         texture_data: impl TextureData
-    ) -> TextureContainer {
+    ) -> Result<TextureContainer,TextureContainerError> {
         let size = texture_data.size();
+
+        if let Err(error) = graphics_provider.test_size(size) {
+            return Err(TextureContainerError::SizeError(error));
+        }
 
         let texture_container = create_texture(graphics_provider,bind_group_layout,TextureCreationParameters {
             size,
@@ -174,10 +185,13 @@ impl TextureContainer {
             origin: Origin3d::ZERO
         });
 
-        return texture_container;
+        return Ok(texture_container);
     }
 
-    pub fn create_output(surface: &SurfaceTexture,size: (u32,u32)) -> TextureContainer {
+    pub fn create_output(
+        surface: &SurfaceTexture,
+        size: (u32,u32) // Externally validated
+    ) -> TextureContainer {
         let view = surface.texture.create_view(
             &wgpu::TextureViewDescriptor::default()
         );

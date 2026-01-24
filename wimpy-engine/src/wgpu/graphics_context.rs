@@ -36,7 +36,7 @@ use crate::{
             CameraUniform,
             QuadInstance,
             Vertex
-        }, texture_container::TextureData
+        }, texture_container::{TextureContainerError, TextureData}
     }
 };
 
@@ -79,7 +79,7 @@ pub trait GraphicsContextConfig {
 }
 
 pub trait GraphicsContextController {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> TextureFrame;
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError>;
     fn render_frame(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError>;
 
     fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize;
@@ -96,7 +96,8 @@ pub enum GraphicsContextError {
     PipelineAlreadyActive,
     PipelineNotActive,
     CantCreateOutputSurface(SurfaceError),
-    FrameCacheError(CacheArenaError<u32,FrameCacheReference>)
+    FrameCacheError(CacheArenaError<u32,FrameCacheReference>),
+    TextureCreationFailure(TextureContainerError)
 }
 
 pub trait GraphicsContextInternalController {
@@ -161,16 +162,19 @@ impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> TextureFrame {
-        let texture_container = TextureContainer::from_image(
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError> {
+        let texture_container = match TextureContainer::from_image(
             &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
             texture_data
-        );
-        return FrameFactory::create_texture(
+        ) {
+            Ok(value) => value,
+            Err(error) => return Err(GraphicsContextError::TextureCreationFailure(error))
+        };
+        return Ok(FrameFactory::create_texture(
             texture_container.size(),
             self.frame_cache.insert_keyless(texture_container)
-        );
+        ));
     }
 
     fn render_frame(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError> {
