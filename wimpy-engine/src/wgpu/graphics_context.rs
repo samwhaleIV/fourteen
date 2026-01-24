@@ -1,3 +1,5 @@
+use std::u32;
+
 use wgpu::{
     BindGroup,
     BindGroupLayoutDescriptor,
@@ -74,21 +76,6 @@ impl<TConfig> GraphicsContext<TConfig> {
 pub trait GraphicsContextConfig {
     const INSTANCE_CAPACITY: usize;
     const UNIFORM_CAPACITY: usize;
-}
-
-#[derive(Copy,Clone)]
-pub struct CacheSize {
-    input: (u32,u32),
-    output: u32,
-}
-
-impl CacheSize {
-    pub fn get_input_size(&self) -> (u32,u32) {
-        self.input
-    }
-    pub fn get_output_size(&self) -> (u32,u32) {
-        (self.output,self.output)
-    }
 }
 
 pub trait GraphicsContextController {
@@ -218,7 +205,7 @@ where
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        
+
         render_pass.set_pipeline(&self.render_pipeline); 
         render_pass.set_index_buffer(self.index_buffer.slice(..),wgpu::IndexFormat::Uint32); // Index Buffer
         render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..)); // Vertex Buffer
@@ -239,14 +226,15 @@ where
     }
 
     fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
-        let cache_reference = match self.frame_cache.start_lease(cache_size.output) {
+        let size = cache_size.output;
+        let cache_reference = match self.frame_cache.start_lease(size) {
             Ok(value) => value, 
             Err(error) => {
                 log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
-                self.frame_cache.insert_with_lease(cache_size.output,TextureContainer::create_mutable(
+                self.frame_cache.insert_with_lease(size,TextureContainer::create_mutable(
                     &self.graphics_provider,
                     &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
-                    cache_size.get_output_size()
+                    (size,size)
                 ))
             },
         };
@@ -269,28 +257,45 @@ where
 
         Ok(())
     }
-    
+
     fn create_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
-        let size = self.graphics_provider.get_safe_texture_size(size);
+        let output = self.graphics_provider.get_safe_texture_size(size);
         return FrameFactory::create_long_life(
-            size,
+            RestrictedSize {
+                input: size,
+                output
+            },
             self.frame_cache.insert_keyless(TextureContainer::create_mutable(
                 &self.graphics_provider,
                 &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
-                size
+                output
             )),
             Vec::with_capacity(DEFAULT_COMMAND_BUFFER_SIZE)
         );
     }
 
     fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize {
-        todo!()
+        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.0.max(size.1).checked_next_power_of_two() {
+            Some(value) => value,
+            None => u32::MAX,
+        });
+        CacheSize {
+            input: size,
+            output
+        }
     }
-    
+
     fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
-        todo!()
+        let size = cache_size.output;
+        if self.frame_cache.has_available_items(size) {
+            return;
+        }
+        self.frame_cache.insert(size,TextureContainer::create_mutable(
+            &self.graphics_provider,
+            &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
+            (size,size)
+        ));
     }
-    
 }
 
 impl<TConfig> GraphicsContext<TConfig>

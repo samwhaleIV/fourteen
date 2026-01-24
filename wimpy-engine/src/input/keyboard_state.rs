@@ -75,7 +75,7 @@ impl Default for KeyboardTranslator {
             binds: HashMap::<KeyCode,Impulse>::with_capacity(24),
             reverse_lookup: array::from_fn(|_|HashSet::with_capacity(4))
         };
-        
+
         translator.add_key_bind(KeyCode::KeyW,Impulse::Up);
         translator.add_key_bind(KeyCode::KeyS,Impulse::Down);
         translator.add_key_bind(KeyCode::KeyA,Impulse::Left);
@@ -88,9 +88,9 @@ impl Default for KeyboardTranslator {
 
         translator.add_key_bind(KeyCode::Enter,Impulse::Confirm);
         translator.add_key_bind(KeyCode::Escape,Impulse::Cancel);
-        translator.add_key_bind(KeyCode::Tab,Impulse::Focus);
-        translator.add_key_bind(KeyCode::KeyC,Impulse::Context);
-        
+        translator.add_key_bind(KeyCode::Tab,Impulse::FocusRight);
+        translator.add_key_bind(KeyCode::KeyC,Impulse::View);
+
         translator
     }
 }

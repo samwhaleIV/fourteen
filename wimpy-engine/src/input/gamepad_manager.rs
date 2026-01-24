@@ -134,8 +134,8 @@ impl GamepadManager {
         return user_activity;
     }
 
-    pub fn get_axes(&self) -> &InterpretiveAxes {
-        return &self.gamepad_output.interpretive_axes;
+    pub fn get_axes(&self) -> InterpretiveAxes {
+        return self.gamepad_output.interpretive_axes;
     }
 
     pub fn get_impulse_set(&self) -> &ImpulseSet {

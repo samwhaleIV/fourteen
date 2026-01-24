@@ -57,6 +57,10 @@ impl<TKey,T,TConfig> KeyedPools<TKey,T,TConfig> where
         return self.cache_container.entry(key).or_insert_with(Self::create_pool);
     }
 
+    pub fn get_cache(&self,key: &TKey) -> Option<&Pool<T>> {
+        return self.cache_container.get(key);
+    }
+
     pub fn get_cache_mut(&mut self,key: &TKey) -> Option<&mut Pool<T>> {
         return self.cache_container.get_mut(key);
     }

@@ -1,10 +1,10 @@
 Highest priority
 ----------------
+Input texture size validation
 Platform unified key-value store IO
 
 High priority
 ----------------
-Optimize Frame's command buffer
 Implement UI page against graphics context
 
 Lower priority
@@ -13,4 +13,3 @@ How does UI page handle page transitions?
 Multi-platform custom cursors (Dynamic hit states)
 Implement combination mouse + joystick input (Render Virtual Cursor)
 Optimize uniform buffer copying (use better capabilities if available)
-Implement frame clear color customization (right now, it's, like, Color::Red or something)

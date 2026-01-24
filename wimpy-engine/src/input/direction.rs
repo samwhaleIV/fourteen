@@ -127,7 +127,7 @@ impl InterpretiveAxis {
     }
 }
 
-#[derive(Default)]
+#[derive(Default,Copy,Clone)]
 pub struct InterpretiveAxes {
     pub x: InterpretiveAxis,
     pub y: InterpretiveAxis

@@ -8,8 +8,20 @@ use crate::{
         Area,
         Color
     }, 
-    wgpu::{CacheSize, frame_cache::FrameCacheReference}
+    wgpu::frame_cache::FrameCacheReference
 };
+
+#[derive(Copy,Clone)]
+pub struct RestrictedSize {
+    pub input: (u32,u32),
+    pub output: (u32,u32),
+}
+
+#[derive(Copy,Clone)]
+pub struct CacheSize {
+    pub input: (u32,u32),
+    pub output: u32
+}
 
 pub struct DrawData {
     pub destination: Area,
@@ -43,8 +55,8 @@ pub struct OutputFrame {
 }
 
 pub struct TextureFrame {
-    cache_reference: FrameCacheReference,
     size: (u32,u32),
+    cache_reference: FrameCacheReference,
 }
 
 pub struct TempFrame {
@@ -55,7 +67,7 @@ pub struct TempFrame {
 }
 
 pub struct LongLifeFrame {
-    size: (u32,u32),
+    size: RestrictedSize,
     cache_reference: FrameCacheReference,
     command_buffer: Vec<FrameCommand>,  
 }
@@ -140,7 +152,7 @@ impl FrameReference for TextureFrame {
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size
+        return self.size;
     }
 }
 
@@ -150,11 +162,11 @@ impl FrameReference for TempFrame {
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size.get_input_size();
+        return self.size.input;
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size.get_output_size();
+        return (self.size.output,self.size.output);
     }
 }
 
@@ -164,11 +176,11 @@ impl FrameReference for LongLifeFrame {
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size;
+        return self.size.input;
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size;
+        return self.size.output;
     }
 }
 
@@ -249,13 +261,13 @@ impl FrameFactory {
         cache_reference: FrameCacheReference,
     ) -> TextureFrame {
         TextureFrame {
+            size,
             cache_reference,
-            size
         }
     }
 
     pub fn create_long_life(
-        size: (u32,u32),
+        size: RestrictedSize,
         cache_reference: FrameCacheReference,
         command_buffer: Vec<FrameCommand>
     ) -> LongLifeFrame {

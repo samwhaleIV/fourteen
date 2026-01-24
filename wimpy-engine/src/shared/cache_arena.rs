@@ -244,4 +244,11 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
             key_data.pool_target = PoolTarget::Cache;
         }
     }
+
+    pub fn has_available_items(&mut self,key: TKey) -> bool {
+        match self.pools.get_cache(&key) {
+            Some(cache) => !cache.is_empty(),
+            None => false,
+        }
+    }
 }
