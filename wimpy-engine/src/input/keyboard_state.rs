@@ -87,7 +87,7 @@ impl Default for KeyboardTranslator {
         translator.add_key_bind(KeyCode::ArrowRight,Impulse::Right);
 
         translator.add_key_bind(KeyCode::Enter,Impulse::Confirm);
-        translator.add_key_bind(KeyCode::Escape,Impulse::Back);
+        translator.add_key_bind(KeyCode::Escape,Impulse::Cancel);
         translator.add_key_bind(KeyCode::Tab,Impulse::Focus);
         translator.add_key_bind(KeyCode::KeyC,Impulse::Context);
         

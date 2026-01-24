@@ -6,7 +6,7 @@ use crate::input::{
     InterpretiveAxis,
 };
 
-pub const IMPULSE_TYPE_COUNT: usize = 8;
+pub const IMPULSE_TYPE_COUNT: usize = 10;
 
 pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
     Impulse::Up,
@@ -14,9 +14,11 @@ pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
     Impulse::Left,
     Impulse::Right,
     Impulse::Confirm,
-    Impulse::Back,
-    Impulse::Focus,
-    Impulse::Context
+    Impulse::Cancel,
+    Impulse::FocusLeft,
+    Impulse::FocusRight,
+    Impulse::View,
+    Impulse::Menu
 ];
 
 #[derive(Clone,Copy,PartialEq,Eq)]
@@ -26,9 +28,11 @@ pub enum Impulse {
     Left = 2,
     Right = 3,
     Confirm = 4,
-    Back = 5,
-    Focus = 6,
-    Context = 7
+    Cancel = 5,
+    FocusLeft = 6,
+    FocusRight = 7,
+    View = 8,
+    Menu = 9
 }
 
 impl Impulse {
@@ -92,7 +96,37 @@ pub struct ImpulseEvent {
     pub state: ImpulseState
 }
 
+pub struct ImpulseSetDescription {
+    pub up: ImpulseState,
+    pub down: ImpulseState,
+    pub left: ImpulseState,
+    pub right: ImpulseState,
+    pub confirm: ImpulseState,
+    pub cancel: ImpulseState,
+    pub focus_left: ImpulseState,
+    pub focus_right: ImpulseState,
+    pub view: ImpulseState,
+    pub menu: ImpulseState,
+}
+
 impl ImpulseSet {
+    pub fn new(set: ImpulseSetDescription) -> Self {
+        return Self {
+            actions: [
+                set.up,
+                set.down,
+                set.left,
+                set.right,
+                set.confirm,
+                set.cancel,
+                set.focus_left,
+                set.focus_right,
+                set.view,
+                set.menu,
+            ]
+        }
+    }
+
     pub fn get(&self,impulse: Impulse) -> ImpulseState {
         return self.actions[impulse as usize];
     }

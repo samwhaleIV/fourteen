@@ -13,14 +13,27 @@ use gilrs::{
 };
 
 use crate::input::{
-    ImpulseSet,
-    InterpretiveAxes,
-    InterpretiveAxis
+    Direction, ImpulseSet, ImpulseSetDescription, ImpulseState, InterpretiveAxes, InterpretiveAxis
 };
 
 pub struct GamepadManager {
     gilrs: Gilrs,
     active_gamepad_id: Option<GamepadId>,
+    gamepad_output: GamepadOutput
+}
+
+struct GamepadOutput {
+    interpretive_axes: InterpretiveAxes,
+    impulse_set: ImpulseSet
+}
+
+impl Default for GamepadOutput {
+    fn default() -> Self {
+        Self {
+            interpretive_axes: Default::default(),
+            impulse_set: Default::default()
+        }
+    }
 }
 
 pub enum GamepadManagerError {
@@ -33,6 +46,8 @@ pub enum UserActivity {
     None,
     Some
 }
+
+const THUMBSTICK_IMPULSE_THRESHOLD: f32 = 0.5;
 
 impl GamepadManager {
     pub fn new() -> Result<Self,GamepadManagerError> {
@@ -48,10 +63,11 @@ impl GamepadManager {
         return Ok(Self {
             gilrs,
             active_gamepad_id: None,
+            gamepad_output: Default::default()
         });
     }
 
-    fn try_set_active_gamepad(&mut self) {
+    fn update_active_gamepad(&mut self) {
         if let Some(id) = self.active_gamepad_id && self.gilrs.gamepad(id).is_connected() {
             return;
         }
@@ -62,11 +78,7 @@ impl GamepadManager {
                 break;
             }
         }
-        self.set_active_gamepad(new_id);
-    }
-
-    fn set_active_gamepad(&mut self,new_gamepad: Option<GamepadId>) {
-        match (new_gamepad,self.active_gamepad_id) {
+        match (new_id,self.active_gamepad_id) {
             (None, Some(new_id)) => {
                 let new = self.gilrs.gamepad(new_id);
                 log::info!("Active gamepad set to '{}' (UUID: {:?}).",new.name(),new.uuid());
@@ -82,7 +94,7 @@ impl GamepadManager {
             },
             _ => {}
         };
-        self.active_gamepad_id = new_gamepad;
+        self.active_gamepad_id = new_id;
     }
 
     pub fn update(&mut self) -> UserActivity {
@@ -107,51 +119,86 @@ impl GamepadManager {
             }
         }
 
-        self.try_set_active_gamepad();
+        self.update_active_gamepad();
+
+        self.gamepad_output = match self.active_gamepad_id {
+            Some(id) => {
+                let gamepad = self.gilrs.gamepad(id);
+                let interpretive_axes = get_interpretive_axes(&gamepad);
+                let impulse_set = get_impulse_set(&gamepad,&interpretive_axes);
+                GamepadOutput { interpretive_axes, impulse_set, }
+            },
+            None => Default::default(),
+        };
 
         return user_activity;
     }
 
-    pub fn get_impulse_set(&self) -> ImpulseSet {
-        todo!();
+    pub fn get_axes(&self) -> &InterpretiveAxes {
+        return &self.gamepad_output.interpretive_axes;
     }
 
-    pub fn get_axes(&self) -> InterpretiveAxes {
-        let Some(id) = self.active_gamepad_id else {
-            return Default::default();
-        };
-
-        let gamepad = self.gilrs.gamepad(id);
-
-        let axes = get_dpad_interpretive_axes(&gamepad);
-
-        match axes.is_zero() {
-            false => axes,
-            true => InterpretiveAxes {
-                x: translate_gamepad_axis(gamepad.axis_data(Axis::LeftStickX)),
-                y: translate_gamepad_axis(gamepad.axis_data(Axis::LeftStickY)),
-            },
-        }
+    pub fn get_impulse_set(&self) -> &ImpulseSet {
+        return &self.gamepad_output.impulse_set;
     }
 }
 
-fn translate_gamepad_axis(value: Option<&AxisData>) -> InterpretiveAxis {
-    value.map_or(Default::default(),|v|InterpretiveAxis::from_f32(v.value()))
+pub fn get_impulse_set(gamepad: &Gamepad<'_>,axes: &InterpretiveAxes) -> ImpulseSet {
+
+    let threshold = THUMBSTICK_IMPULSE_THRESHOLD;
+
+    ImpulseSet::new(ImpulseSetDescription {
+        up:    axes.infer_impulse(Direction::Up,threshold),
+        down:  axes.infer_impulse(Direction::Down,threshold),
+        left:  axes.infer_impulse(Direction::Left,threshold),
+        right: axes.infer_impulse(Direction::Right,threshold),
+
+        confirm: is_pressed(gamepad,Button::South),
+        cancel:  is_pressed(gamepad,Button::East),
+
+        focus_left:  is_pressed(gamepad,Button::LeftTrigger),
+        focus_right: is_pressed(gamepad,Button::RightTrigger),
+
+        view: is_pressed(gamepad,Button::Select),
+        menu: is_pressed(gamepad,Button::Start),
+    })
 }
 
-fn is_pressed(value: Option<&ButtonData>) -> bool {
-    value.map_or(false,|button|button.is_pressed())
+fn get_interpretive_axes(gamepad: &Gamepad<'_>) -> InterpretiveAxes {
+    let axes = get_dpad_interpretive_axes(&gamepad);
+
+    match axes.is_zero() {
+        false => axes,
+        true => InterpretiveAxes {
+            x: translate_gamepad_axis(gamepad.axis_data(Axis::LeftStickX)),
+            y: translate_gamepad_axis(gamepad.axis_data(Axis::LeftStickY)),
+        },
+    }
+}
+
+fn translate_gamepad_axis(axis_data: Option<&AxisData>) -> InterpretiveAxis {
+    match axis_data {
+        Some(axis_data) => InterpretiveAxis::from_f32(axis_data.value()),
+        None => Default::default(),
+    }
+}
+
+fn is_pressed(gamepad: &Gamepad<'_>,button: gilrs::ev::Button) -> ImpulseState {
+    match gamepad.button_data(button) {
+        Some(value) => ImpulseState::from_bool(value.is_pressed()),
+        None => ImpulseState::Released,
+    }
 }
 
 fn get_dpad_interpretive_axes(gamepad: &Gamepad<'_>) -> InterpretiveAxes {
     return InterpretiveAxes {
-        x: InterpretiveAxis::from_bool(
-            is_pressed(gamepad.button_data(Button::DPadLeft)),
-            is_pressed(gamepad.button_data(Button::DPadRight))
+        x: InterpretiveAxis::from_impulse_state(
+            is_pressed(gamepad,Button::DPadLeft),
+            is_pressed(gamepad,Button::DPadRight),
         ),
-        y: InterpretiveAxis::from_bool(
-            is_pressed(gamepad.button_data(Button::DPadUp)),
-            is_pressed(gamepad.button_data(Button::DPadDown))
+        y: InterpretiveAxis::from_impulse_state(
+            is_pressed(gamepad,Button::DPadUp),
+            is_pressed(gamepad,Button::DPadDown),
         ),
     }
 }

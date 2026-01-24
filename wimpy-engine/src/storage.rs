@@ -24,6 +24,10 @@ impl KeyValueStoreIO for KeyValueStore {
     }
 }
 
+pub enum KeyValueStoreError {
+
+}
+
 impl KeyValueStore {
     fn delete_all(&mut self) {
         todo!()
@@ -41,19 +45,19 @@ impl KeyValueStore {
         todo!()
     }
 
-    fn delete(&mut self,key: &'static str) {
+    fn delete(&mut self,key: &'static str) -> Result<(),KeyValueStoreError> {
         todo!()
     }
 
-    fn get_string(&self,key: &'static str) -> Option<&'static str> {
+    fn get_string(&self,key: &'static str) -> Result<(),&'static str> {
         todo!()
     }
 
-    fn get_u32(&self,key: &'static str) -> Option<u32> {
+    fn get_u32(&self,key: &'static str) -> Result<u32,KeyValueStoreError> {
         todo!()
     }
 
-    fn has_flag(&self,key: &'static str) -> bool {
+    fn has_key(&self,key: &'static str) -> bool {
         todo!()
     }
 }

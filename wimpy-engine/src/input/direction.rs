@@ -21,6 +21,16 @@ pub enum Direction {
     Right
 }
 
+impl Direction {
+    pub fn sign(&self) -> AxisSign {
+        match self {
+            Direction::None => AxisSign::Zero,
+            Direction::Up | Direction::Left => AxisSign::Negative,
+            Direction::Down | Direction::Right => AxisSign::Positive,
+        }
+    }
+}
+
 impl Default for Direction {
     fn default() -> Self {
         return Self::None;
@@ -127,6 +137,7 @@ impl InterpretiveAxes {
     pub fn get_f32(&self) -> (f32,f32) {
         return (self.x.get_f32(),self.y.get_f32());
     }
+
     pub fn get_i32(&self) -> (i32,i32) {
         return (self.x.get_i32(),self.y.get_i32());
     }
@@ -134,7 +145,22 @@ impl InterpretiveAxes {
     pub fn is_zero(&self) -> bool {
         return self.x.sign == AxisSign::Zero && self.y.sign == AxisSign::Zero;
     }
-    
+
+    pub fn infer_impulse(&self,direction: Direction,threshold: f32) -> ImpulseState {
+        let axis = match direction {
+            Direction::Left |   Direction::Right => &self.x,
+            Direction::Up |     Direction::Down =>  &self.y,
+            Direction::None => return ImpulseState::Released,
+        };
+        match (
+            axis.sign == direction.sign(),
+            axis.value.abs() >= threshold
+        ) {
+            (true,true) => ImpulseState::Pressed,
+            _ => ImpulseState::Released
+        }
+    }
+
     pub fn get_cardinal_direction(&self) -> CardinalDirection {
         return match (self.x.sign,self.y.sign) {
             (AxisSign::Negative,    AxisSign::Negative) =>  CardinalDirection::NorthWest,
