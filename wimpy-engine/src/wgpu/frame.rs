@@ -1,160 +1,19 @@
-use smallvec::SmallVec;
-use wgpu::{AddressMode, FilterMode};
+use wgpu::{
+    AddressMode,
+    FilterMode,
+};
 
 use crate::{
     shared::{
         Area,
         Color
     }, 
-    wgpu::frame_cache::FrameCacheReference
+    wgpu::{CacheSize, frame_cache::FrameCacheReference}
 };
 
-#[derive(Clone,Copy,PartialEq)]
-pub enum FrameType {
-    Output,
-    Normal,
-    Texture
-}
-
-#[derive(PartialEq)]
-pub enum LockStatus {
-    FutureUnlock,
-    FutureLock,
-    Unlocked,
-    Locked,
-}
-
-const DEFAULT_COMMAND_BUFFER_SIZE: usize = 32;
-
-pub struct Frame {
-    width: u32,
-    height: u32,
-    cache_reference: FrameCacheReference,
-    usage: FrameType,
-    command_buffer: SmallVec<[FrameCommand;DEFAULT_COMMAND_BUFFER_SIZE]>,
-    write_lock: LockStatus
-}
-
-pub trait FrameInternal {
-    fn get_clear_color(&self) -> Option<wgpu::Color>;
-    fn is_writable(&self) -> bool;
-
-    fn create_output(size: (u32,u32),cache_reference: FrameCacheReference) -> Self;
-    fn create(size: (u32,u32),options: FrameCreationOptions) -> Self;
-    fn create_texture(size: (u32,u32),cache_reference: FrameCacheReference) -> Self;
-
-    fn get_cache_reference(&self) -> FrameCacheReference;
-
-    fn get_command_buffer(&self) -> Result<&[FrameCommand],FrameError>;
-    fn clear(&mut self);
-}
-
-#[derive(Debug)]
-pub enum FrameError {
-    ReadonlyFrame,
-    CircularReference,
-    ReadonlyDestination,
-    EmptySource,
-    OutputMisuse
-}
-
-pub struct FrameCreationOptions {
-    pub persistent: bool,
-    pub write_once: bool,
-    pub cache_reference: FrameCacheReference,
-}
-
-impl FrameInternal for Frame {
-
-    fn get_clear_color(&self) -> Option<wgpu::Color> {
-        return match self.write_lock {
-            LockStatus::FutureLock | LockStatus::FutureUnlock => Some(wgpu::Color::RED),
-            LockStatus::Unlocked | LockStatus::Locked => None,
-        }
-    }
-
-    fn get_cache_reference(&self) -> FrameCacheReference {
-        return self.cache_reference;
-    }
-
-    fn is_writable(&self) -> bool {
-        return self.write_lock != LockStatus::Locked;
-    }
-
-    fn create(size: (u32,u32),options: FrameCreationOptions) -> Self {
-        return Self {
-            usage: FrameType::Normal,
-            write_lock: match options.write_once {
-                true => LockStatus::FutureLock,
-                false => match options.persistent {
-                    true => LockStatus::FutureUnlock,
-                    false => LockStatus::FutureLock,
-                },
-            },
-            cache_reference: options.cache_reference,
-            width: size.0,
-            height: size.1,
-            command_buffer: Default::default()
-        };
-    }
-
-    fn create_texture(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
-        return Self {
-            width: size.0,
-            height: size.1,
-            cache_reference,
-            usage: FrameType::Texture,
-            command_buffer: Default::default(),
-            write_lock: LockStatus::Locked,
-        }
-    }
-
-    fn create_output(size: (u32,u32),cache_reference: FrameCacheReference) -> Self {
-        return Self {
-            usage: FrameType::Output,
-            width: size.0,
-            height: size.1,
-            command_buffer: Default::default(),
-            write_lock: LockStatus::FutureLock,
-            cache_reference,
-        };
-    }
-
-    fn get_command_buffer(&self) -> Result<&[FrameCommand],FrameError> {
-        if !self.is_writable() {
-            return Err(FrameError::ReadonlyFrame);
-        }
-        return Ok(&self.command_buffer);
-    }
-
-    fn clear(&mut self) {
-        match self.write_lock {
-            LockStatus::FutureUnlock => self.write_lock = LockStatus::Unlocked,
-            LockStatus::FutureLock => self.write_lock = LockStatus::Locked,
-            _ => {}
-        }
-        self.command_buffer.clear();
-    }
-}
-
-pub enum FrameCommand {
-    /* Single Fire Draw Commands */
-
-    DrawFrame(FrameCacheReference,DrawData),
-
-    /* Set Based Draw Commands */
-
-    DrawFrameSet(FrameCacheReference,Vec<DrawData>),
-
-    /* Other */
-
-    SetTextureFilter(FilterMode),
-    SetTextureAddressing(AddressMode),
-}
-
 pub struct DrawData {
-    pub area: Area,
-    pub uv: Area,
+    pub destination: Area,
+    pub source: Area,
     pub color: Color,
     pub rotation: f32
 }
@@ -162,79 +21,278 @@ pub struct DrawData {
 impl Default for DrawData {
     fn default() -> Self {
         Self {
-            area: Area::ONE,
-            uv: Area::ONE,
+            destination: Area::default(),
+            source: Area::default(),
             color: Color::WHITE,
             rotation: 0.0
         }
     }
 }
 
-fn validate_src_dst_op(destination: &Frame,source: &Frame) -> Result<(),FrameError> {
-    if source.usage == FrameType::Output {
-        return Err(FrameError::OutputMisuse);
-    }
-
-    if match source.write_lock {
-        LockStatus::FutureUnlock | LockStatus::FutureLock => true,
-        LockStatus::Unlocked | LockStatus::Locked  => false,
-    } {
-        return Err(FrameError::EmptySource);
-    }
-
-    if !destination.is_writable() {
-        return Err(FrameError::ReadonlyDestination);
-    }
-
-    if destination.cache_reference == source.cache_reference {
-        return Err(FrameError::CircularReference);
-    }
-
-    return Ok(());
+pub enum FrameCommand {
+    DrawFrame(FrameCacheReference,DrawData),
+    SetTextureFilter(FilterMode),
+    SetTextureAddressing(AddressMode),
 }
 
-impl Frame {
+pub struct OutputFrame {
+    size: (u32,u32),
+    cache_reference: FrameCacheReference,
+    command_buffer: Vec<FrameCommand>,
+    clear_color: wgpu::Color
+}
 
-    pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
-        self.command_buffer.push(FrameCommand::SetTextureFilter(filter_mode));
+pub struct TextureFrame {
+    cache_reference: FrameCacheReference,
+    size: (u32,u32),
+}
+
+pub struct TempFrame {
+    size: CacheSize,
+    cache_reference: FrameCacheReference,
+    command_buffer: Vec<FrameCommand>,
+    clear_color: wgpu::Color,
+}
+
+pub struct LongLifeFrame {
+    size: (u32,u32),
+    cache_reference: FrameCacheReference,
+    command_buffer: Vec<FrameCommand>,  
+}
+
+pub trait FrameReference {
+    fn get_cache_reference(&self) -> FrameCacheReference;
+
+    /// The size of the frame as requested by the user.
+    fn get_input_size(&self) -> (u32,u32);
+
+    /// The size of the real texture this frame renders to.
+    fn get_output_size(&self) -> (u32,u32);
+
+    fn get_output_uv_size(&self) -> (f32,f32) {
+        let input = self.get_input_size();
+        let output = self.get_output_size();
+
+        return (
+            input.0 as f32 / output.0 as f32,
+            input.1 as f32 / output.1 as f32,
+        )
+    }
+}
+
+pub trait MutableFrame: FrameReference {
+    fn push_command(&mut self,frame_command: FrameCommand);
+    fn get_commands(&self) -> &[FrameCommand];
+    fn clear_commands(&mut self);
+    fn get_clear_color(&self) -> Option<wgpu::Color>;
+}
+
+pub trait MutableFrameController: MutableFrame {
+    fn set_texture_filter(&mut self,filter_mode: FilterMode) {
+        self.push_command(
+            FrameCommand::SetTextureFilter(filter_mode)
+        );
+    }
+    fn set_texture_addressing(&mut self,address_mode: AddressMode) {
+        self.push_command(
+            FrameCommand::SetTextureAddressing(address_mode)
+        );
+    }
+    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData) {
+        self.push_command(
+            FrameCommand::DrawFrame(
+                source.get_cache_reference(),
+                DrawData {
+                    destination: draw_data.destination,
+                    source: draw_data.source.multiply_2d(source.get_output_uv_size()),
+                    color: draw_data.color,
+                    rotation: draw_data.rotation
+                }
+            )
+        );
+    }
+    fn size(&self) -> (u32,u32) {
+        return self.get_input_size();
+    }
+}
+
+impl FrameReference for OutputFrame {
+    fn get_cache_reference(&self) -> FrameCacheReference {
+        return self.cache_reference;
     }
 
-    pub fn set_texture_addressing(&mut self,address_mode: AddressMode) {
-        self.command_buffer.push(FrameCommand::SetTextureAddressing(address_mode));
+    fn get_input_size(&self) -> (u32,u32) {
+        return self.size;
     }
 
-    /* Draw Commands */
-    pub fn draw(&mut self,source_frame: &Frame,draw_data: DrawData) -> Result<(),FrameError> {
-        validate_src_dst_op(self, source_frame)?;
-        self.command_buffer.push(FrameCommand::DrawFrame(source_frame.cache_reference,draw_data));
-        return Ok(());
+    fn get_output_size(&self) -> (u32,u32) {
+        return self.size;
+    }
+}
+
+impl FrameReference for TextureFrame {
+    fn get_cache_reference(&self) -> FrameCacheReference {
+        return self.cache_reference;
     }
 
-    pub fn draw_set(&mut self,source_frame: &Frame,draw_data: Vec<DrawData>) -> Result<(),FrameError> {
-       validate_src_dst_op(self, source_frame)?;
-        self.command_buffer.push(FrameCommand::DrawFrameSet(source_frame.cache_reference,draw_data));
-        return Ok(());
+    fn get_input_size(&self) -> (u32,u32) {
+        return self.size;
     }
 
-    /* Size Getters */
-    pub fn size(&self) -> (u32,u32) {
-        return (self.width,self.height);
+    fn get_output_size(&self) -> (u32,u32) {
+        return self.size
+    }
+}
+
+impl FrameReference for TempFrame {
+    fn get_cache_reference(&self) -> FrameCacheReference {
+        return self.cache_reference;
     }
 
-    pub fn width(&self) -> u32 {
-        return self.width;
+    fn get_input_size(&self) -> (u32,u32) {
+        return self.size.get_input_size();
     }
 
-    pub fn height(&self) -> u32 {
-        return self.height;
+    fn get_output_size(&self) -> (u32,u32) {
+        return self.size.get_output_size();
+    }
+}
+
+impl FrameReference for LongLifeFrame {
+    fn get_cache_reference(&self) -> FrameCacheReference {
+        return self.cache_reference;
     }
 
-    pub fn area(&self) -> Area {
-        return Area {
-            x: 0.0,
-            y: 0.0,
-            width: self.width as f32,
-            height: self.height as f32,
+    fn get_input_size(&self) -> (u32,u32) {
+        return self.size;
+    }
+
+    fn get_output_size(&self) -> (u32,u32) {
+        return self.size;
+    }
+}
+
+impl MutableFrame for OutputFrame {
+    fn push_command(&mut self,frame_command: FrameCommand) {
+        self.command_buffer.push(frame_command);
+    }
+    
+    fn get_commands(&self) -> &[FrameCommand] {
+        return &self.command_buffer;
+    }
+    
+    fn clear_commands(&mut self) {
+        self.command_buffer.clear();
+    }
+    
+    fn get_clear_color(&self) -> Option<wgpu::Color> {
+        Some(self.clear_color)
+    }
+}
+
+impl MutableFrame for TempFrame {
+    fn push_command(&mut self,frame_command: FrameCommand) {
+        self.command_buffer.push(frame_command);
+    }
+    
+    fn get_commands(&self) -> &[FrameCommand] {
+        return &self.command_buffer;
+    }
+    
+    fn clear_commands(&mut self) {
+        self.command_buffer.clear();
+    }
+    
+    fn get_clear_color(&self) -> Option<wgpu::Color> {
+        Some(self.clear_color)
+    }
+}
+
+impl MutableFrame for LongLifeFrame {
+    fn push_command(&mut self,frame_command: FrameCommand) {
+        self.command_buffer.push(frame_command);
+    }
+    
+    fn get_commands(&self) -> &[FrameCommand] {
+        return &self.command_buffer;
+    }
+    
+    fn clear_commands(&mut self) {
+        self.command_buffer.clear();
+    }
+    
+    fn get_clear_color(&self) -> Option<wgpu::Color> {
+        None
+    }
+}
+
+pub struct FrameFactory;
+
+impl FrameFactory {
+
+    pub fn create_output(
+        size: (u32,u32),
+        cache_reference: FrameCacheReference,
+        command_buffer: Vec<FrameCommand>,
+        clear_color: wgpu::Color,
+    ) -> OutputFrame {
+        OutputFrame {
+            size,
+            cache_reference,
+            command_buffer,
+            clear_color,
         }
+    }
+
+    pub fn create_texture(
+        size: (u32,u32),
+        cache_reference: FrameCacheReference,
+    ) -> TextureFrame {
+        TextureFrame {
+            cache_reference,
+            size
+        }
+    }
+
+    pub fn create_long_life(
+        size: (u32,u32),
+        cache_reference: FrameCacheReference,
+        command_buffer: Vec<FrameCommand>
+    ) -> LongLifeFrame {
+        LongLifeFrame {
+            size,
+            cache_reference,
+            command_buffer,
+        }
+    }
+
+    pub fn create_temp_frame(
+        size: CacheSize,
+        cache_reference: FrameCacheReference,
+        command_buffer: Vec<FrameCommand>,
+        clear_color: wgpu::Color,
+    ) -> TempFrame {
+        TempFrame {
+            size,
+            cache_reference,
+            command_buffer,
+            clear_color
+        }
+    }
+}
+
+pub trait ReclaimCommandBuffer {
+    fn take_command_buffer(self) -> Vec<FrameCommand>;
+}
+
+impl ReclaimCommandBuffer for OutputFrame {
+    fn take_command_buffer(self) -> Vec<FrameCommand> {
+        return self.command_buffer;
+    }
+}
+
+impl ReclaimCommandBuffer for TempFrame {
+    fn take_command_buffer(self) -> Vec<FrameCommand> {
+        return self.command_buffer;
     }
 }

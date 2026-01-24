@@ -127,4 +127,8 @@ impl GraphicsProvider {
             self.get_safe_texture_dimension(value.1)
         );
     }
+
+    pub fn max_texture_dimension(&self) -> u32 {
+        return self.max_texture_dimension;
+    }
 }

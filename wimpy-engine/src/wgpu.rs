@@ -7,6 +7,7 @@ mod graphics_provider;
 mod constants;
 mod shader_definitions;
 mod frame_cache;
+mod double_buffer_set;
 
 pub use graphics_provider::*;
 pub use frame::*;

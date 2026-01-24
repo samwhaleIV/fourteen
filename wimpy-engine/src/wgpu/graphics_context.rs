@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use wgpu::{
     BindGroup,
     BindGroupLayoutDescriptor,
@@ -8,7 +6,6 @@ use wgpu::{
     BufferUsages,
     CommandEncoder,
     CommandEncoderDescriptor,
-    RenderPass,
     RenderPipeline,
     SurfaceError,
     SurfaceTexture,
@@ -19,73 +16,38 @@ use wgpu::{
 };
 
 use crate::{
-    shared::CacheArenaError,
+    shared::{
+        CacheArenaError,
+        VecPool
+    },
     wgpu::{
-        DrawData,
-        FrameError,
         command_processor::process_frame_commands,
         constants::{
             BindGroupIndices,
+            DEFAULT_COMMAND_BUFFER_SIZE,
             INDEX_BUFFER_SIZE,
             UNIFORM_BUFFER_ALIGNMENT
-        },
-        double_buffer::DoubleBuffer,
-        frame_cache::{
+        }, double_buffer::DoubleBuffer, double_buffer_set::DoubleBufferSet, frame_cache::{
             FrameCache,
             FrameCacheReference
-        },
-        shader_definitions::{
+        }, shader_definitions::{
             CameraUniform,
             QuadInstance,
             Vertex
-        },
-        texture_container::TextureData
+        }, texture_container::TextureData
     }
 };
 
 use super::{
     texture_container::TextureContainer,
     graphics_provider::GraphicsProvider,
-    frame::{
-        Frame,
-        FrameInternal,
-        FrameCreationOptions,
-    }
+    frame::*
 };
-
-pub struct DoubleBufferSet {
-    instances: DoubleBuffer<QuadInstance>,
-    uniforms: DoubleBuffer<CameraUniform>,
-}
-
-impl DoubleBufferSet {
-    pub fn reset_all(&mut self) {
-        self.instances.reset();
-        self.uniforms.reset();
-    }
-}
-
-impl DoubleBuffer<QuadInstance> {
-    pub fn write_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData) {
-        let range = self.push_convert(draw_data.into());
-        render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,downcast_range(range));
-    }
-    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,draw_data: &[DrawData]) {
-        let range = self.push_convert_all(draw_data);
-        render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,downcast_range(range));
-    }
-}
-
-const fn downcast_range(value: Range<usize>) -> Range<u32> {
-    return Range {
-        start: value.start as u32,
-        end: value.end as u32,
-    };
-}
 
 struct OutputBuilder {
     encoder: CommandEncoder,
-    frame: OutputFrame
+    output_frame_reference: FrameCacheReference,
+    output_frame_surface: SurfaceTexture,
 }
 
 pub struct GraphicsContext<TConfig> {
@@ -97,6 +59,7 @@ pub struct GraphicsContext<TConfig> {
     frame_cache: FrameCache<TConfig>,
     output_buffers: DoubleBufferSet,
     output_builder: Option<OutputBuilder>,
+    command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>
 }
 
 impl<TConfig> GraphicsContext<TConfig> {
@@ -108,33 +71,37 @@ impl<TConfig> GraphicsContext<TConfig> {
     }
 }
 
-struct OutputFrame {
-    cache_reference: FrameCacheReference,
-    surface: SurfaceTexture
-}
-
 pub trait GraphicsContextConfig {
     const INSTANCE_CAPACITY: usize;
     const UNIFORM_CAPACITY: usize;
-    const CACHE_INSTANCES: usize;
-    const CACHE_SIZES: &[(u32,u32)];
 }
 
-pub enum FrameLifetime {
-    Temporary,
-    Persistent
+#[derive(Copy,Clone)]
+pub struct CacheSize {
+    input: (u32,u32),
+    output: u32,
 }
 
-pub struct FrameConfig {
-    pub lifetime: FrameLifetime,
-    pub size: (u32,u32),
-    pub draw_once: bool
+impl CacheSize {
+    pub fn get_input_size(&self) -> (u32,u32) {
+        self.input
+    }
+    pub fn get_output_size(&self) -> (u32,u32) {
+        (self.output,self.output)
+    }
 }
 
 pub trait GraphicsContextController {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Frame;
-    fn render_frame(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError>;
-    fn get_frame(&mut self,config: FrameConfig) -> Frame;
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> TextureFrame;
+    fn render_frame(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError>;
+
+    fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize;
+    fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize);
+
+    fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame;
+    fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),GraphicsContextError>;
+
+    fn create_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame;
 }
 
 #[derive(Debug)]
@@ -142,20 +109,19 @@ pub enum GraphicsContextError {
     PipelineAlreadyActive,
     PipelineNotActive,
     CantCreateOutputSurface(SurfaceError),
-    FrameBakeFailure(FrameError),
-    FrameCacheError(CacheArenaError<(u32,u32),FrameCacheReference>)
+    FrameCacheError(CacheArenaError<u32,FrameCacheReference>)
 }
 
 pub trait GraphicsContextInternalController {
-    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError>;
-    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError>;
+    fn create_output_frame(&mut self,clear_color: wgpu::Color) -> Result<OutputFrame,GraphicsContextError>;
+    fn present_output_frame(&mut self,frame: OutputFrame) -> Result<(),GraphicsContextError>;
 }
 
 impl<TConfig> GraphicsContextInternalController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
-    fn create_output_frame(&mut self) -> Result<Frame,GraphicsContextError> {
+    fn create_output_frame(&mut self,clear_color: wgpu::Color) -> Result<OutputFrame,GraphicsContextError> {
         if self.output_builder.is_some() {
             return Err(GraphicsContextError::PipelineAlreadyActive);
         }
@@ -171,15 +137,22 @@ where
         let cache_reference = self.frame_cache.insert_keyless(texture_container);
 
         self.output_builder = Some(OutputBuilder {
-            frame: OutputFrame { cache_reference, surface },
+            output_frame_reference: cache_reference,
+            output_frame_surface: surface,
             encoder: self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder")
             })
         });
-        return Ok(FrameInternal::create_output(size,cache_reference));
+
+        return Ok(FrameFactory::create_output(
+            size,
+            cache_reference,
+            self.command_buffer_pool.take_item(),
+            clear_color
+        ));
     }
 
-    fn present_output_frame(&mut self) -> Result<(),GraphicsContextError> {
+    fn present_output_frame(&mut self,frame: OutputFrame) -> Result<(),GraphicsContextError> {
         let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
             return Err(GraphicsContextError::PipelineNotActive);
         };
@@ -187,12 +160,12 @@ where
         self.output_buffers.instances.write_out(queue);
         self.output_buffers.uniforms.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
         queue.submit(std::iter::once(output_builder.encoder.finish()));
-        if let Err(error) = self.frame_cache.remove(output_builder.frame.cache_reference) {
+        if let Err(error) = self.frame_cache.remove(output_builder.output_frame_reference) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
-        output_builder.frame.surface.present();
-        self.frame_cache.end_all_leases();
+        output_builder.output_frame_surface.present();
         self.output_buffers.reset_all();
+        self.command_buffer_pool.return_item(frame.take_command_buffer());
         return Ok(());
     }
 }
@@ -201,28 +174,28 @@ impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
 where
     TConfig: GraphicsContextConfig
 {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Frame {
+    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> TextureFrame {
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
             &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
             texture_data
         );
-        return FrameInternal::create_texture(
+        return FrameFactory::create_texture(
             texture_container.size(),
             self.frame_cache.insert_keyless(texture_container)
         );
     }
 
-    fn render_frame(&mut self,frame: &mut Frame) -> Result<(),GraphicsContextError> {
+    fn render_frame(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError> {
         let Some(frame_builder) = &mut self.output_builder else {
-            frame.clear();
+            frame.clear_commands();
             return Err(GraphicsContextError::PipelineNotActive);
         };
 
         let texture_view = match self.frame_cache.get(frame.get_cache_reference()) {
             Ok(value) => value.get_view(),
             Err(error) => {
-                frame.clear();
+                frame.clear_commands();
                 return Err(GraphicsContextError::FrameCacheError(error));
             }
         };
@@ -251,34 +224,73 @@ where
         render_pass.set_vertex_buffer(0,self.vertex_buffer.slice(..)); // Vertex Buffer
         render_pass.set_vertex_buffer(1,self.output_buffers.instances.get_output_buffer().slice(..)); // Instance Buffer
 
-        let uniform_buffer_range = self.output_buffers.uniforms.push(get_camera_uniform(frame.size()));
+        let uniform_buffer_range = self.output_buffers.uniforms.push(get_camera_uniform(frame.get_input_size()));
 
         let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
         render_pass.set_bind_group(BindGroupIndices::UNIFORM,&self.uniform_bind_group,&[dynamic_offset as u32]); // Uniform Buffer Bind Group
 
-        let command_buffer = match frame.get_command_buffer() {
-            Ok(value) => value,
-            Err(error) => {
-                frame.clear();
-                return Err(GraphicsContextError::FrameBakeFailure(error));
-            },
-        };
-        process_frame_commands(&self.frame_cache,&mut self.output_buffers.instances,&mut render_pass,command_buffer);
-        frame.clear();
+        process_frame_commands(
+            &self.frame_cache,
+            &mut self.output_buffers.instances,
+            &mut render_pass,frame.get_commands()
+        );
+        frame.clear_commands();
         return Ok(());
     }
 
-    fn get_frame(&mut self,config: FrameConfig) -> Frame {
-        let frame = match config.lifetime {
-            FrameLifetime::Temporary => {
-                self.get_temp_frame(config.size,config.draw_once)
-            },
-            FrameLifetime::Persistent => {
-                self.get_persistent_frame(config.size,config.draw_once)
+    fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
+        let cache_reference = match self.frame_cache.start_lease(cache_size.output) {
+            Ok(value) => value, 
+            Err(error) => {
+                log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
+                self.frame_cache.insert_with_lease(cache_size.output,TextureContainer::create_mutable(
+                    &self.graphics_provider,
+                    &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
+                    cache_size.get_output_size()
+                ))
             },
         };
-        return frame;
+        return FrameFactory::create_temp_frame(
+            cache_size,
+            cache_reference,
+            self.command_buffer_pool.take_item(),
+            clear_color
+        );
     }
+    
+    fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),GraphicsContextError> {
+        let cache_reference = frame.get_cache_reference();
+
+        self.command_buffer_pool.return_item(frame.take_command_buffer());
+
+        if let Err(error) = self.frame_cache.end_lease(cache_reference) {
+            return Err(GraphicsContextError::FrameCacheError(error));
+        }
+
+        Ok(())
+    }
+    
+    fn create_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
+        let size = self.graphics_provider.get_safe_texture_size(size);
+        return FrameFactory::create_long_life(
+            size,
+            self.frame_cache.insert_keyless(TextureContainer::create_mutable(
+                &self.graphics_provider,
+                &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
+                size
+            )),
+            Vec::with_capacity(DEFAULT_COMMAND_BUFFER_SIZE)
+        );
+    }
+
+    fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize {
+        todo!()
+    }
+    
+    fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
+        todo!()
+    }
+    
 }
 
 impl<TConfig> GraphicsContext<TConfig>
@@ -287,38 +299,6 @@ where
 {
     pub fn create(graphics_provider: GraphicsProvider) -> Self {
         return create_graphics_context(graphics_provider);
-    }
-
-    fn get_persistent_frame(&mut self,size: (u32,u32),write_once: bool) -> Frame {
-        let size = self.graphics_provider.get_safe_texture_size(size);
-        let frame = TextureContainer::create_mutable(
-            &self.graphics_provider,
-            &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
-            size
-        );
-        let index = self.frame_cache.insert_keyless(frame);
-        return FrameInternal::create(size,FrameCreationOptions {
-            persistent: true,
-            cache_reference: index,
-            write_once
-        });
-    }
-
-    fn get_temp_frame(&mut self,size: (u32,u32),write_once: bool) -> Frame {
-        let size = self.graphics_provider.get_safe_texture_size(size);
-        let cache_reference = match self.frame_cache.start_lease(size) {
-            Ok(cache_reference) => cache_reference,
-            Err(error) => {
-                log::info!("Graphics context creating a new temp frame. Reason: {:?}",error);
-                let new_texture = TextureContainer::create_mutable(
-                    &self.graphics_provider,
-                    &self.render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE),
-                    size
-                );
-                self.frame_cache.insert_with_lease(size,new_texture)     
-            },
-        };
-        return FrameInternal::create(size,FrameCreationOptions { persistent: false, write_once, cache_reference });
     }
 }
 
@@ -400,33 +380,14 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         }],
         label: Some("View Projection Bind Group"),
     });
-    
-    let frame_cache = {
-        let mut frame_cache = FrameCache::default();
-        let cache_instances = TConfig::CACHE_INSTANCES;
-        match cache_instances >= 1 {
-            true => {
-                let bind_group_layout = &render_pipeline.get_bind_group_layout(BindGroupIndices::TEXTURE);
-                let mut count = 0;
-                for size in TConfig::CACHE_SIZES {
-                    let size = graphics_provider.get_safe_texture_size(*size);
-                    for _ in 0..cache_instances {
-                        let mutable_texture = TextureContainer::create_mutable(&graphics_provider,bind_group_layout,size);
-                        frame_cache.insert(size,mutable_texture);
-                        count += 1;
-                    }
-                }
-                log::info!("Created {} frame cache instance{}.",count,match count == 1 { true => "", false => "s" });
-            },
-            false => log::warn!("Frame cache instances is 0. No caches will be created.")
-        };
-        frame_cache
-    };
 
     let output_buffers = DoubleBufferSet {
         instances: DoubleBuffer::with_capacity(TConfig::INSTANCE_CAPACITY,instance_buffer),
         uniforms: DoubleBuffer::with_capacity(TConfig::UNIFORM_CAPACITY,uniform_buffer),
     };
+
+    let frame_cache = FrameCache::default();
+    let command_buffer_pool = VecPool::new();
 
     return GraphicsContext {
         graphics_provider,
@@ -436,6 +397,7 @@ Triangle list should generate 0-1-2 2-1-3 in CCW
         uniform_bind_group,
         frame_cache,
         output_buffers,
+        command_buffer_pool,
         output_builder: None,
     };
 }

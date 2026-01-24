@@ -9,7 +9,7 @@ use image::{
     ImageReader
 };
 
-use wgpu::Limits;
+use wgpu::{Color, Limits};
 
 use wimpy_engine::{
     WimpyApp,
@@ -246,7 +246,7 @@ where
                     return;
                 };
 
-                let mut output_frame = match graphics_context.create_output_frame() {
+                let mut output_frame = match graphics_context.create_output_frame(Color::RED) {
                     Ok(value) => value,
                     Err(error) => {
                         log::error!("Could not create output frame: {:?}",error);
@@ -260,7 +260,7 @@ where
                     log::error!("{:?}",error);
                 }
 
-                if let Err(error) = graphics_context.present_output_frame() {
+                if let Err(error) = graphics_context.present_output_frame(output_frame) {
                     log::error!("{:?}",error);
                 }
 

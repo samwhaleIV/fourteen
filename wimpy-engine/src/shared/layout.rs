@@ -45,7 +45,34 @@ impl Area {
         }
     }
 
-    fn size(&self) -> (Unit,Unit) {
+    pub fn from_size(size: (Unit,Unit)) -> Self {
+        return Self {
+            x: 0.0,
+            y: 0.0,
+            width: size.0,
+            height: size.1,
+        }
+    }
+
+    pub fn multiply(self,value: Unit) -> Self {
+        return Self {
+            x: self.x * value,
+            y: self.y * value,
+            width: self.width * value,
+            height: self.height * value,
+        }
+    }
+
+    pub fn multiply_2d(self,value: (Unit,Unit)) -> Self {
+        return Self {
+            x: self.x * value.0,
+            y: self.y * value.1,
+            width: self.width * value.0,
+            height: self.height * value.1,
+        }
+    }
+
+    pub fn size(&self) -> (Unit,Unit) {
         return (self.width,self.height);
     }
 }

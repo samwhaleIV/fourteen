@@ -7,3 +7,5 @@ impl BindGroupIndices {
 
 pub const UNIFORM_BUFFER_ALIGNMENT: usize = 256;
 pub const INDEX_BUFFER_SIZE: u32 = 6;
+
+pub const DEFAULT_COMMAND_BUFFER_SIZE: usize = 32;

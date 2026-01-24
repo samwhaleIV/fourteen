@@ -75,16 +75,6 @@ where
                     CommandReturnFlow::Skip => continue,
                 },
 
-                FrameCommand::DrawFrameSet(reference,draw_data) => match self.update_sampler(*reference) {
-                    CommandReturnFlow::Proceed(sampler_status) => {
-                        if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
-                            render_pass.set_bind_group(BindGroupIndices::TEXTURE,bind_group,&[]);
-                        }
-                        instance_buffer.write_quad_set(render_pass,&draw_data);
-                    },
-                    CommandReturnFlow::Skip => continue,
-                },
-
                 FrameCommand::SetTextureFilter(value) => {
                     let value = *value;
                     if self.filter_mode != value {

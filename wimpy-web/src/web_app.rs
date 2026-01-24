@@ -23,13 +23,7 @@ use web_sys::{
 };
 
 use wgpu::{
-    CopyExternalImageDestInfo,
-    CopyExternalImageSourceInfo,
-    ExternalImageSource,
-    InstanceDescriptor,
-    Limits,
-    Origin2d,
-    SurfaceTarget
+    Color, CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, InstanceDescriptor, Limits, Origin2d, SurfaceTarget
 };
 
 use wimpy_engine::{
@@ -227,7 +221,7 @@ where
     fn render_frame(&mut self) {
         self.input_manager.update();
 
-        let mut output_frame = match self.graphics_context.create_output_frame() {
+        let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Could not create output frame: {:?}",error);
@@ -247,7 +241,7 @@ where
             log::error!("{:?}",error);
         }
 
-        if let Err(error) = self.graphics_context.present_output_frame() {
+        if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
             log::error!("{:?}",error);
         }
     }

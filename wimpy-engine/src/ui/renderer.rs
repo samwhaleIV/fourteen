@@ -1,16 +1,11 @@
 use crate::{
-    shared::{
-        Area,
-    },
+    shared::Area,
     ui::{
         LocateTexture,
         NodeOutputBuilder,
         UINodeInput,
         UINodeOutput,
-    },
-    wgpu::{
-        Frame,
-    }
+    }, wgpu::TempFrame
 };
 
 enum UIRendererCommand {
@@ -21,13 +16,15 @@ enum UIRendererCommand {
 
 struct UIRenderer {
     command_buffer: Vec<UIRendererCommand>,
-    frame_buffer: Vec<Frame>,
+    frame_buffer: Vec<TempFrame>,
+    draw_call_buffer: Vec<UINodeOutput>
 }
 
 impl NodeOutputBuilder<UINodeInput,UINodeOutput> for UIRenderer {
     fn clear(&mut self) {
         self.command_buffer.clear();
         self.frame_buffer.clear();
+        self.draw_call_buffer.clear();
     }
 
     fn start_branch(&mut self,input: &UINodeInput,branch_cache: &UINodeOutput) {
@@ -56,9 +53,19 @@ impl NodeOutputBuilder<UINodeInput,UINodeOutput> for UIRenderer {
 }
 
 // impl UIRenderer {
-//     pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: GraphicsContext<VirtualDevice>) {
-//         // for command in &self.command_buffer {
-
-//         // }
+//     pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: &impl GraphicsContextController) {
+//         for command in &self.command_buffer {
+//             match command {
+//                 UIRendererCommand::OpenFrame(area) => {
+//                     let frame = graphics_context.create_frame(FrameConfig {
+//                         lifetime: FrameLifetime::Temporary,
+//                         size: area.size(),
+//                         render_once: true,
+//                     });
+//                 },
+//                 UIRendererCommand::CloseFrame => todo!(),
+//                 UIRendererCommand::Draw(output) => todo!(),
+//             }
+//         }
 //     }
 // }

@@ -4,8 +4,12 @@ mod layout;
 mod cache_arena;
 mod keyed_pools;
 
+mod pool;
+
 pub use color::*;
 pub use layout::*;
+
+pub use pool::*;
 
 pub use cache_arena::{
     CacheArena,
