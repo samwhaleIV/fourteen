@@ -21,7 +21,7 @@ pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
     Impulse::Menu
 ];
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Impulse {
     Up = 0,
     Down = 1,
@@ -47,7 +47,7 @@ impl Impulse {
     }
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum ImpulseState {
     Pressed,
     Released,
@@ -90,7 +90,7 @@ impl Default for ImpulseSet {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 pub struct ImpulseEvent {
     pub impulse: Impulse,
     pub state: ImpulseState

@@ -42,7 +42,6 @@ pub struct InputManager {
 }
 
 pub trait InputManagerReadonly {
-    fn get_gamepad_axes_or_default(&self) -> InterpretiveAxes;
     fn iter_recent_events(&self) -> impl Iterator<Item = &ImpulseEvent>;
     fn get_axes(&self) -> InterpretiveAxes;
     fn get_strict_direction(&self) -> Direction;
@@ -92,14 +91,16 @@ impl Default for InputManager {
     }
 }
 
-impl InputManagerReadonly for InputManager {
+impl InputManager {
     fn get_gamepad_axes_or_default(&self) -> InterpretiveAxes {
         match &self.gamepad_manager {
             Some(value) => value.get_axes(),
             None => Default::default(),
         }
     }
+}
 
+impl InputManagerReadonly for InputManager {
     fn iter_recent_events(&self) -> impl Iterator<Item = &ImpulseEvent> {
         self.recent_impulses.iter()
     }

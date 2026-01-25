@@ -17,7 +17,8 @@ use wimpy_engine::{
     WimpyImageError,
     input::{
         InputManager,
-        InputManagerAppController
+        InputManagerAppController,
+        InputManagerReadonly
     },
     wgpu::{
         GraphicsContext,
@@ -129,7 +130,7 @@ impl WimpyIO for DekstopAppIO {
     fn load_key_value_store(kvs: &mut wimpy_engine::storage::KeyValueStore) {
         todo!()
     }
-    
+
     async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyImageError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
@@ -236,6 +237,17 @@ where
     fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
         match event {
             WindowEvent::RedrawRequested => {
+                self.input_manager.update();
+
+                for event in self.input_manager.iter_recent_events() {
+                    log::info!("Impulse Event: {:?}",event);
+                }
+
+                //let axes = self.input_manager.get_axes();
+
+                //log::info!("Axes: {:?}",axes);
+
+
                 let Some(window) = &self.window else {
                     log::error!("Redraw requested, but window could not be located.");
                     return;

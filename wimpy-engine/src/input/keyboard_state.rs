@@ -7,10 +7,7 @@ use std::{
 };
 
 use crate::input::{
-    IMPULSE_TYPE_COUNT,
-    Impulse,
-    ImpulseSet,
-    KeyCode
+    IMPULSE_TYPE_COUNT, Impulse, ImpulseSet, ImpulseState, KeyCode
 };
 
 const KEY_CODE_COUNT: usize = KeyCode::Pause as usize;
@@ -62,8 +59,9 @@ impl KeyboardTranslator {
     pub fn translate(&self,keyboard_state: &KeyboardState) -> ImpulseSet {
         let mut impulse_set = ImpulseSet::default();
         for (key_code,impulse) in self.binds.iter() {
-            let is_pressed = keyboard_state.is_pressed(*key_code);
-            impulse_set.set(*impulse,is_pressed.into());
+            if keyboard_state.is_pressed(*key_code) {
+                impulse_set.set(*impulse,ImpulseState::Pressed);
+            }
         }
         impulse_set
     }

@@ -1,6 +1,5 @@
 Highest priority
 ----------------
-Input texture size validation
 Platform unified key-value store IO
 
 High priority

@@ -37,14 +37,14 @@ impl Default for Direction {
     }
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum AxisSign {
     Negative,
     Zero,
     Positive,
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 pub struct InterpretiveAxis {
     sign: AxisSign,
     value: f32
@@ -127,7 +127,7 @@ impl InterpretiveAxis {
     }
 }
 
-#[derive(Default,Copy,Clone)]
+#[derive(Default,Copy,Clone,Debug)]
 pub struct InterpretiveAxes {
     pub x: InterpretiveAxis,
     pub y: InterpretiveAxis

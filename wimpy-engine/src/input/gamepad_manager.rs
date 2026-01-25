@@ -1,12 +1,5 @@
 use gilrs::{
-    Axis,
-    Button,
-    EventType,
-    Gamepad,
-    GamepadId,
-    Gilrs,
-    Error::NotImplemented,
-    ev::state::{
+    Axis, Button, Error::NotImplemented, EventType, Gamepad, GamepadId, Gilrs, GilrsBuilder, ev::state::{
         AxisData,
         ButtonData
     }
@@ -51,7 +44,16 @@ const THUMBSTICK_IMPULSE_THRESHOLD: f32 = 0.5;
 
 impl GamepadManager {
     pub fn new() -> Result<Self,GamepadManagerError> {
-        let gilrs = match Gilrs::new() {
+        let builder = GilrsBuilder::new()
+            .set_update_state(false)
+            .add_env_mappings(false)
+            .add_included_mappings(false)
+            .with_force_feedback(false)
+            .with_default_filters(true)
+            .add_mappings(include_str!("gamecontrollerdb.txt"))
+            ;
+
+        let gilrs = match builder.build() {
             Ok(value) => value,
             Err(NotImplemented(_)) => {
                 return Err(GamepadManagerError::UnsupportedGilrsPlatform);
@@ -71,14 +73,14 @@ impl GamepadManager {
         if let Some(id) = self.active_gamepad_id && self.gilrs.gamepad(id).is_connected() {
             return;
         }
-        let new_id = None;
+        let mut new_id = None;
         for(id,gamepad) in self.gilrs.gamepads() {
             if gamepad.is_connected() {
-                self.active_gamepad_id = Some(id);
+                new_id = Some(id);
                 break;
             }
         }
-        match (new_id,self.active_gamepad_id) {
+        match (self.active_gamepad_id,new_id) {
             (None, Some(new_id)) => {
                 let new = self.gilrs.gamepad(new_id);
                 log::info!("Active gamepad set to '{}' (UUID: {:?}).",new.name(),new.uuid());
@@ -105,7 +107,7 @@ impl GamepadManager {
             let gamepad = self.gilrs.gamepad(event.id);
             match event.event {
                 EventType::Connected => {
-                    log::info!("Gamepad '{}' connected (UUID: {:?})",gamepad.name(),gamepad.uuid());
+                    log::info!("Gamepad '{}' connected (UUID: {:?}) (Mapping source: {:?})",gamepad.name(),gamepad.uuid(),gamepad.mapping_source());
                 },
                 EventType::Disconnected => {
                     log::info!("Gamepad '{}' disconnected (UUID: {:?})",gamepad.name(),gamepad.uuid());
@@ -178,8 +180,12 @@ fn get_interpretive_axes(gamepad: &Gamepad<'_>) -> InterpretiveAxes {
 
 fn translate_gamepad_axis(axis_data: Option<&AxisData>) -> InterpretiveAxis {
     match axis_data {
-        Some(axis_data) => InterpretiveAxis::from_f32(axis_data.value()),
-        None => Default::default(),
+        Some(axis_data) => {
+            InterpretiveAxis::from_f32(axis_data.value())
+        },
+        None => {
+            Default::default()
+        },
     }
 }
 

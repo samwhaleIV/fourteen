@@ -33,7 +33,7 @@ use wimpy_engine::{
     WimpyImageError,
     input::{
         InputManager,
-        InputManagerAppController
+        InputManagerAppController, InputManagerReadonly
     },
     storage::{
         KeyValueStore,
@@ -220,6 +220,10 @@ where
 
     fn render_frame(&mut self) {
         self.input_manager.update();
+
+        let axes = self.input_manager.get_axes();
+
+        log::info!("GAMEPAD BS: Y Axis: {:?}",axes.y);
 
         let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
             Ok(value) => value,
