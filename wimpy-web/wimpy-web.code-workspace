@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../wimpy-engine"
+		}
+	],
+	"settings": {
+		"rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+		"powershell.cwd": "wimpy-web"
+	}
+}

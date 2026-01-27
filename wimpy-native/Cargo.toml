@@ -8,8 +8,14 @@ anyhow = { workspace = true }
 log = { workspace = true }
 wgpu = { workspace = true }
 wimpy-engine = { path = "../wimpy-engine" }
-
-winit = { version = "0.30.12" }
 env_logger = { version = "0.11.8" }
 pollster = "0.4.0"
 image = "0.25.9"
+
+# winit = "0.30.12"
+# gilrs = { path = "../../gilrs/gilrs", default-features = false, features = ["xinput"]}
+
+[dependencies.sdl2]
+version = "0.38"
+default-features = false
+features = [ "static-link", "use-vcpkg", "raw-window-handle" ]

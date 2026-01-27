@@ -1,0 +1,53 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug executable 'wimpy-native'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "run",
+                    "--bin=wimpy-native",
+                    "--package=wimpy-native"
+                ]
+            },
+            "args": [],
+            "env": {
+                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
+            }
+        },
+        {
+            "name": "Debug unit tests in library 'wimpy_engine'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--package=wimpy-engine"
+                ]
+            },
+            "env": {
+                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
+            }
+        },
+        {
+            "name": "Debug unit tests in executable 'wimpy-native'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bin=wimpy-native",
+                    "--package=wimpy-native"
+                ]
+            },
+            "env": {
+                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
+            }
+        }
+    ]
+}

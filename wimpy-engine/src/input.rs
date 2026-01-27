@@ -1,5 +1,5 @@
 mod impulse;
-mod gamepad_manager;
+mod gamepad;
 mod input_manager;
 mod direction;
 mod move_to_front_stack;
@@ -9,6 +9,6 @@ mod key_code;
 pub use impulse::*;
 pub use direction::*;
 pub use input_manager::*;
-pub use gamepad_manager::*;
+pub use gamepad::*;
 pub use keyboard_state::*;
 pub use key_code::*;

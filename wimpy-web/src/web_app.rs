@@ -32,8 +32,7 @@ use wimpy_engine::{
     WimpyIO,
     WimpyImageError,
     input::{
-        InputManager,
-        InputManagerAppController, InputManagerReadonly
+        GamepadInput, InputManager, InputManagerAppController, InputManagerReadonly
     },
     storage::{
         KeyValueStore,
@@ -219,7 +218,7 @@ where
     }
 
     fn render_frame(&mut self) {
-        self.input_manager.update();
+        self.input_manager.update(GamepadInput::default());
 
         let axes = self.input_manager.get_axes();
 

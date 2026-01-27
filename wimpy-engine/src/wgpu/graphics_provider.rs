@@ -31,7 +31,7 @@ pub enum SizeError {
 
 impl GraphicsProvider {
     pub async fn new(mut config: GraphicsProviderConfig) -> Result<Self,GraphicsProviderError> {
-        let adapter = match config.instance.request_adapter(&wgpu::RequestAdapterOptionsBase {
+        let adapter = match config.instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::None,
             force_fallback_adapter: false,  
             compatible_surface: Some(&config.surface)

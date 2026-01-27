@@ -10,7 +10,7 @@ use crate::input::{
     IMPULSE_TYPE_COUNT, Impulse, ImpulseSet, ImpulseState, KeyCode
 };
 
-const KEY_CODE_COUNT: usize = KeyCode::Pause as usize;
+const KEY_CODE_COUNT: usize = KeyCode::NumpadSubtract as usize;
 const BIT_MAP_COUNT: usize = (KEY_CODE_COUNT + 63) / 64;
 
 pub struct KeyboardTranslator {

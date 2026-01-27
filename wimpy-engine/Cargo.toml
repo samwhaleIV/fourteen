@@ -11,4 +11,4 @@ bytemuck = {version = "1.24.0",features = ["derive"]}
 cgmath = "0.18.0"
 slotmap = "1.1.1"
 smallvec = "1.15.1"
-gilrs = "0.11"
+bitflags = "2.10.0"

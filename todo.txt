@@ -1,6 +1,8 @@
 Highest priority
 ----------------
 Platform unified key-value store IO
+convert 'input/key_code.rs' to bitflags
+convert impulse state to bitflags
 
 High priority
 ----------------

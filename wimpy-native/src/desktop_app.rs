@@ -1,7 +1,7 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::sync::Arc;
+use std::{cmp::Ordering, collections::{BTreeMap, BTreeSet, HashMap}, sync::Arc};
 
 use image::{
     DynamicImage,
@@ -9,6 +9,7 @@ use image::{
     ImageReader
 };
 
+use sdl2::{controller::{Axis, Button, GameController}, event::{Event, WindowEvent}};
 use wgpu::{Color, Limits};
 
 use wimpy_engine::{
@@ -16,9 +17,7 @@ use wimpy_engine::{
     WimpyIO,
     WimpyImageError,
     input::{
-        InputManager,
-        InputManagerAppController,
-        InputManagerReadonly
+        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
     },
     wgpu::{
         GraphicsContext,
@@ -32,45 +31,7 @@ use wimpy_engine::{
     }
 };
 
-use winit::{
-    application::ApplicationHandler,
-    dpi::{
-        PhysicalPosition,
-        PhysicalSize,
-        Position
-    },
-    event::*,
-    event_loop::ActiveEventLoop,
-    keyboard::PhysicalKey,
-    window::{
-        Window,
-        WindowId,
-    }
-};
-
 use crate::key_code::translate_key_code;
-
-pub struct DesktopApp<TWimpyApp,TConfig> {
-    window: Option<Arc<Window>>,
-    graphics_context: Option<GraphicsContext<TConfig>>,
-    input_manager: InputManager,
-    wimpy_app: TWimpyApp,
-    frame_number: u128,
-    event_number: u128,
-}
-
-impl<TWimpyApp,TConfig> DesktopApp<TWimpyApp,TConfig> {
-    pub fn new(wimpy_app: TWimpyApp) -> Self {
-        return Self {
-            window: None,
-            graphics_context: None,
-            wimpy_app,
-            frame_number: Default::default(),
-            event_number: Default::default(),
-            input_manager: Default::default(),
-        }
-    }
-}
 
 pub trait WindowEventTraceConfig {
     const LOG_REDRAW: bool;
@@ -82,12 +43,6 @@ pub trait WindowEventTraceConfig {
     const KEY_CHANGE: bool;
     const LOG_WINDOW_FOCUS: bool;
     const LOG_OTHER: bool;
-}
-
-fn get_center_position(parent: PhysicalSize<u32>,child: PhysicalSize<u32>) -> Position {
-    let x = (parent.width - child.width) / 2;
-    let y = (parent.height - child.height) / 2;
-    return Position::Physical(PhysicalPosition::new(x as i32,y as i32));
 }
 
 struct DekstopAppIO;
@@ -159,232 +114,220 @@ impl WimpyIO for DekstopAppIO {
     }
 }
 
-impl<TWimpyApp,TConfig> ApplicationHandler for DesktopApp<TWimpyApp,TConfig>
+pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp)
 where
-    TConfig: GraphicsContextConfig + WindowEventTraceConfig,
-    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>,
+    TConfig: GraphicsContextConfig
 {
-    fn resumed(&mut self,event_loop: &ActiveEventLoop) {
-        if self.graphics_context.is_some() {
-            return;
+    let sdl_context = sdl2::init().expect("sdl context creation");
+    let video_subsystem = sdl_context.video().expect("sdl video subsystem creation");
+
+    let game_controller_subsystem = match sdl_context.game_controller() {
+        Ok(value) => Some(value),
+        Err(error) => {
+            log::error!("Could not initialize game controller subsystem: {}",error);
+            None
+        },
+    };
+
+    let window = video_subsystem
+        .window(
+            WINDOW_TITLE,
+            MINIMUM_WINDOW_SIZE.0,
+            MINIMUM_WINDOW_SIZE.1
+        )
+        .position_centered()
+        .resizable()
+        .metal_view()
+        .build()
+        .map_err(|e| e.to_string()).expect("sdl window creation");
+
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::GL,
+        ..Default::default()
+    });
+
+    let surface = unsafe {
+        instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window).unwrap()).expect("sdl window surface creation")
+    };
+
+    let mut graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
+        instance,
+        surface,
+        limits: Limits::defaults(),
+    })) {
+        Ok(device) => device,
+        Err(error) => {
+            log::error!("Failure to initialize wgpu: {:?}",error);
+            todo!();
+        }
+    };
+
+    let window_size = window.size();
+    graphics_provider.set_size(window_size.0,window_size.1);
+
+    let mut event_pump = sdl_context.event_pump().expect("sdl event pump creation");
+
+    let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+    let mut input_manager = InputManager::default();
+
+    let mut active_controller: Option<(u32,GameController)> = None;
+    let mut loaded_controllers: BTreeMap<u32,GameController> = Default::default();
+
+    'event_loop: loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Window {
+                    window_id,
+                    win_event: WindowEvent::SizeChanged(width, height),
+                    ..
+                } if window_id == window.id() => {
+                    graphics_context.get_graphics_provider_mut().set_size(
+                        width as u32,
+                        height as u32
+                    );
+                }
+                Event::KeyDown {
+                    keycode: Some(keycode),
+                    repeat,
+                    ..
+                } => {
+                    if !repeat && let Some(wk) = translate_key_code(keycode) {
+                        input_manager.set_key_code_pressed(wk);
+                    }
+                },
+                Event::KeyUp {
+                    keycode: Some(keycode),
+                    repeat,
+                    ..
+                } => {
+                    if !repeat && let Some(wk) = translate_key_code(keycode) {
+                        input_manager.set_key_code_released(wk);
+                    }
+                },
+                Event::Quit { .. } => {
+                    break 'event_loop;
+                },
+                Event::ControllerDeviceAdded { which, .. } => {
+                    if let Some(controller_system) = &game_controller_subsystem {
+                        match controller_system.open(which) {
+                            Ok(controller) => {
+                                let id = controller.instance_id();
+                                log::info!(
+                                    "Controller device added with ID '{}' (UUID: {:?}).",
+                                    controller.instance_id(),
+                                    controller.product_id()
+                                );
+                                if active_controller.is_none() {
+                                    log::info!(
+                                        "Active controller set to ID '{}' (New Device).",
+                                        controller.instance_id()
+                                    );
+                                    active_controller = Some((id,controller));
+                                } else {
+                                    loaded_controllers.insert(id,controller);
+                                }
+                            },
+                            Err(error) => {
+                                log::error!(
+                                    "Controller device error for ID '{}': {:?}",
+                                    which,
+                                    error
+                                );
+                            },
+                        }
+                    }
+                },
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    log::info!(
+                        "Controller device disconnected for ID '{}'.",
+                        which,
+                    );
+                    if let Some(controller) = &active_controller && controller.0 == which {
+                        active_controller = None;
+                        if let Some(fallback_controller) = loaded_controllers.pop_first() {
+                            log::info!(
+                                "Active controller set to ID '{}' (Existing Device).",
+                                fallback_controller.0
+                            );
+                            active_controller = Some(fallback_controller);
+                        } else {
+                            log::warn!("There is are no controllers left to swap the active controller.");
+                        }
+                    } else {
+                        _ = loaded_controllers.remove(&which);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let gamepad_state = match &active_controller {
+            Some((_,controller)) => get_gamepad_state(controller),
+            None => Default::default(),
         };
+
+        //log::info!("Left Stick: {:?}",gamepad_state.left_trigger);
+
+        input_manager.update(gamepad_state);
+
         
-        let (min_width,min_height) = MINIMUM_WINDOW_SIZE;
-        let min_inner_size = PhysicalSize::new(min_width,min_height);
-        let window_size = PhysicalSize::new(min_width,min_height);
 
-        let window_attributes = Window::default_attributes()
-            .with_title(WINDOW_TITLE)
-            .with_min_inner_size(min_inner_size)
-            .with_inner_size(window_size)
-            .with_visible(false);
-
-        let window = Arc::new(event_loop.create_window(window_attributes).expect("window creation"));
-
-        if let Some(monitor) = window.current_monitor() {
-            let position = get_center_position(monitor.size(),window.outer_size());
-            window.set_outer_position(position);
-        }
-
-        let size = window.inner_size();
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL,
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window.clone()).expect("surface creation");
-
-        self.window = Some(window.clone());
-
-        let mut graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
-            instance,
-            surface,
-            limits: Limits::defaults(),
-        })) {
-            Ok(device) => device,
+        let mut output_frame = match graphics_context.create_output_frame(Color::RED) {
+            Ok(value) => value,
             Err(error) => {
-                log::error!("Failure to initialize wgpu: {:?}",error);
-                todo!();
+                log::error!("Could not create output frame: {:?}",error);
+                return;
             }
         };
-        graphics_provider.set_size(size.width,size.height);
 
-        self.graphics_context = Some(GraphicsContext::create(graphics_provider));
+        //TODO: interface wimpy_app
 
-        window.set_visible(true);
-        log::info!("App graphics context and shared state are configured.");
-    }
+        if let Err(error) = graphics_context.render_frame(&mut output_frame) {
+            log::error!("Could not render ouput frame: {:?}",error);
+        }
 
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        log::info!("Application suspended. This shouldn't happen on desktop platforms.");
-    }
-
-    fn device_event(&mut self,_event_loop: &ActiveEventLoop,_device_id: DeviceId,event: DeviceEvent) {
-        return;
-        #[allow(unused)]
-        match event {
-            DeviceEvent::Added => todo!(),
-            DeviceEvent::Removed => todo!(),
-            DeviceEvent::MouseMotion { delta } => todo!(),
-            DeviceEvent::MouseWheel { delta } => todo!(),
-            DeviceEvent::Motion { axis, value } => todo!(),
-            DeviceEvent::Button { button, state } => todo!(),
-            DeviceEvent::Key(raw_key_event) => todo!(),
+        if let Err(error) = graphics_context.present_output_frame(output_frame) {
+            log::error!("Could not present output frame: {:?}",error);
         }
     }
+}
 
-    fn window_event(&mut self,event_loop: &ActiveEventLoop,_window_id: WindowId,event: WindowEvent) {
-        match event {
-            WindowEvent::RedrawRequested => {
-                self.input_manager.update();
+fn get_gamepad_state(controller: &GameController) -> GamepadInput {
+    GamepadInput {
+        buttons: GamepadButtons::from_set(GamepadButtonSet {
+            dpad_up: controller.button(Button::DPadUp),
+            dpad_down: controller.button(Button::DPadDown),
+            dpad_left: controller.button(Button::DPadLeft),
+            dpad_right: controller.button(Button::DPadRight),
 
-                for event in self.input_manager.iter_recent_events() {
-                    log::info!("Impulse Event: {:?}",event);
-                }
+            select: controller.button(Button::Back),
+            start: controller.button(Button::Start),
 
-                //let axes = self.input_manager.get_axes();
+            a: controller.button(Button::A),
+            b: controller.button(Button::B),
+            x: controller.button(Button::X),
+            y: controller.button(Button::Y),
+    
 
-                //log::info!("Axes: {:?}",axes);
+            left_bumper: controller.button(Button::LeftShoulder),
+            right_bumper: controller.button(Button::RightShoulder),
 
-
-                let Some(window) = &self.window else {
-                    log::error!("Redraw requested, but window could not be located.");
-                    return;
-                };
-
-                let Some(graphics_context) = &mut self.graphics_context else {
-                    log::error!("Redraw requested, but graphics context could not be located.");
-                    return;
-                };
-
-                let mut output_frame = match graphics_context.create_output_frame(Color::RED) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        log::error!("Could not create output frame: {:?}",error);
-                        return;
-                    }
-                };
-
-                //TODO.... stuff
-
-                if let Err(error) = graphics_context.render_frame(&mut output_frame) {
-                    log::error!("{:?}",error);
-                }
-
-                if let Err(error) = graphics_context.present_output_frame(output_frame) {
-                    log::error!("{:?}",error);
-                }
-
-                window.request_redraw();
-            },
-
-            WindowEvent::Resized(size) => {    
-                if TConfig::LOG_RESIZE {
-                   log::trace!("resized - frame_number:{} | event_number:{} | {}x{}",self.frame_number,self.event_number,size.width,size.height);
-                }
-                let Some(graphics_context) = &mut self.graphics_context else {
-                    return;
-                };
-                graphics_context.get_graphics_provider_mut().set_size(size.width,size.height);
-            },
-
-            WindowEvent::KeyboardInput {
-                is_synthetic: false,
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(winit_key_code),
-                    state: ElementState::Pressed,
-                    repeat: false,
-                    ..
-                },
-                device_id: _
-            } => {
-                if let Some(wimpy_key_code) = translate_key_code(winit_key_code) {
-                    self.input_manager.set_key_code_pressed(wimpy_key_code);
-                }
-            },
-
-            WindowEvent::KeyboardInput {
-                is_synthetic: false,
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(winit_key_code),
-                    state: ElementState::Released,
-                    repeat: false,
-                    ..
-                },
-                device_id: _
-            } => {
-                if let Some(wimpy_key_code) = translate_key_code(winit_key_code) {
-                    self.input_manager.set_key_code_released(wimpy_key_code);
-                }
-            },
-
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: ElementState::Pressed,
-                device_id: _
-            } => {
-                // self.send_input(InputEvent::MousePress(self.mouse_point));
-            },
-
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: ElementState::Released,
-                device_id: _
-            } => {
-                // self.send_input(InputEvent::MousePress(self.mouse_point));
-            },
-
-            WindowEvent::CursorMoved { position, device_id: _ } => {
-                // self.mouse_point = (position.x as f32,position.y as f32);
-                // self.send_input(InputEvent::MouseMove(self.mouse_point));
-            }
-
-            WindowEvent::CursorEntered { device_id: _ } => {
-                if TConfig::LOG_MOUSE_OVER_WINDOW {
-                    log::trace!("handle_mouse_enter - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                }
-            },
-
-            WindowEvent::CursorLeft { device_id: _ } => {
-                if TConfig::LOG_MOUSE_OVER_WINDOW {
-                    log::trace!("handle_mouse_leave - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                }
-            },
-
-            WindowEvent::Moved(_) => {
-                if TConfig::LOG_MOUSE_MOVE {
-                    log::trace!("window moved - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                }
-            },
-
-            WindowEvent::Focused(focused) => match focused {
-                true => {
-                    if TConfig::LOG_WINDOW_FOCUS {
-                        log::trace!("window focused - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                    }
-                },
-                false => {
-                    if TConfig::LOG_WINDOW_FOCUS {
-                        log::trace!("window lost focus - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                    }
-                },
-            },
-
-            /* TODO: Might want to use this ? */
-            WindowEvent::ScaleFactorChanged { .. } => {
-                if TConfig::LOG_OTHER {
-                    log::trace!("scale factor changed - frame_number:{} | event_number:{}",self.frame_number,self.event_number);
-                }
-            },
-
-            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                event_loop.exit();
-            },
-
-            _ => {}
-        };
-
-        self.event_number = self.event_number.wrapping_add(1);
+            left_stick: controller.button(Button::LeftStick),
+            right_stick: controller.button(Button::RightStick),
+        }),
+        left_stick: GamepadJoystick {
+            x: cast_axis_value(controller.axis(Axis::LeftX)),
+            y: cast_axis_value(controller.axis(Axis::LeftY)),
+        },
+        right_stick: GamepadJoystick {
+            x: cast_axis_value(controller.axis(Axis::RightX)),
+            y: cast_axis_value(controller.axis(Axis::RightY))
+        },
+        left_trigger: cast_axis_value(controller.axis(Axis::TriggerLeft)),
+        right_trigger: cast_axis_value(controller.axis(Axis::TriggerRight)),
     }
+}
+
+fn cast_axis_value(value: i16) -> f32 {
+    value as f32 / i16::MAX as f32
 }
