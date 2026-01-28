@@ -19,11 +19,18 @@ use web_sys::{
     ImageBitmap,
     KeyboardEvent,
     MouseEvent,
-    Window
+    Window, js_sys::{self, Float32Array}
 };
 
 use wgpu::{
-    Color, CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, InstanceDescriptor, Limits, Origin2d, SurfaceTarget
+    Color,
+    CopyExternalImageDestInfo,
+    CopyExternalImageSourceInfo,
+    ExternalImageSource,
+    InstanceDescriptor,
+    Limits,
+    Origin2d,
+    SurfaceTarget
 };
 
 use wimpy_engine::{
@@ -32,7 +39,7 @@ use wimpy_engine::{
     WimpyIO,
     WimpyImageError,
     input::{
-        GamepadInput, InputManager, InputManagerAppController, InputManagerReadonly
+        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
     },
     storage::{
         KeyValueStore,
@@ -52,7 +59,25 @@ use wimpy_engine::{
 
 const CANVAS_ID: &'static str = "main-canvas";
 
+const BUTTON_PRESS_THRESHOLD: f32 = 0.05;
+
 use crate::key_code::KEY_CODES;
+
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(module = "/html/gamepad-manager.js")]
+extern "C" {
+    type GamepadManager;
+
+    #[wasm_bindgen(constructor)]
+    fn new() -> GamepadManager;
+
+    #[wasm_bindgen(method,getter)]
+    fn buffer(this: &GamepadManager) -> Float32Array;
+
+    #[wasm_bindgen(method)]
+    fn update(this: &GamepadManager);
+}
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -72,6 +97,7 @@ pub struct WebApp<TWimpyApp,TConfig> {
     graphics_context: GraphicsContext<TConfig>,
     input_manager: InputManager,
     wimpy_app: TWimpyApp,
+    gamepad_manager: GamepadManager,
     key_value_store: KeyValueStore
 }
 
@@ -173,10 +199,11 @@ where
         }?;
 
         let graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
-
         let input_manager = InputManager::default();
+        let gamepad_manager = GamepadManager::new();
 
         return Ok(Rc::new(RefCell::new(Self {
+            gamepad_manager,
             graphics_context,
             input_manager,
             wimpy_app,
@@ -217,12 +244,19 @@ where
         //TODO
     }
 
-    fn render_frame(&mut self) {
-        self.input_manager.update(GamepadInput::default());
+    fn update_input(&mut self) {
+        self.gamepad_manager.update();
+        let gamepad_state = create_gamepad_state(
+            self.gamepad_manager.buffer()
+        );
+        self.input_manager.update(gamepad_state);
 
         let axes = self.input_manager.get_axes();
-
         log::info!("GAMEPAD BS: Y Axis: {:?}",axes.y);
+    }
+
+    fn render_frame(&mut self) {
+        self.update_input();
 
         let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
             Ok(value) => value,
@@ -382,4 +416,39 @@ fn get_canvas() -> Result<HtmlCanvasElement,WebAppError> {
 
 fn translate_html_size(value: Result<::wasm_bindgen::JsValue,JsValue>) -> u32 {
     value.unwrap_or(JsValue::from_f64(0.0)).as_f64().unwrap_or(0.0) as u32
+}
+
+fn to_bool(value: f32) -> bool {
+    return value > BUTTON_PRESS_THRESHOLD;
+}
+
+fn create_gamepad_state(src: Float32Array) -> GamepadInput {
+    GamepadInput {
+        buttons: GamepadButtons::from_set(GamepadButtonSet {
+            dpad_up:        to_bool(src.get_index(8)),
+            dpad_down:      to_bool(src.get_index(9)),
+            dpad_left:      to_bool(src.get_index(10)),
+            dpad_right:     to_bool(src.get_index(11)),
+            select:         to_bool(src.get_index(6)),
+            start:          to_bool(src.get_index(7)),
+            a:              to_bool(src.get_index(0)),
+            b:              to_bool(src.get_index(1)),
+            x:              to_bool(src.get_index(2)),
+            y:              to_bool(src.get_index(3)),
+            left_bumper:    to_bool(src.get_index(4)),
+            right_bumper:   to_bool(src.get_index(5)),
+            left_stick:     to_bool(src.get_index(12)),
+            right_stick:    to_bool(src.get_index(13)),
+        }),
+        left_stick: GamepadJoystick {
+            x: src.get_index(16),
+            y: src.get_index(17),
+        },
+        right_stick: GamepadJoystick {
+            x: src.get_index(18),
+            y: src.get_index(19),
+        },
+        left_trigger: src.get_index(14),
+        right_trigger: src.get_index(15),
+    }
 }

@@ -2,6 +2,12 @@
 'use chatgpt';
 'use holy water';
 
+const GAMEPAD_ELEMENT_COUNT = 20;
+
+/* Try and match parity with 'wimpy-engine/src/input/gamepad.rs' */
+const AXIS_INEQUALITY_DISTANCE = 1 / 4;
+const TRIGGER_INEQUALITY_DISTANCE = 1 / 8;
+
 String.prototype['🛐'] = function({'🔑': password}) {
     if(password !== 'please') {
         return 'Try again, ask nicely.';
@@ -28,11 +34,11 @@ const _ = {
 ⠀⠀⠀⠀⠀⠀⢀⡴⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠁⠈⡀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⣠⡄⡠⠀⠀⠀⠉⢣⡀
 ⠀⠀⠀⠀⠀⢠⡿⠀⠀⠀⢔⡠⣤⡤⡢⠀⠀⠀⠀⠀⠂⠀⠀⠀⠁⠀⠀⠊⠀⠀⠀⠔⠁⠀⠀⠀⠀⠀[Ⓨ]⠀⠀⠀⠀⠀⢿⡄
 ⠀⠀⠀⠀⠀⡾⠁⠀⢠⡱⢁⠀⠀⠐⡙⢎⡄⠀⠀[◀️]⡀⠀⠀⠀⠀⠀[▶️]⠀⣠⡶⡖⢄⠈⠛⠃⢀⡄⢀⢄⠈⣷⡀
-⠀⠀⠀⠀⣸⠃⠀⠀⢠⢣[🔘👈]⡸⡆⠀⠀⠀⠀⠌⡛⠇⠀⠀⠀⠀⠘⢏⠡⠀⠀⠀[Ⓧ]⠀⠀⠀⠸[Ⓑ]⠀⠀⠘⣧
+⠀⠀⠀⠀⣸⠃⠀⠀⢠⢣⠀[↙️]⡸⡆⠀⠀⠀⠀⠌⡛⠇⠀⠀⠀⠀⠘⢏⠡⠀⠀⠀[Ⓧ]⠀⠀⠀⠸[Ⓑ]⠀⠀⠘⣧
 ⠀⠀⠀⢠⠏⠀⠀⠀⠀⠪⡢⢦⣩⡭⢖⣵⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⣰⢆⡐⡄⠉⠉⠁⠀⠀⢹⡆
 ⠀⠀⠀⡞⠀⠀⠀⠀⠀⠀⠙⠛⠿⠛⠋⠁⠀⢤⡤⠤⠤⢀⠀⠀⠀⠀⠀⠀⠀⢀⡠⢄⡂⣀⡠⢄⠀[Ⓐ]⠆⠀⠀⠀⠀⠀⠀⢿⡀
 ⠀⠀⣸⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠄⢸[⬆️]⠑⠀⠀⠀⠀⠀⠀⢀⣞⡜⡡⠐⠂⢮⢣⢳⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣧
-⠀⢀⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸[⬅️]⠀⠉[➡️]⠀⠀⠀⠀⢸⣽⡀[👉🔘]⠇⢇⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⡄
+⠀⢀⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸[⬅️]⠀⠉[➡️]⠀⠀⠀⠀⢸⣽⡀ [↘️]⠀⠇⢇⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⡄
 ⠀⡼⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡛⠛[⬇️]⠚⠃⠀⠀⠀⠀⠘⣧⡳⣄⡀⠂⣣⢜⠀⠀⣾⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢷
 ⢀⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣃⣤⡇⠠⠊⠀⠀⠀⠀⠀⠀⠈⠻⠷⣾⣷⡶⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⡄
 ⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇
@@ -73,8 +79,8 @@ Gamepad.prototype['📦'] = function() {
             '⬇️': this.buttonOrDefault(13),
             '⬅️': this.buttonOrDefault(14),
             '➡️': this.buttonOrDefault(15),
-            '🔘👈': this.buttonOrDefault(10),
-            '👉🔘': this.buttonOrDefault(11),
+            '↙️': this.buttonOrDefault(10),
+            '↘️': this.buttonOrDefault(11),
         }
     }
 };
@@ -87,8 +93,6 @@ Gamepad.prototype.axisOrDefault = function(index) {
     return this.axes[index] || 0;
 };
 
-const PARTIAL_EVAL_DEADZONE = 0.25;
-
 function payloadEquals(a,b) {
     for(const key in a['📱']) {
         if(a['📱'][key] !== b['📱'][key]) {
@@ -96,12 +100,15 @@ function payloadEquals(a,b) {
         }
     }
     for(const key in a['🕹️']) {
-        if(Math.abs(a['🕹️'][key] - b['🕹️'][key]) > PARTIAL_EVAL_DEADZONE) {
+        if(
+            Math.abs(a['🕹️'][key][0] - b['🕹️'][key][0]) >= AXIS_INEQUALITY_DISTANCE ||
+            Math.abs(a['🕹️'][key][1] - b['🕹️'][key][1]) >= AXIS_INEQUALITY_DISTANCE
+        ) {
             return false;
         }
     }
     for(const key in a['🎚️']) {
-        if(Math.abs(a['🎚️'][key] - b['🎚️'][key]) > PARTIAL_EVAL_DEADZONE) {
+        if(Math.abs(a['🎚️'][key] - b['🎚️'][key]) >= TRIGGER_INEQUALITY_DISTANCE) {
             return false;
         }
     }
@@ -113,6 +120,15 @@ class GamepadManager {
     constructor() {
         this.active_gamepad = null;
         this.gamepad_states = {};
+        this.outputBuffer = new Float32Array(GAMEPAD_ELEMENT_COUNT);
+    }
+
+    get state() {
+        return this.active_gamepad !== null ? this.gamepad_states[this.active_gamepad] : _['📦'];
+    }
+
+    get buffer() {
+        return this.outputBuffer;
     }
 
     status() {
@@ -173,8 +189,31 @@ class GamepadManager {
             this.gamepad_states[i] = new_state;
         }
 
-        return this.active_gamepad !== null ? this.gamepad_states[this.active_gamepad] : _['📦'];
+        const src = this.state;
+        const dst = this.outputBuffer;
+
+        dst[0]  = src['📱']['Ⓐ'];
+        dst[1]  = src['📱']['Ⓑ'];
+        dst[2]  = src['📱']['Ⓧ'];
+        dst[3]  = src['📱']['Ⓨ'];
+        dst[4]  = src['📱']['↖️'];
+        dst[5]  = src['📱']['↗️'];
+        dst[6]  = src['📱']['◀️'];
+        dst[7]  = src['📱']['▶️'];
+        dst[8]  = src['📱']['⬆️'];
+        dst[9]  = src['📱']['⬇️'];
+        dst[10] = src['📱']['⬅️'];
+        dst[11] = src['📱']['➡️'];
+        dst[12] = src['📱']['↙️'];
+        dst[13] = src['📱']['↘️'];
+        dst[14] = src['🎚️']['👈'];
+        dst[15] = src['🎚️']['👉'];
+        dst[16] = src['🕹️']['👈'][0];
+        dst[17] = src['🕹️']['👈'][1];
+        dst[18] = src['🕹️']['👉'][0];
+        dst[19] = src['🕹️']['👉'][1];
     }
 }
 
 export default GamepadManager;
+export { GamepadManager }

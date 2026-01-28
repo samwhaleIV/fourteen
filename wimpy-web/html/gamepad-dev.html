@@ -12,10 +12,11 @@
         let gamepadManager = new GamepadManager();
 
         function GameLoop() {
-            const state = gamepadManager.update();
-            document.getElementById("debug-output").innerText = `${
+            gamepadManager.update();
+            const state = gamepadManager.state;
+            document.getElementById("debug-output").innerText = `[${
                 gamepadManager.status()
-                } ${
+            }] ${
                 JSON.stringify(state,(k,v) => typeof v === "number" ? v.toFixed(2) : v,2)
             }`;
             requestAnimationFrame(GameLoop);
@@ -23,6 +24,6 @@
 
         requestAnimationFrame(GameLoop);
     </script>
-    <p id="debug-output"></p>
+    <pre id="debug-output"></pre>
 </body>
 </html>

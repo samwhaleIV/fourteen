@@ -15,7 +15,7 @@ canvas#main-canvas {
     height: 100%;
 }
 
-p#debug-output {
+pre#debug-output {
     color: white;
     font-family: monospace;
     margin: 20px;

@@ -12,6 +12,10 @@ pub struct GamepadCache {
 
 const THUMBSTICK_IMPULSE_THRESHOLD: f32 = 0.5;
 
+/* Try and match parity with 'html/gamepad-manager.js' */
+const AXIS_INEQUALITY_DISTANCE: f32 = 1.0 / 4.0;
+const TRIGGER_INEQUALITY_DISTANCE: f32 = 1.0 / 8.0;
+
 bitflags! {
     #[derive(Debug,PartialEq,Eq,Copy,Clone)]
     pub struct GamepadButtons: u16 {
@@ -204,9 +208,48 @@ impl GamepadInput {
     }
 }
 
+fn significant_axis_difference(a: f32,b: f32) -> bool {
+    f32::abs(a - b) >= AXIS_INEQUALITY_DISTANCE
+}
+
+fn significant_trigger_difference(a: f32,b: f32) -> bool {
+    f32::abs(a - b) >= TRIGGER_INEQUALITY_DISTANCE
+}
+
+fn significant_joystick_difference(a: GamepadJoystick,b: GamepadJoystick) -> bool {
+    significant_axis_difference(
+        a.x,
+        b.x
+    ) ||
+    significant_axis_difference(
+        a.y,
+        b.y
+    )
+}
+
+fn has_significant_activity(a: &GamepadInput,b: &GamepadInput) -> bool {
+    a.buttons != b.buttons ||
+    significant_joystick_difference(
+        a.left_stick,
+        b.left_stick
+    ) ||
+    significant_joystick_difference(
+        a.right_stick,
+        b.right_stick
+    ) ||
+    significant_trigger_difference(
+        a.left_trigger,
+        b.left_trigger
+    ) ||
+    significant_trigger_difference(
+        a.right_trigger,
+        b.right_trigger
+    )
+}
+
 impl GamepadCache {
     pub fn update(&mut self,gamepad_input: GamepadInput) -> UserActivity {
-        let user_activity = match self.input == gamepad_input {
+        let user_activity = match has_significant_activity(&self.input,&gamepad_input) {
             true => UserActivity::Some,
             false => UserActivity::None,
         };

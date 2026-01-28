@@ -1,3 +1,4 @@
 /target
 /wimpy-web/html/wimpy_web*.*
 *.dll
+/wimpy-web/html/snippets/
