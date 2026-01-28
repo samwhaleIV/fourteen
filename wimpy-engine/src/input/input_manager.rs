@@ -26,6 +26,7 @@ pub struct InputManager {
     impulse_state: ImpulseSet,
     last_directions: MoveToFrontStack<Direction,4>,
     recent_impulses: SmallVec<[ImpulseEvent;16]>,
+    captured_key_code: Option<KeyCode>
 }
 
 impl InputManager {
@@ -86,11 +87,11 @@ impl InputManagerReadonly for InputManager {
 
 impl InputManagerBindController for InputManager {
     fn clear_captured_key_code(&mut self) {
-        self.keyboard_state.clear_captured_key_code();
+        self.captured_key_code = None;
     }
 
     fn get_captured_key_code(&self) -> Option<KeyCode> {
-        self.keyboard_state.get_captured_key_code()
+        return self.captured_key_code;
     }
     
     fn add_key_bind(&mut self,key_code: KeyCode,impulse: Impulse) {
@@ -118,6 +119,9 @@ impl InputManagerAppController for InputManager {
     fn set_key_code_pressed(&mut self,key_code: KeyCode) {
         self.keyboard_state.set_pressed(key_code);
         self.recent_input_method = InputType::Keyboard;
+        if self.captured_key_code.is_none() {
+            self.captured_key_code = Some(key_code);
+        }
         log::trace!("Key code pressed: {:?}",key_code);
     }
 

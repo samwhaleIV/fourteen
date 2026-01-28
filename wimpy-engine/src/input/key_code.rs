@@ -1,6 +1,5 @@
 #[repr(u8)]
 #[derive(PartialEq,Eq,Copy,Clone,Hash,Debug)]
-
 pub enum KeyCode{
     Unknown = 0,
 

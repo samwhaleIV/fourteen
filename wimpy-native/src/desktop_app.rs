@@ -222,7 +222,7 @@ where
         };
 
         self.input_manager.update(gamepad_state);
-        //log::info!("Axes: {:?}",input_manager.get_axes().get_f32());
+        log::info!("Axes: {:?}",self.input_manager.get_axes().get_f32());
 
         let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
             Ok(value) => value,

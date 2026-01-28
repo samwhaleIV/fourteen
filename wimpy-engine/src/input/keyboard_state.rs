@@ -10,9 +10,6 @@ use crate::input::{
     IMPULSE_TYPE_COUNT, Impulse, ImpulseSet, ImpulseState, KeyCode
 };
 
-const KEY_CODE_COUNT: usize = KeyCode::NumpadSubtract as usize;
-const BIT_MAP_COUNT: usize = (KEY_CODE_COUNT + 63) / 64;
-
 pub struct KeyboardTranslator {
     binds: HashMap<KeyCode,Impulse>,
     reverse_lookup: [HashSet<KeyCode>;IMPULSE_TYPE_COUNT]
@@ -94,49 +91,31 @@ impl Default for KeyboardTranslator {
 }
 
 pub struct KeyboardState {
-    bit_maps: [u64;BIT_MAP_COUNT],
-    captured_key_code: Option<KeyCode>
+    bitfield: u128,
 }
 
 impl Default for KeyboardState {
     fn default() -> Self {
         Self {
-            bit_maps: array::repeat(u64::MIN),
-            captured_key_code: None
+            bitfield: 0,
         }
     }
 }
 
 impl KeyboardState {
     pub fn is_pressed(&self,key_code: KeyCode) -> bool {
-        let index = key_code as usize;
-        (self.bit_maps[index / 64] & (1 << index % 64)) != 0
+        (self.bitfield & (1u128 << key_code as usize)) != 0
     }
 
     pub fn set_pressed(&mut self,key_code: KeyCode) {
-        let index = key_code as usize;
-        self.bit_maps[index / 64] |= 1 << index % 64;
-        if self.captured_key_code.is_none() {
-            self.captured_key_code = Some(key_code);
-        }
+        self.bitfield |= 1u128 << key_code as usize;
     }
 
     pub fn set_released(&mut self,key_code: KeyCode) {
-        let index = key_code as usize;
-        self.bit_maps[index / 64] &= !(1 << index % 64);
+        self.bitfield &= !(1u128 << key_code as usize);
     }
 
     pub fn release_all(&mut self) {
-        for i in 0..BIT_MAP_COUNT {
-            self.bit_maps[i] = u64::MIN;
-        }
-    }
-
-    pub fn clear_captured_key_code(&mut self) {
-        self.captured_key_code = None;
-    }
-
-    pub fn get_captured_key_code(&self) -> Option<KeyCode> {
-        self.captured_key_code
+        self.bitfield = 0;
     }
 }
