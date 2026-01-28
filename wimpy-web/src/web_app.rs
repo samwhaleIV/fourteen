@@ -79,7 +79,7 @@ pub struct WebApp<TWimpyApp,TConfig> {
 #[derive(PartialEq)]
 pub enum ResizeConfig {
     Static,
-    FitWindow
+    FitWindow,
 }
 
 pub struct WebAppIO;

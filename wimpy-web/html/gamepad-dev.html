@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wimpy Engine</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <script type="module">
+        import GamepadManager from "./gamepad-manager.js";
+        let gamepadManager = new GamepadManager();
+
+        function GameLoop() {
+            const state = gamepadManager.update();
+            document.getElementById("debug-output").innerText = `${
+                gamepadManager.status()
+                } ${
+                JSON.stringify(state,(k,v) => typeof v === "number" ? v.toFixed(2) : v,2)
+            }`;
+            requestAnimationFrame(GameLoop);
+        }
+
+        requestAnimationFrame(GameLoop);
+    </script>
+    <p id="debug-output"></p>
+</body>
+</html>
