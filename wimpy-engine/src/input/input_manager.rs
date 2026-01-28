@@ -28,6 +28,15 @@ pub struct InputManager {
     recent_impulses: SmallVec<[ImpulseEvent;16]>,
 }
 
+impl InputManager {
+    pub fn with_input_type_hint(input_type: InputType) -> Self {
+        return Self {
+            recent_input_method: input_type,
+            ..Default::default()
+        }
+    }
+}
+
 pub trait InputManagerReadonly {
     fn iter_recent_events(&self) -> impl Iterator<Item = &ImpulseEvent>;
     fn get_axes(&self) -> InterpretiveAxes;

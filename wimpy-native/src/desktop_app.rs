@@ -9,7 +9,7 @@ use image::{
     ImageReader
 };
 
-use sdl2::{controller::{Axis, Button, GameController}, event::{Event, WindowEvent}};
+use sdl2::{EventPump, GameControllerSubsystem, Sdl, controller::{Axis, Button, GameController}, event::{Event, WindowEvent}, sys::Window};
 use wgpu::{Color, Limits};
 
 use wimpy_engine::{
@@ -17,7 +17,7 @@ use wimpy_engine::{
     WimpyIO,
     WimpyImageError,
     input::{
-        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
+        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly, significant_axis_difference, significant_trigger_difference
     },
     wgpu::{
         GraphicsContext,
@@ -114,6 +114,22 @@ impl WimpyIO for DekstopAppIO {
     }
 }
 
+enum EventLoopOperation {
+    Continue,
+    Terminate
+}
+
+struct InnerApp<TWimpyApp,TConfig> {
+    wimpy_app: TWimpyApp,
+    active_gamepad: Option<GameController>,
+    unused_gamepads: HashMap<u32,GameController>,
+    graphics_context: GraphicsContext<TConfig>,
+    game_controller_subsystem: Option<GameControllerSubsystem>,
+    input_manager: InputManager,
+    window_id: u32,
+    sdl_context: Sdl,
+}
+
 pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp)
 where
     TConfig: GraphicsContextConfig
@@ -158,30 +174,84 @@ where
         Ok(device) => device,
         Err(error) => {
             log::error!("Failure to initialize wgpu: {:?}",error);
-            todo!();
+            return;
         }
     };
 
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let mut event_pump = sdl_context.event_pump().expect("sdl event pump creation");
+    let graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
 
-    let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
-    let mut input_manager = InputManager::default();
+    let mut inner_app = InnerApp {
+        sdl_context,
+        active_gamepad: None,
+        wimpy_app,
+        unused_gamepads: Default::default(),
+        graphics_context,
+        game_controller_subsystem,
+        window_id: window.id(),
+        input_manager: Default::default(),
+    };
 
-    let mut active_controller: Option<(u32,GameController)> = None;
-    let mut loaded_controllers: BTreeMap<u32,GameController> = Default::default();
+    inner_app.start_loop();
+}
 
-    'event_loop: loop {
+impl<TWimpyApp,TConfig> InnerApp<TWimpyApp,TConfig>
+where
+    TConfig: GraphicsContextConfig
+{
+    fn start_loop(&mut self,) {
+        let mut event_pump = self.sdl_context.event_pump().expect("sdl event pump creation");
+        'event_loop: loop {
+            match self.poll_events(&mut event_pump) {
+                EventLoopOperation::Continue => {
+                    self.update();
+                },
+                EventLoopOperation::Terminate => {
+                    break 'event_loop;
+                },
+            }
+        }
+    }
+
+    fn update(&mut self) {
+        let gamepad_state = match &self.active_gamepad {
+            Some(gamepad) => get_gamepad_state(gamepad),
+            None => Default::default(),
+        };
+
+        self.input_manager.update(gamepad_state);
+        //log::info!("Axes: {:?}",input_manager.get_axes().get_f32());
+
+        let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
+            Ok(value) => value,
+            Err(error) => {
+                log::error!("Could not create output frame: {:?}",error);
+                return;
+            }
+        };
+
+        //TODO: interface wimpy_app
+
+        if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
+            log::error!("Could not render ouput frame: {:?}",error);
+        }
+
+        if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
+            log::error!("Could not present output frame: {:?}",error);
+        }
+    }
+
+    fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {
         for event in event_pump.poll_iter() {
             match event {
                 Event::Window {
                     window_id,
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
-                } if window_id == window.id() => {
-                    graphics_context.get_graphics_provider_mut().set_size(
+                } if window_id == self.window_id => {
+                    self.graphics_context.get_graphics_provider_mut().set_size(
                         width as u32,
                         height as u32
                     );
@@ -192,7 +262,7 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        input_manager.set_key_code_pressed(wk);
+                        self.input_manager.set_key_code_pressed(wk);
                     }
                 },
                 Event::KeyUp {
@@ -201,31 +271,22 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        input_manager.set_key_code_released(wk);
+                        self.input_manager.set_key_code_released(wk);
                     }
                 },
                 Event::Quit { .. } => {
-                    break 'event_loop;
+                    return EventLoopOperation::Terminate;
                 },
                 Event::ControllerDeviceAdded { which, .. } => {
-                    if let Some(controller_system) = &game_controller_subsystem {
-                        match controller_system.open(which) {
-                            Ok(controller) => {
-                                let id = controller.instance_id();
+                    if let Some(gamepad_system) = &self.game_controller_subsystem {
+                        match gamepad_system.open(which) {
+                            Ok(gamepad) => {
                                 log::info!(
                                     "Controller device added with ID '{}' (UUID: {:?}).",
-                                    controller.instance_id(),
-                                    controller.product_id()
+                                    gamepad.instance_id(),
+                                    gamepad.product_id()
                                 );
-                                if active_controller.is_none() {
-                                    log::info!(
-                                        "Active controller set to ID '{}' (New Device).",
-                                        controller.instance_id()
-                                    );
-                                    active_controller = Some((id,controller));
-                                } else {
-                                    loaded_controllers.insert(id,controller);
-                                }
+                                self.unused_gamepads.insert(which,gamepad);
                             },
                             Err(error) => {
                                 log::error!(
@@ -242,92 +303,119 @@ where
                         "Controller device disconnected for ID '{}'.",
                         which,
                     );
-                    if let Some(controller) = &active_controller && controller.0 == which {
-                        active_controller = None;
-                        if let Some(fallback_controller) = loaded_controllers.pop_first() {
-                            log::info!(
-                                "Active controller set to ID '{}' (Existing Device).",
-                                fallback_controller.0
-                            );
-                            active_controller = Some(fallback_controller);
-                        } else {
-                            log::warn!("There is are no controllers left to swap the active controller.");
-                        }
+                    if let Some(controller) = &self.active_gamepad && controller.instance_id() == which {
+                        self.active_gamepad = None;
                     } else {
-                        _ = loaded_controllers.remove(&which);
+                        if self.unused_gamepads.remove(&which).is_none() {
+                            log::warn!("Untracked controller device removal");
+                        }
+                    }
+                },
+                Event::ControllerAxisMotion { which, value, axis, .. } => {
+                    if self.active_gamepad.is_some() {
+                        continue;
+                    }
+                    let axis_value = cast_axis_value(value);
+                    if match axis {
+                        Axis::TriggerLeft | Axis::TriggerRight => significant_trigger_difference(
+                            0.0,
+                            axis_value
+                        ),
+                        Axis::LeftX | Axis::LeftY | Axis::RightX | Axis::RightY => significant_axis_difference(
+                            0.0,
+                            axis_value
+                        ),
+                    } {
+                        self.set_active_controller(which);
+                    }
+                },
+                Event::ControllerButtonDown { which, .. } |
+                Event::ControllerButtonUp { which, .. } |
+                Event::ControllerTouchpadDown { which, .. } |
+                Event::ControllerTouchpadUp { which, .. } |
+                Event::ControllerTouchpadMotion { which, .. } => {
+                    if self.active_gamepad.is_none() {
+                        self.set_active_controller(which);
                     }
                 }
                 _ => {}
             }
         }
-
-        let gamepad_state = match &active_controller {
-            Some((_,controller)) => get_gamepad_state(controller),
-            None => Default::default(),
-        };
-
-        //log::info!("Left Stick: {:?}",gamepad_state.left_trigger);
-
-        input_manager.update(gamepad_state);
-
-        
-
-        let mut output_frame = match graphics_context.create_output_frame(Color::RED) {
-            Ok(value) => value,
-            Err(error) => {
-                log::error!("Could not create output frame: {:?}",error);
-                return;
-            }
-        };
-
-        //TODO: interface wimpy_app
-
-        if let Err(error) = graphics_context.render_frame(&mut output_frame) {
-            log::error!("Could not render ouput frame: {:?}",error);
-        }
-
-        if let Err(error) = graphics_context.present_output_frame(output_frame) {
-            log::error!("Could not present output frame: {:?}",error);
-        }
+        return EventLoopOperation::Continue;
     }
-}
+    fn set_active_controller(&mut self,which: u32) {
 
-fn get_gamepad_state(controller: &GameController) -> GamepadInput {
-    GamepadInput {
-        buttons: GamepadButtons::from_set(GamepadButtonSet {
-            dpad_up: controller.button(Button::DPadUp),
-            dpad_down: controller.button(Button::DPadDown),
-            dpad_left: controller.button(Button::DPadLeft),
-            dpad_right: controller.button(Button::DPadRight),
-
-            select: controller.button(Button::Back),
-            start: controller.button(Button::Start),
-
-            a: controller.button(Button::A),
-            b: controller.button(Button::B),
-            x: controller.button(Button::X),
-            y: controller.button(Button::Y),
-    
-
-            left_bumper: controller.button(Button::LeftShoulder),
-            right_bumper: controller.button(Button::RightShoulder),
-
-            left_stick: controller.button(Button::LeftStick),
-            right_stick: controller.button(Button::RightStick),
-        }),
-        left_stick: GamepadJoystick {
-            x: cast_axis_value(controller.axis(Axis::LeftX)),
-            y: cast_axis_value(controller.axis(Axis::LeftY)),
-        },
-        right_stick: GamepadJoystick {
-            x: cast_axis_value(controller.axis(Axis::RightX)),
-            y: cast_axis_value(controller.axis(Axis::RightY))
-        },
-        left_trigger: cast_axis_value(controller.axis(Axis::TriggerLeft)),
-        right_trigger: cast_axis_value(controller.axis(Axis::TriggerRight)),
+        match self.unused_gamepads.remove(&which) {
+            Some(gamepad) => {
+                self.active_gamepad = Some(gamepad);
+                log::info!(
+                    "Active controller set to ID '{}' (Activity was detected).",
+                    which
+                );
+            },
+            None => {
+                log::warn!("Controller activity detected, this controller is untracked.");
+            },
+        }
     }
 }
 
 fn cast_axis_value(value: i16) -> f32 {
     value as f32 / i16::MAX as f32
+}
+
+fn trigger_clamp(value: f32) -> f32 {
+    value.min(1.0).max(0.0)
+}
+
+fn get_gamepad_state(controller: &GameController) -> GamepadInput {
+    GamepadInput {
+        buttons: GamepadButtons::from_set(GamepadButtonSet {
+            dpad_up:      controller.button(Button::DPadUp),
+            dpad_down:    controller.button(Button::DPadDown),
+            dpad_left:    controller.button(Button::DPadLeft),
+            dpad_right:   controller.button(Button::DPadRight),
+
+            select:       controller.button(Button::Back),
+            start:        controller.button(Button::Start),
+            guide:        controller.button(Button::Guide),
+
+            a:            controller.button(Button::A),
+            b:            controller.button(Button::B),
+            x:            controller.button(Button::X),
+            y:            controller.button(Button::Y),
+    
+            left_bumper:  controller.button(Button::LeftShoulder),
+            right_bumper: controller.button(Button::RightShoulder),
+
+            left_stick:   controller.button(Button::LeftStick),
+            right_stick:  controller.button(Button::RightStick),
+        }),
+        left_stick: GamepadJoystick {
+            x: cast_axis_value(
+                controller.axis(Axis::LeftX)
+            ),
+            y: cast_axis_value(
+                controller.axis(Axis::LeftY)
+            ),
+        },
+        right_stick: GamepadJoystick {
+            x: cast_axis_value(
+                controller.axis(Axis::RightX)
+            ),
+            y: cast_axis_value(
+                controller.axis(Axis::RightY)
+            )
+        },
+        left_trigger: trigger_clamp(
+            cast_axis_value(
+                controller.axis(Axis::TriggerLeft)
+            )
+        ),
+        right_trigger: trigger_clamp(
+            cast_axis_value(
+                controller.axis(Axis::TriggerRight)
+            )
+        ),
+    }
 }

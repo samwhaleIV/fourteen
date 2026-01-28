@@ -29,16 +29,18 @@ bitflags! {
         /// Also known as "start" button.
         const START = 1 << 5;
 
-        const A = 1 << 6;
-        const B = 1 << 7;
-        const X = 1 << 8;
-        const Y = 1 << 9;
+        const GUIDE = 1 << 6;
 
-        const LEFT_BUMPER = 1 << 10;
-        const RIGHT_BUMPER = 1 << 11;
+        const A = 1 << 7;
+        const B = 1 << 8;
+        const X = 1 << 9;
+        const Y = 1 << 10;
 
-        const LEFT_STICK = 1 << 12;
-        const RIGHT_STICK = 1 << 13;
+        const LEFT_BUMPER = 1 << 11;
+        const RIGHT_BUMPER = 1 << 12;
+
+        const LEFT_STICK = 1 << 13;
+        const RIGHT_STICK = 1 << 14;
     }
 }
 
@@ -50,6 +52,7 @@ pub struct GamepadButtonSet {
 
     pub select: bool,
     pub start: bool,
+    pub guide: bool,
 
     pub a: bool,
     pub b: bool,
@@ -76,6 +79,7 @@ impl GamepadButtons {
 
         buttons.set(Self::SELECT,set.select);
         buttons.set(Self::START,set.start);
+        buttons.set(Self::GUIDE,set.guide);
 
         buttons.set(Self::A,set.a);
         buttons.set(Self::B,set.b);
@@ -208,11 +212,11 @@ impl GamepadInput {
     }
 }
 
-fn significant_axis_difference(a: f32,b: f32) -> bool {
+pub fn significant_axis_difference(a: f32,b: f32) -> bool {
     f32::abs(a - b) >= AXIS_INEQUALITY_DISTANCE
 }
 
-fn significant_trigger_difference(a: f32,b: f32) -> bool {
+pub fn significant_trigger_difference(a: f32,b: f32) -> bool {
     f32::abs(a - b) >= TRIGGER_INEQUALITY_DISTANCE
 }
 

@@ -419,36 +419,49 @@ fn translate_html_size(value: Result<::wasm_bindgen::JsValue,JsValue>) -> u32 {
 }
 
 fn to_bool(value: f32) -> bool {
-    return value > BUTTON_PRESS_THRESHOLD;
+    value > BUTTON_PRESS_THRESHOLD
+}
+
+fn axis_clamp(value: f32) -> f32 {
+    value.min(1.0).max(-1.0)
+}
+
+fn trigger_clamp(value: f32) -> f32 {
+    value.min(1.0).max(0.0)
 }
 
 fn create_gamepad_state(src: Float32Array) -> GamepadInput {
     GamepadInput {
         buttons: GamepadButtons::from_set(GamepadButtonSet {
-            dpad_up:        to_bool(src.get_index(8)),
-            dpad_down:      to_bool(src.get_index(9)),
-            dpad_left:      to_bool(src.get_index(10)),
-            dpad_right:     to_bool(src.get_index(11)),
-            select:         to_bool(src.get_index(6)),
-            start:          to_bool(src.get_index(7)),
-            a:              to_bool(src.get_index(0)),
-            b:              to_bool(src.get_index(1)),
-            x:              to_bool(src.get_index(2)),
-            y:              to_bool(src.get_index(3)),
-            left_bumper:    to_bool(src.get_index(4)),
-            right_bumper:   to_bool(src.get_index(5)),
-            left_stick:     to_bool(src.get_index(12)),
-            right_stick:    to_bool(src.get_index(13)),
+            dpad_up:      to_bool(src.get_index(0)),
+            dpad_down:    to_bool(src.get_index(1)),
+            dpad_left:    to_bool(src.get_index(2)),
+            dpad_right:   to_bool(src.get_index(3)),
+
+            select:       to_bool(src.get_index(4)),
+            start:        to_bool(src.get_index(5)),
+            guide:        to_bool(src.get_index(6)),
+
+            a:            to_bool(src.get_index(7)),
+            b:            to_bool(src.get_index(8)),
+            x:            to_bool(src.get_index(9)),
+            y:            to_bool(src.get_index(10)),
+
+            left_bumper:  to_bool(src.get_index(11)),
+            right_bumper: to_bool(src.get_index(12)),
+
+            left_stick:   to_bool(src.get_index(13)),
+            right_stick:  to_bool(src.get_index(14)),
         }),
         left_stick: GamepadJoystick {
-            x: src.get_index(16),
-            y: src.get_index(17),
+            x: axis_clamp(src.get_index(15)),
+            y: axis_clamp(src.get_index(16)),
         },
         right_stick: GamepadJoystick {
-            x: src.get_index(18),
-            y: src.get_index(19),
+            x: axis_clamp(src.get_index(17)),
+            y: axis_clamp(src.get_index(18)),
         },
-        left_trigger: src.get_index(14),
-        right_trigger: src.get_index(15),
+        left_trigger: trigger_clamp(src.get_index(19)),
+        right_trigger: trigger_clamp(src.get_index(20)),
     }
 }
