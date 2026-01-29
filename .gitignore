@@ -2,3 +2,6 @@
 /wimpy-web/html/wimpy_web*.*
 *.dll
 /wimpy-web/html/snippets/
+/wam/bin/*
+/wam/obj/*
+/wam/.vs/

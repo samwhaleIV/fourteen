@@ -85,6 +85,7 @@ pub enum WebAppError {
     MouseEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
+    #[allow(unused)]
     WimpyAppLoadFailure(WimpyAppLoadError)
 }
 
