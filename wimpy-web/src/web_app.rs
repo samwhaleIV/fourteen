@@ -34,18 +34,12 @@ use wgpu::{
 };
 
 use wimpy_engine::{
-    WimpyApp,
-    WimpyContext,
-    WimpyIO,
-    WimpyImageError,
-    input::{
+    WimpyApp, WimpyAppLoadError, WimpyContext, WimpyIO, WimpyImageError, input::{
         GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
-    },
-    storage::{
+    }, storage::{
         KeyValueStore,
         KeyValueStoreIO
-    },
-    wgpu::{
+    }, wgpu::{
         GraphicsContext,
         GraphicsContextConfig,
         GraphicsContextController,
@@ -91,6 +85,7 @@ pub enum WebAppError {
     MouseEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
+    WimpyAppLoadFailure(WimpyAppLoadError)
 }
 
 pub struct WebApp<TWimpyApp,TConfig> {
@@ -98,7 +93,7 @@ pub struct WebApp<TWimpyApp,TConfig> {
     input_manager: InputManager,
     wimpy_app: TWimpyApp,
     gamepad_manager: GamepadManager,
-    key_value_store: KeyValueStore
+    kvs_store: KeyValueStore
 }
 
 #[allow(unused)]
@@ -176,7 +171,7 @@ where
     TWimpyApp: WimpyApp<WebAppIO,TConfig> + 'static,
     TConfig: GraphicsContextConfig + 'static
 {
-    pub async fn create_app(wimpy_app: TWimpyApp) -> Result<Rc<RefCell<Self>>,WebAppError> {
+    pub async fn create_app(mut wimpy_app: TWimpyApp) -> Result<Rc<RefCell<Self>>,WebAppError> {
         let canvas = get_canvas()?;
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
@@ -198,16 +193,26 @@ where
             Err(error) => Err(WebAppError::WGPUInitFailure(error)),
         }?;
 
-        let graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
-        let input_manager = InputManager::default();
+        let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+        let mut input_manager = InputManager::default();
+        let mut kvs_store = KeyValueStore::default();
+
         let gamepad_manager = GamepadManager::new();
+
+        if let Err(error) = wimpy_app.load(&WimpyContext {
+            graphics: &mut graphics_context,
+            storage: &mut kvs_store,
+            input: &mut input_manager
+        }).await {
+            return Err(WebAppError::WimpyAppLoadFailure(error));
+        }
 
         return Ok(Rc::new(RefCell::new(Self {
             gamepad_manager,
             graphics_context,
             input_manager,
             wimpy_app,
-            key_value_store: Default::default(),
+            kvs_store: Default::default(),
         })));
     }
 
@@ -266,13 +271,11 @@ where
             }
         };
 
-        let app_context = WimpyContext {
+        self.wimpy_app.update(&WimpyContext {
             graphics: &mut self.graphics_context,
-            storage: &mut self.key_value_store,
+            storage: &mut self.kvs_store,
             input: &mut self.input_manager,
-        };
-
-        self.wimpy_app.render(&app_context);
+        });
 
         if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
             log::error!("{:?}",error);

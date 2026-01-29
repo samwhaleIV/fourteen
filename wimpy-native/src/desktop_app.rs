@@ -1,7 +1,7 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::{cmp::Ordering, collections::{BTreeMap, BTreeSet, HashMap}, sync::Arc};
+use std::collections::HashMap;
 
 use image::{
     DynamicImage,
@@ -9,17 +9,45 @@ use image::{
     ImageReader
 };
 
-use sdl2::{EventPump, GameControllerSubsystem, Sdl, controller::{Axis, Button, GameController}, event::{Event, WindowEvent}, sys::Window};
-use wgpu::{Color, Limits};
+use sdl2::{
+    EventPump,
+    GameControllerSubsystem,
+    Sdl,
+    controller::{
+        Axis,
+        Button,
+        GameController
+    },
+    event::{
+        Event,
+        WindowEvent
+    },
+    sys::Window
+};
+
+use wgpu::{
+    Color,
+    Limits
+};
 
 use wimpy_engine::{
     WimpyApp,
+    WimpyContext,
     WimpyIO,
     WimpyImageError,
     input::{
-        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly, significant_axis_difference, significant_trigger_difference
+        GamepadButtonSet,
+        GamepadButtons,
+        GamepadInput,
+        GamepadJoystick,
+        InputManager,
+        InputManagerAppController,
+        InputManagerReadonly,
+        InputType,
+        significant_axis_difference,
+        significant_trigger_difference
     },
-    wgpu::{
+    storage::KeyValueStore, wgpu::{
         GraphicsContext,
         GraphicsContextConfig,
         GraphicsContextController,
@@ -32,20 +60,6 @@ use wimpy_engine::{
 };
 
 use crate::key_code::translate_key_code;
-
-pub trait WindowEventTraceConfig {
-    const LOG_REDRAW: bool;
-    const LOG_MOUSE_MOVE: bool;
-    const LOG_WINDOW_MOVE: bool;
-    const LOG_RESIZE: bool;
-    const LOG_MOUSE_OVER_WINDOW: bool;
-    const LOG_MOUSE_CLICK: bool;
-    const KEY_CHANGE: bool;
-    const LOG_WINDOW_FOCUS: bool;
-    const LOG_OTHER: bool;
-}
-
-struct DekstopAppIO;
 
 struct DynamicImageWrapper {
     value: DynamicImage
@@ -76,6 +90,8 @@ impl TextureData for DynamicImageWrapper {
         );
     }
 }
+
+pub struct DekstopAppIO;
 
 impl WimpyIO for DekstopAppIO {
     fn save_key_value_store(kvs: &wimpy_engine::storage::KeyValueStore) {
@@ -127,12 +143,14 @@ struct InnerApp<TWimpyApp,TConfig> {
     game_controller_subsystem: Option<GameControllerSubsystem>,
     input_manager: InputManager,
     window_id: u32,
+    kvs_store: KeyValueStore,
     sdl_context: Sdl,
 }
 
-pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp)
+async fn async_load<TWimpyApp,TConfig>(mut wimpy_app: TWimpyApp) -> Option<InnerApp<TWimpyApp,TConfig>>
 where
-    TConfig: GraphicsContextConfig
+    TConfig: GraphicsContextConfig,
+    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
 {
     let sdl_context = sdl2::init().expect("sdl context creation");
     let video_subsystem = sdl_context.video().expect("sdl video subsystem creation");
@@ -166,24 +184,40 @@ where
         instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window).unwrap()).expect("sdl window surface creation")
     };
 
-    let mut graphics_provider = match pollster::block_on(GraphicsProvider::new(GraphicsProviderConfig {
+    let mut graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
         instance,
         surface,
         limits: Limits::defaults(),
-    })) {
+    }).await {
         Ok(device) => device,
         Err(error) => {
             log::error!("Failure to initialize wgpu: {:?}",error);
-            return;
+            return None;
         }
     };
+
 
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+    let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+    let mut kvs_store = KeyValueStore::default();
 
-    let mut inner_app = InnerApp {
+    let mut input_manager = InputManager::with_input_type_hint(
+        InputType::Unknown
+        // Reminder: Set input type ahead of time on specific platforms.
+    );
+
+    if let Err(error) = wimpy_app.load(&WimpyContext {
+        graphics: &mut graphics_context,
+        storage: &mut kvs_store,
+        input: &mut input_manager
+    }).await {
+        log::error!("Failure to load wimpy add: {:?}",error);
+        return None;
+    }
+
+    Some(InnerApp {
         sdl_context,
         active_gamepad: None,
         wimpy_app,
@@ -191,17 +225,27 @@ where
         graphics_context,
         game_controller_subsystem,
         window_id: window.id(),
-        input_manager: Default::default(),
-    };
+        input_manager,
+        kvs_store
+    })
+}
 
-    inner_app.start_loop();
+pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp)
+where
+    TConfig: GraphicsContextConfig,
+    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
+{
+    if let Some(mut inner_app) = pollster::block_on(async_load(wimpy_app)) {
+        inner_app.start_loop();
+    }
 }
 
 impl<TWimpyApp,TConfig> InnerApp<TWimpyApp,TConfig>
 where
-    TConfig: GraphicsContextConfig
+    TConfig: GraphicsContextConfig,
+    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
 {
-    fn start_loop(&mut self,) {
+    fn start_loop(&mut self) {
         let mut event_pump = self.sdl_context.event_pump().expect("sdl event pump creation");
         'event_loop: loop {
             match self.poll_events(&mut event_pump) {
@@ -232,7 +276,12 @@ where
             }
         };
 
-        //TODO: interface wimpy_app
+        /* Update and render the user app! */
+        self.wimpy_app.update(&WimpyContext {
+            graphics: &mut self.graphics_context,
+            storage: &mut self.kvs_store,
+            input: &mut self.input_manager
+        });
 
         if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
             log::error!("Could not render ouput frame: {:?}",error);

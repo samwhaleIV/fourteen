@@ -1,6 +1,7 @@
 use crate::{
     WimpyApp,
-    WimpyContext, 
+    WimpyAppLoadError,
+    WimpyContext,
     WimpyIO,
     wgpu::GraphicsContextConfig
 };
@@ -11,7 +12,11 @@ impl<IO,Config> WimpyApp<IO,Config> for PlaceholderApp
 where
     IO: WimpyIO
 {
-    fn render(&mut self,context: &WimpyContext<Config>) {
+    async fn load(&mut self,context: &WimpyContext<'_,Config>) -> Result<(),WimpyAppLoadError> {
+        return Ok(());
+    }
+
+    fn update(&mut self,context: &WimpyContext<Config>) {
         
     }
 }

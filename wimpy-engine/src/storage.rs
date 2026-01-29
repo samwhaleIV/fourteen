@@ -3,7 +3,7 @@ pub struct KeyValueStore {
     //todo... dictionary structure
 }
 
-enum StorageValueType {
+pub enum StorageValueType {
     String,
     Integer,
     Flag,
@@ -29,35 +29,35 @@ pub enum KeyValueStoreError {
 }
 
 impl KeyValueStore {
-    fn delete_all(&mut self) {
+    pub fn delete_all(&mut self) {
         todo!()
     }
 
-    fn set_string(&mut self,key: &'static str,value: &'static str) {
+    pub fn set_string(&mut self,key: &'static str,value: &'static str) {
         todo!()
     }
 
-    fn set_u32(&mut self,key: &'static str,value: u32) {
+    pub fn set_u32(&mut self,key: &'static str,value: u32) {
         todo!()
     }
 
-    fn set_flag(&mut self,key: &'static str) {
+    pub fn set_flag(&mut self,key: &'static str) {
         todo!()
     }
 
-    fn delete(&mut self,key: &'static str) -> Result<(),KeyValueStoreError> {
+    pub fn delete(&mut self,key: &'static str) -> Result<(),KeyValueStoreError> {
         todo!()
     }
 
-    fn get_string(&self,key: &'static str) -> Result<(),&'static str> {
+    pub fn get_string(&self,key: &'static str) -> Result<(),&'static str> {
         todo!()
     }
 
-    fn get_u32(&self,key: &'static str) -> Result<u32,KeyValueStoreError> {
+    pub fn get_u32(&self,key: &'static str) -> Result<u32,KeyValueStoreError> {
         todo!()
     }
 
-    fn has_key(&self,key: &'static str) -> bool {
+    pub fn has_key(&self,key: &'static str) -> bool {
         todo!()
     }
 }

@@ -24,6 +24,15 @@ pub struct WimpyContext<'a,TConfig> {
     pub input: &'a mut InputManager,
 }
 
-pub trait WimpyApp<IO,Config> where IO: WimpyIO {
-    fn render(&mut self,context: &WimpyContext<Config>);
+#[derive(Debug)]
+pub enum WimpyAppLoadError {
+    ImageError(WimpyImageError)
+}
+
+pub trait WimpyApp<IO,Config>
+where
+    IO: WimpyIO
+{
+    fn load(&mut self,context: &WimpyContext<'_,Config>) -> impl Future<Output = Result<(),WimpyAppLoadError>>;
+    fn update(&mut self,context: &WimpyContext<Config>);
 }
