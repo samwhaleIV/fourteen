@@ -1,4 +1,4 @@
-﻿namespace wam {
+﻿namespace WAM.CLI {
 
     readonly record struct Command(
         Action<IEnumerable<string>> Action,
@@ -58,7 +58,7 @@
             {
                 "argstest", new Command {
                     Action = ArgsTest,
-                    Description = "print list of 'args' that were supplied with the command (for debugging this cli)" 
+                    Description = "print list of 'args' that were supplied with the command (for debugging this cli)"
                 }
             },
             {
@@ -97,6 +97,10 @@
 
         static void ArgsTest(IEnumerable<string> args) {
             Console.WriteLine($"args: {string.Join(", ",args)}");
+        }
+
+        static void TexturePack() {
+
         }
     }
 }
