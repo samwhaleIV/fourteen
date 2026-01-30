@@ -1,26 +1,48 @@
-﻿using System.Text.Json;
+﻿using System.Data.Common;
+using System.IO;
+using System.Text.Json;
 using WAM.Core.Builder.JsonTypes.Input;
 using WAM.Core.Builder.JsonTypes.Output;
+using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
 namespace WAM.Core.Builder {
     using InputManifestResult = Result<InputManifest>;
 
-    public sealed class WamManifest {
+    public sealed class WamManifest:IAssetGenerator {
+
+        private readonly WamManifestSettings settings;
+        private readonly TexturePackBuilder texturePackBuilder;
+
+        public WamManifest() {
+            settings = WamManifestSettings.Default;
+            texturePackBuilder = new(settings.TexturePackSettings);
+        }
+
+        public WamManifest(WamManifestSettings settings) {
+            this.settings = settings;
+            texturePackBuilder = new(settings.TexturePackSettings);
+        }
+
         const string INPUT_MANIFEST_NAME = "manifest.json";
+        const string PACK_FILE = "pack.json";
 
         private readonly SequentialIDGenerator idGenerator = new();
         private readonly UniqueGuidGenerator guidGenerator = new();
 
         private readonly Dictionary<string,Namespace> namespaces = [];
         private readonly List<FileMap> fileMaps = [];
+        private readonly NamespaceBuilder namespaceBuilder = new();
+
+        private readonly List<GeneratedFile> generatedFiles = [];
 
         private void Reset() {
             namespaces.Clear();
             fileMaps.Clear();
-
             guidGenerator.Reset();
             idGenerator.Reset();
+            namespaceBuilder.Reset();
+            texturePackBuilder.Reset();
         }
 
         private static readonly JsonSerializerOptions jsonOptions = new() {
@@ -36,22 +58,106 @@ namespace WAM.Core.Builder {
             return JsonSerializer.Serialize(namespaces,jsonOptions);
         }
 
-        private int CreateMapping(string sourceFile) {
+        public IEnumerable<GeneratedFile> GetGeneratedFiles() {
+            return generatedFiles;
+        }
+
+        private string GetDestinationRoot() {
+            // if guid usage is in effect, flatten the namespace folders
+            throw new NotImplementedException();
+        }
+
+        private (int,string) BindAssetBase(
+            string relativePath,
+            FileType type
+        ) {
+            relativePath = settings.UseGuids ? guidGenerator.Next() : relativePath;
+            relativePath = namespaceBuilder.QualifyAssetPath(relativePath);
+
+            var ID = idGenerator.Next();
+            namespaceBuilder.AddAsset(new() {
+                ID = ID,
+                Type = type.ToString(),
+                Path = relativePath
+            });
+
+            var destination = Path.Combine(
+                GetDestinationRoot(),
+                relativePath
+            );
+            return (ID,destination);
+        }
+
+        public int BindAsset(
+            string relativePath,
+            string qualifiedPath,
+            FileType type
+        ) {
+            var (ID,destination) = BindAssetBase(
+                relativePath,
+                type
+            );
+
             var fileMap = new FileMap {
-                Source = sourceFile,
-                Destination = guidGenerator.Next()
+                Source = qualifiedPath,
+                Destination = destination
             };
             fileMaps.Add(fileMap);
-            return idGenerator.Next();
+
+            return ID;
+        }
+
+        public int BindAsset(
+            string relativePath,
+            FileType type,
+            byte[] data
+        ) {
+            var (ID,destination) = BindAssetBase(
+                relativePath,
+                type
+            );
+
+            var generatedFile = new GeneratedFile {
+                Data = data,
+                Destination = destination
+            };
+            generatedFiles.Add(generatedFile);
+
+            return ID;
         }
 
         private Error? AddNamespace(QualifiedInputManifest manifest) {
-            NamespaceBuilder builder = new();
+            namespaceBuilder.Reset();
+
             var namespaceDirectories = Directory.GetDirectories(manifest.Path,"*",SearchOption.AllDirectories);
+
             foreach(var subdirectory in namespaceDirectories) {
-                throw new NotImplementedException();
+                bool useTexturePacking = subdirectory.Contains(PACK_FILE);
+                if(subdirectory.Contains(PACK_FILE)) {
+                    texturePackBuilder.Reset();
+                }
+                foreach(var file in Directory.GetFiles(subdirectory)) {
+                    if(!FileTypeHelper.TryGetType(file,out var type)) {
+                        continue;
+                    }
+                    BindAsset(file,manifest.Path,type);
+                }
+                if(useTexturePacking) {
+                    var buildResult = texturePackBuilder.Build(subdirectory,this);
+                    if(buildResult.IsErr) {
+                        return Error.Create($"{buildResult.Error}");
+                    }
+                    var texturePack = buildResult.Value;
+                    foreach(var image in texturePack.Images) {
+                        namespaceBuilder.AddImage(image);
+                    }
+                    foreach(var generatedFile in texturePack.Files) {
+                        generatedFiles.Add(generatedFile);
+                    }
+                }
             }
-            throw new NotImplementedException();
+
+            return null;
         }
 
         public Error? Build(string namespaceContentRoot,string targetNamespace) {

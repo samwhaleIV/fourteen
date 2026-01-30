@@ -1,5 +1,5 @@
 ﻿namespace WAM.Core {
-    public struct Result<T> where T:new() {
+    public struct Result<T> where T:notnull,new() {
 
         private const string FALLBACK_ERROR = "unknown error";
         private const string VALUE_OKAY = "no error";
@@ -12,7 +12,7 @@
         public static Result<T> Err() {
             return new() {
                 Error = FALLBACK_ERROR,
-                Value = new(),
+                Value = new T(),
                 HasValue = false
             };
         }

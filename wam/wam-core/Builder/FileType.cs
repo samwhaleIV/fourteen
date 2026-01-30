@@ -2,6 +2,6 @@
     public enum FileType {
         Image,
         Text,
-        JSON
+        Json
     };
 }

@@ -2,12 +2,52 @@
 
     readonly record struct Command(
         Action<IEnumerable<string>> Action,
-        string Description
+        string Description,
+        bool Hidden = false
     );
 
     internal class Program {
         static bool FirstTime = true;
         static bool FromCommandLine = false;
+
+        static readonly Dictionary<string,Command> Commands = new() {
+            {
+                "argstest", new Command {
+                    Action = ArgsTest,
+                    Hidden = true,
+                    Description = "print list of 'args' that were supplied with the command"
+                }
+            },
+            {
+                "help", new Command {
+                    Action = Help,
+                    Description = "get a list of command names and their descriptions (but you already know that)"
+                }
+            },
+            {
+                "invert", new Command {
+                    Action = InvertColors,
+                    Hidden = true,
+                    Description = "invert the colors of the console output"
+                }
+            },
+            {
+                "debug", new Command {
+                    Action = Debug,
+                    Description = string.Empty,
+                    Hidden = true
+                }
+            },
+            {
+                "crash", new Command {
+                    Action = static _ => {
+                        throw new Exception("🤣 Did you know you can put emojis in exceptions? 😲");
+                    },
+                    Description = "the quickest way to the bottom is to jump",
+                    Hidden = true
+                }
+            }
+        };
 
         static void Execute(string[] args) {
             if(args.Length > 0) {
@@ -54,27 +94,6 @@
             Execute(input);
         }
 
-        static readonly Dictionary<string,Command> Commands = new() {
-            {
-                "argstest", new Command {
-                    Action = ArgsTest,
-                    Description = "print list of 'args' that were supplied with the command (for debugging this cli)"
-                }
-            },
-            {
-                "help", new Command {
-                    Action = Help,
-                    Description = "get a list of command names and their descriptions (but you already know that)"
-                }
-            },
-            {
-                "invert", new Command {
-                    Action = InvertColors,
-                    Description = "invert the colors of the console output"
-                }
-            }
-        };
-
         static void InvertColors(IEnumerable<string> args) {
             if(Console.ForegroundColor == ConsoleColor.White) {
                 Console.BackgroundColor = ConsoleColor.White;
@@ -88,19 +107,40 @@
         }
 
         static void Help(IEnumerable<string> args) {
+            var showHidden = false;
+            foreach(var item in args) {
+                if(item == "hidden") {
+                    showHidden = true;
+                    break;
+                }
+            }
             var counter = 1;
+            var hiddenCount = 0;
             foreach(var command in Commands) {
-                Console.WriteLine($"{counter}. {command.Key}: {command.Value.Description}");
+                if(!showHidden && command.Value.Hidden) {
+                    hiddenCount += 1;
+                    continue;
+                }
+                string description = command.Value.Description;
+                if(string.IsNullOrWhiteSpace(description)) {
+                    description = "<no description>";
+                }
+                Console.WriteLine($"{counter}. {command.Key}{(command.Value.Hidden ? "*" : "")}: {description}");
                 counter += 1;
             }
+
+            Console.WriteLine(showHidden ?
+                "* = a hidden/debug command" :
+                $"(use 'help hidden' to see {hiddenCount} hidden command{(hiddenCount == 1 ? "" : "s")})"
+            );
         }
 
         static void ArgsTest(IEnumerable<string> args) {
             Console.WriteLine($"args: {string.Join(", ",args)}");
         }
 
-        static void TexturePack() {
-
+        static void Debug(IEnumerable<string> args) {
+            throw new NotImplementedException();
         }
     }
 }
