@@ -28,19 +28,19 @@
             };
         }
 
-        public static Result<T> Ok(T manifest) {
+        public static Result<T> Ok(T value) {
             return new() {
                 Error = VALUE_OKAY,
-                Value = new(),
+                Value = value,
                 HasValue = true,
             };
         }
 
-        public bool IsErr {
+        public readonly bool IsErr {
             get => !HasValue;
         }
 
-        public bool IsOk {
+        public readonly bool IsOk {
             get => HasValue;
         }
     }

@@ -1,10 +1,4 @@
-﻿namespace WAM.Core {
-    public enum FileType {
-        Image,
-        Text,
-        JSON
-    };
-
+﻿namespace WAM.Core.Builder {
     public static class FileTypeHelper {
         private static Dictionary<string,FileType> types = new() {
             { "png", FileType.Image },
