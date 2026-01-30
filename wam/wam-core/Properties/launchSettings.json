@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "wam-core": {
+      "commandName": "Project",
+      "hotReloadEnabled": false
+    }
+  }
+}
