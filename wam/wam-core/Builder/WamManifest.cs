@@ -1,31 +1,16 @@
-﻿using System.Data.Common;
-using System.IO;
-using System.Text.Json;
-using WAM.Core.Builder.JsonTypes.Input;
-using WAM.Core.Builder.JsonTypes.Output;
+﻿using System.Text.Json;
 using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
 namespace WAM.Core.Builder {
     using InputManifestResult = Result<InputManifest>;
 
-    public sealed class WamManifest:IAssetGenerator {
+    public sealed class WamManifest(WamManifestSettings settings) {
 
-        private readonly WamManifestSettings settings;
-        private readonly TexturePackBuilder texturePackBuilder;
-
-        public WamManifest() {
-            settings = WamManifestSettings.Default;
-            texturePackBuilder = new(settings.TexturePackSettings);
-        }
-
-        public WamManifest(WamManifestSettings settings) {
-            this.settings = settings;
-            texturePackBuilder = new(settings.TexturePackSettings);
-        }
+        private readonly TexturePackBuilder texturePackBuilder = new(settings.TexturePackSettings);
 
         const string INPUT_MANIFEST_NAME = "manifest.json";
-        const string PACK_FILE = "pack.json";
+        const string PACK_FILE = "pack";
 
         private readonly SequentialIDGenerator idGenerator = new();
         private readonly UniqueGuidGenerator guidGenerator = new();
@@ -62,66 +47,48 @@ namespace WAM.Core.Builder {
             return generatedFiles;
         }
 
-        private string GetDestinationRoot() {
-            // if guid usage is in effect, flatten the namespace folders
-            throw new NotImplementedException();
-        }
-
-        private (int,string) BindAssetBase(
-            string relativePath,
-            FileType type
+        public int BindAsset(
+            string runtimeFileName,
+            string runtimeNamespace,
+            string compileTimeSourcePath,
+            string fileTypeExtension,
+            FileType type,
+            byte[]? data = null
         ) {
-            relativePath = settings.UseGuids ? guidGenerator.Next() : relativePath;
-            relativePath = namespaceBuilder.QualifyAssetPath(relativePath);
-
+            runtimeFileName = namespaceBuilder.QualifyAssetName(
+                settings.UseGuids ? guidGenerator.Next() : Path.Combine(runtimeNamespace,runtimeFileName)
+            );
             var ID = idGenerator.Next();
-            namespaceBuilder.AddAsset(new() {
+
+            namespaceBuilder.AddHardAsset(new() {
                 ID = ID,
                 Type = type.ToString(),
-                Path = relativePath
+                Source = $"{runtimeFileName}{fileTypeExtension}"
             });
 
-            var destination = Path.Combine(
-                GetDestinationRoot(),
-                relativePath
-            );
-            return (ID,destination);
-        }
-
-        public int BindAsset(
-            string relativePath,
-            string qualifiedPath,
-            FileType type
-        ) {
-            var (ID,destination) = BindAssetBase(
-                relativePath,
-                type
+            var compileTimeDestination = Path.Combine(
+                settings.Destination,
+                runtimeFileName
             );
 
-            var fileMap = new FileMap {
-                Source = qualifiedPath,
-                Destination = destination
-            };
-            fileMaps.Add(fileMap);
-
-            return ID;
-        }
-
-        public int BindAsset(
-            string relativePath,
-            FileType type,
-            byte[] data
-        ) {
-            var (ID,destination) = BindAssetBase(
-                relativePath,
-                type
+            compileTimeDestination = Path.ChangeExtension(
+                compileTimeDestination,
+                fileTypeExtension
             );
 
-            var generatedFile = new GeneratedFile {
-                Data = data,
-                Destination = destination
-            };
-            generatedFiles.Add(generatedFile);
+            if(data != null) {
+                var generatedFile = new GeneratedFile {
+                    Data = data,
+                    Destination = compileTimeDestination
+                };
+                generatedFiles.Add(generatedFile);
+            } else {
+                var fileMap = new FileMap {
+                    Source = compileTimeSourcePath,
+                    Destination = compileTimeDestination
+                };
+                fileMaps.Add(fileMap);
+            }
 
             return ID;
         }
@@ -129,27 +96,58 @@ namespace WAM.Core.Builder {
         private Error? AddNamespace(QualifiedInputManifest manifest) {
             namespaceBuilder.Reset();
 
-            var namespaceDirectories = Directory.GetDirectories(manifest.Path,"*",SearchOption.AllDirectories);
+            string[] namespaceDirectories = [
+                manifest.Path,
+                ..Directory.GetDirectories(manifest.Path,"*",SearchOption.AllDirectories)
+            ];
 
             foreach(var subdirectory in namespaceDirectories) {
-                bool useTexturePacking = subdirectory.Contains(PACK_FILE);
-                if(subdirectory.Contains(PACK_FILE)) {
+                bool useTexturePacking = File.Exists(Path.Combine(subdirectory,PACK_FILE));
+                if(useTexturePacking) {
                     texturePackBuilder.Reset();
                 }
-                foreach(var file in Directory.GetFiles(subdirectory)) {
-                    if(!FileTypeHelper.TryGetType(file,out var type)) {
+                var subdirectoryFiles = Directory.GetFiles(subdirectory,"*",SearchOption.TopDirectoryOnly);
+                foreach(var file in subdirectoryFiles) {
+                    if(subdirectory == manifest.Path && Path.GetFileName(file) == INPUT_MANIFEST_NAME) {
                         continue;
                     }
-                    BindAsset(file,manifest.Path,type);
+                    if(!FileTypeHelper.TryGetType(Path.GetExtension(file),out var type)) {
+                        continue;
+                    }
+
+                    if(type == FileType.Image && useTexturePacking) {
+                        texturePackBuilder.AddImage(file);
+                        continue;
+                    }
+
+                    var runtimeFileName = Path.ChangeExtension(
+                        Path.GetRelativePath(manifest.Path,file),
+                        null
+                    );
+
+                    var id = BindAsset(
+                        runtimeFileName,
+                        manifest.Name,
+                        file,
+                        Path.GetExtension(file),
+                        type
+                    );
+
+                    namespaceBuilder.AddVirtualAsset(new() {
+                        Type = type.ToString(),
+                        Name = runtimeFileName,
+                        ID = id
+                    });
                 }
                 if(useTexturePacking) {
-                    var buildResult = texturePackBuilder.Build(subdirectory,this);
+                    var runtimeFileName = Path.GetRelativePath(manifest.Path,subdirectory);
+                    var buildResult = texturePackBuilder.Build(runtimeFileName,manifest.Name,this);
                     if(buildResult.IsErr) {
                         return Error.Create($"{buildResult.Error}");
                     }
                     var texturePack = buildResult.Value;
                     foreach(var image in texturePack.Images) {
-                        namespaceBuilder.AddImage(image);
+                        namespaceBuilder.AddVirtualAsset(image);
                     }
                     foreach(var generatedFile in texturePack.Files) {
                         generatedFiles.Add(generatedFile);
@@ -157,41 +155,48 @@ namespace WAM.Core.Builder {
                 }
             }
 
+            namespaces[manifest.Name] = namespaceBuilder.Build(manifest.Name);
+
             return null;
         }
 
-        public Error? Build(string namespaceContentRoot,string targetNamespace) {
+        public Error? Build() {
             Reset();
 
-            if(string.IsNullOrWhiteSpace(targetNamespace)) {
+            var namespaceRoot = settings.Source;
+
+            if(string.IsNullOrWhiteSpace(settings.TargetNamespace)) {
                 return Error.Create(
                     "invalid target namespace"
                 );
             }
 
-            if(!Directory.Exists(namespaceContentRoot)) {
+            if(!Directory.Exists(namespaceRoot)) {
                 return Error.Create(
-                    $"directory '{namespaceContentRoot}' does not exist"
+                    $"directory '{namespaceRoot}' does not exist"
                 );
             }
 
             Dictionary<string,QualifiedInputManifest> allNamespaces = [];
 
-            foreach(var directory in Directory.GetDirectories(namespaceContentRoot,"*",SearchOption.TopDirectoryOnly)) {
-                if(!(directory?.Contains(INPUT_MANIFEST_NAME) ?? false)) {
+            foreach(var directory in Directory.GetDirectories(namespaceRoot,"*",SearchOption.TopDirectoryOnly)) {
+                if(string.IsNullOrWhiteSpace(directory)) {
                     continue;
                 }
-                string path = Path.Join(directory,INPUT_MANIFEST_NAME);
-                var result = ScanManifest(path);
+                var manifestPath = Path.Combine(directory,INPUT_MANIFEST_NAME);
+                if(!File.Exists(manifestPath)) {
+                    continue;
+                }
+                var result = ScanManifest(manifestPath);
                 if(result.IsErr) {
                     return Error.Create(result.Error);
                 }
                 var value = result.Value;
                 if(string.IsNullOrWhiteSpace(value.Name)) {
-                    return Error.Create($"missing 'namespace' identifier in manifest '{path}'");
+                    return Error.Create($"missing 'namespace' identifier in manifest '{manifestPath}'");
                 }
                 if(value.Includes == null) {
-                    return Error.Create($"missing 'includes' in manifest '{path}'");
+                    return Error.Create($"missing 'includes' in manifest '{manifestPath}'");
                 }
                 if(allNamespaces.ContainsKey(value.Name)) {
                     return Error.Create($"namespace value collision for '{value.Name}'");
@@ -199,11 +204,14 @@ namespace WAM.Core.Builder {
                 allNamespaces.Add(value.Name,new QualifiedInputManifest() {
                     Name = value.Name,
                     Includes = value.Includes,
-                    Path = path
+                    Path = directory
                 });
             }
 
             HashSet<string> requiredNamespaces = [];
+
+            var targetNamespace = settings.TargetNamespace;
+
             if(allNamespaces.ContainsKey(targetNamespace)) {
                 requiredNamespaces.Add(targetNamespace);
             } else {
@@ -227,6 +235,7 @@ namespace WAM.Core.Builder {
                 }
             }
 
+            //todo: Write a manifest, write the files, copy the files
             return null;
         }
 

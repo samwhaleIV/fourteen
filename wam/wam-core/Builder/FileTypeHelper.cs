@@ -1,11 +1,11 @@
 ﻿namespace WAM.Core.Builder {
     public static class FileTypeHelper {
         private static readonly Dictionary<string,FileType> types = new() {
-            { "png", FileType.Image },
-            { "jpg", FileType.Image },
-            { "jpeg", FileType.Image },
-            { "json", FileType.Json },
-            { "txt", FileType.Text },
+            { ".png", FileType.Image },
+            { ".jpg", FileType.Image },
+            { ".jpeg", FileType.Image },
+            { ".json", FileType.Json },
+            { ".txt", FileType.Text },
         };
         public static bool TryGetType(string type,out FileType value) {
             return types.TryGetValue(type,out value);

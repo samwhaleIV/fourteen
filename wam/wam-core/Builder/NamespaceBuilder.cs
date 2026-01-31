@@ -1,39 +1,35 @@
-﻿using WAM.Core.Builder.JsonTypes.Output;
-
-namespace WAM.Core.Builder {
+﻿namespace WAM.Core.Builder {
     internal sealed class NamespaceBuilder {
-        private List<Asset> Assets { get; init; } = [];
-        private List<Image> Images { get; init; } = [];
-        private List<Json> Json { get; init; } = [];
-        private List<Text> Text { get; init; } = [];
+        private List<HardAsset> HardAssets { get; init; } = [];
+        private List<VirtualAsset> VirtualAssets { get; init; } = [];
 
-        private HashSet<string> usedAssets = [];
+        private readonly Dictionary<string,int> usedNames = [];
 
-        public void AddAsset(Asset asset) => Assets.Add(asset);
-        public void AddImage(Image image) => Images.Add(image);
-        public void AddJson(Json json) => Json.Add(json);
-        public void AddText(Text text) => Text.Add(text);
+        public void AddHardAsset(HardAsset asset) => HardAssets.Add(asset);
+        public void AddVirtualAsset(VirtualAsset image) => VirtualAssets.Add(image);
 
-        public string QualifyAssetPath(string assetPath) {
-            throw new NotImplementedException(); //if assetpath is alerady in usedassets, return the asset with the next available number
+        public string QualifyAssetName(string name) {
+            if(usedNames.TryGetValue(name,out int value)) {
+                name = $"{name} - {value}";
+                usedNames[name] = value + 1;
+            } else {
+                usedNames.Add(name,1);
+            }
+            return name;
         }
 
         public Namespace Build(string name) {
             return new() {
                 Name = name,
-                Assets = [..Assets],
-                Images = [..Images],
-                Json = [..Json],
-                Text = [..Text]
+                HardAssets = [..HardAssets],
+                VirtualAssets = [..VirtualAssets],
             };
         }
 
         public void Reset() {
-            Assets.Clear();
-            Images.Clear();
-            Json.Clear();
-            Text.Clear();
-            usedAssets.Clear();
+            VirtualAssets.Clear();
+            HardAssets.Clear();
+            usedNames.Clear();
         }
     }
 }

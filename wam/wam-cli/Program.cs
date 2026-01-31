@@ -1,4 +1,6 @@
-﻿namespace WAM.CLI {
+﻿using WAM.Core.Builder;
+
+namespace WAM.CLI {
 
     readonly record struct Command(
         Action<IEnumerable<string>> Action,
@@ -140,7 +142,16 @@
         }
 
         static void Debug(IEnumerable<string> args) {
-            throw new NotImplementedException();
+            var manifest = new WamManifest(WamManifestSettings.GetDefault(
+                @"something\test-content\",
+                @"something\test-output",
+                @"alias"
+            ));
+            var error = manifest.Build();
+            if(error.HasValue) {
+                Console.WriteLine(error.Value.Message);
+            }
+            return;
         }
     }
 }

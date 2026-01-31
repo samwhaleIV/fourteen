@@ -1,5 +1,5 @@
 {
-    "name": "test-namespace",
+    "name": "alias",
     "includes": [
         "wimpy"
     ]
