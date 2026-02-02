@@ -72,7 +72,7 @@ namespace WAM.Core.Builder.TexturePack {
                 bool success = false;
                 for(int j = secondAttempt ? layoutSurfaces.Count - 1 : 0;j < layoutSurfaces.Count;j++) {
                     var surface = layoutSurfaces[j];
-                    if(surface.TryAddBitmap(image.Bitmap,out Area area)) {
+                    if(surface.TryAddBitmap(image.Bitmap,settings.Padding,out Area area)) {
                         virtualImageFiles.Add(new() {
                             Area = new Area(),
                             Name = Path.Combine(
@@ -92,6 +92,12 @@ namespace WAM.Core.Builder.TexturePack {
                     if(secondAttempt) {
                         return Result<TexturePack>.Err(
                             $"texture pack item '{image.FilePath}' is too big for pack (size: {image.Bitmap.Width}x{image.Bitmap.Height})"
+                        );
+                    }
+
+                    if(!settings.AllowMultipleSurfaces) {
+                        return Result<TexturePack>.Err(
+                            $"texture pack construction failure for '{image.FilePath}'; spill over is needed but multiple surfaces are not allowed"
                         );
                     }
 

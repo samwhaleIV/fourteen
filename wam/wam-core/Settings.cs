@@ -5,7 +5,7 @@ namespace WAM.Core {
         int MaxSize = 512,
         bool AllowMultipleSurfaces = true,
         ImageFormat ExportFormat = ImageFormat.Png,
-        PackPadding Padding = PackPadding.None
+        PackPadding Padding = PackPadding.EdgeExtension
     );
 
     public record class WamManifestSettings(
@@ -20,7 +20,7 @@ namespace WAM.Core {
 
     public enum PackPadding {
         None,
-        Transparent,
+        TransparentBuffer,
         EdgeExtension
     }
 
