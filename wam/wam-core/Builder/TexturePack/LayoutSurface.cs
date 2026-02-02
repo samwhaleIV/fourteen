@@ -117,6 +117,14 @@ namespace WAM.Core.Builder.TexturePack {
                 if(AreaFits(area,padding)) {
                     FillCollisionMap(area,padding);
                     DrawBitmap(bitmap,area.X,area.Y,padding);
+                    if(padding != PackPadding.None) {
+                        area = new Area() {
+                            X = area.X + 1,
+                            Y = area.Y + 1,
+                            Width = bitmap.Width,
+                            Height = bitmap.Height
+                        };
+                    }
                     return true;
                 }
             }

@@ -74,7 +74,7 @@ namespace WAM.Core.Builder.TexturePack {
                     var surface = layoutSurfaces[j];
                     if(surface.TryAddBitmap(image.Bitmap,settings.Padding,out Area area)) {
                         virtualImageFiles.Add(new() {
-                            Area = new Area(),
+                            Area = area,
                             Name = Path.Combine(
                                 runtimeFileName,
                                 Path.GetFileNameWithoutExtension(image.FilePath)
