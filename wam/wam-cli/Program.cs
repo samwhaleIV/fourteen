@@ -1,4 +1,5 @@
-﻿using WAM.Core.Builder;
+﻿using WAM.Core;
+using WAM.Core.Builder;
 
 namespace WAM.CLI {
 
@@ -141,17 +142,96 @@ namespace WAM.CLI {
             Console.WriteLine($"args: {string.Join(", ",args)}");
         }
 
-        static void Debug(IEnumerable<string> args) {
-            var manifest = new WamManifest(WamManifestSettings.GetDefault(
-                @"something\test-content\",
-                @"something\test-output",
-                @"alias"
-            ));
+        static bool ShouldProceed(string prompt) {
+            Console.WriteLine(prompt);
+            Console.Write("are you sure you want to proceed? write 'yes' to proceed: ");
+            var result = Console.ReadLine();
+            if(result == null) {
+                return false;
+            }
+            result = result.Trim().ToLower();
+            if(string.IsNullOrWhiteSpace(result)) {
+                return false;
+            }
+            return result == "yes";
+        }
+
+        static void ClearDirectory(string directory) {
+            if(!Directory.Exists(directory)) {
+                return;
+            }
+            foreach(var file in Directory.GetFiles(directory,"*",SearchOption.TopDirectoryOnly)) {
+                File.Delete(file);
+                Console.WriteLine($"deleted file '{file}'");
+            }
+            foreach(var subdirectory in Directory.GetDirectories(directory,"*",SearchOption.TopDirectoryOnly)) {
+                Directory.Delete(subdirectory,true);
+                Console.WriteLine($"deleted directory '{directory}'");
+            }
+        }
+
+        static void QualifyDirectory(string filePath) {
+            var directory = Path.GetDirectoryName(filePath);
+            if(string.IsNullOrEmpty(directory)) {
+                return;
+            }
+            if(Directory.Exists(directory)) {
+                return;
+            }
+            Directory.CreateDirectory(directory);
+        }
+
+        static void CreateManifestPackage(WamManifestSettings settings) {
+            if(
+                !FromCommandLine &&
+                Directory.Exists(settings.Destination) &&
+                Directory.GetFileSystemEntries(settings.Destination,"*",SearchOption.AllDirectories).Length > 0
+            ) {
+                if(!ShouldProceed(
+                    "the output directory already has files and this action will clear them"
+                )) {
+                    Console.WriteLine("action aborted");
+                    return;
+                }
+            }
+
+            var manifest = new WamManifest(settings);
             var error = manifest.Build();
             if(error.HasValue) {
                 Console.WriteLine(error.Value.Message);
+                return;
             }
-            return;
+
+            var json = manifest.GetJson(); /* Generate the JSON before fucking with any files in case it fails */
+
+            ClearDirectory(settings.Destination);
+
+            foreach(var generatedFile in manifest.GetGeneratedFiles()) {
+                var destination = generatedFile.Destination;
+                QualifyDirectory(destination);
+                File.WriteAllBytes(destination,generatedFile.Data);
+                Console.WriteLine($"created output file '{Path.GetRelativePath(settings.Destination,destination)}' (size: {generatedFile.Data.Length})");
+            }
+
+            foreach(var mappedFile in manifest.GetFileMaps()) {
+                var destination = mappedFile.Destination;
+                QualifyDirectory(destination);
+                File.Copy(mappedFile.Source,destination,true);
+                Console.WriteLine($"copied file to output '{Path.GetRelativePath(settings.Destination,destination)}' from '{mappedFile.Source}'");
+            }
+
+            var manifestPath = Path.Combine(settings.Destination,settings.ManifestOutputFile);
+            File.WriteAllText(manifestPath,json);
+            Console.WriteLine($"created manifest file at '{manifestPath}'");
+        }
+
+        static void Debug(IEnumerable<string> args) {
+            var settings = new WamManifestSettings(
+                Source: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\wam\wam-core\test-content\",
+                Destination: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\wam\wam-core\test-content\debug-output",
+                TargetNamespace: "alias"
+            );
+            CreateManifestPackage(settings);
         }
     }
 }

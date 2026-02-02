@@ -1,7 +1,8 @@
 /target
 /wimpy-web/html/wimpy_web*.*
 *.dll
-/wimpy-web/html/snippets/
-/wam/*/bin/*
-/wam/*/obj/*
-/wam/.vs/
+/wimpy-web/html/snippets
+/wam/*/bin
+/wam/*/obj
+/wam/.vs
+wam/wam-core/test-content/debug-output

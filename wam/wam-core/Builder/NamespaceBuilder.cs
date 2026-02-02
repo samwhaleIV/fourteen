@@ -2,11 +2,21 @@
     internal sealed class NamespaceBuilder {
         private List<HardAsset> HardAssets { get; init; } = [];
         private List<VirtualAsset> VirtualAssets { get; init; } = [];
+        private List<VirtualImageAsset> VirtualImageAssets { get; init; } = [];
 
         private readonly Dictionary<string,int> usedNames = [];
 
-        public void AddHardAsset(HardAsset asset) => HardAssets.Add(asset);
-        public void AddVirtualAsset(VirtualAsset image) => VirtualAssets.Add(image);
+        public void AddHardAsset(HardAsset hardAsset) {
+            HardAssets.Add(hardAsset);
+        }
+
+        public void AddVirtualAsset(VirtualAsset virtualAsset) {
+            VirtualAssets.Add(virtualAsset);
+        }
+
+        public void AddVirtualImageAsset(VirtualImageAsset virtualImageAsset) {
+            VirtualImageAssets.Add(virtualImageAsset);
+        }
 
         public string QualifyAssetName(string name) {
             if(usedNames.TryGetValue(name,out int value)) {
@@ -22,6 +32,7 @@
             return new() {
                 Name = name,
                 HardAssets = [..HardAssets],
+                VirtualImageAssets = [..VirtualImageAssets],
                 VirtualAssets = [..VirtualAssets],
             };
         }
