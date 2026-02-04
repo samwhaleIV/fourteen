@@ -5,4 +5,4 @@
 /wam/*/bin
 /wam/*/obj
 /wam/.vs
-/content/debug-output
+/assets/debug-output/
