@@ -73,7 +73,7 @@ namespace WAM.Core.Builder.TexturePack {
             return true;
         }
 
-        public byte[] ExportPNG(ImageFormat imageFormat) {
+        public byte[] Export(ImageFormat imageFormat) {
             using var snapshot = surface.Snapshot();
             using var data = snapshot.Encode(
                 imageFormat.ToSkFormat(),LOSSLESS_ENCODING

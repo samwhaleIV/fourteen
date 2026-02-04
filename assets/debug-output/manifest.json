@@ -1,0 +1,398 @@
+{
+    "alias": {
+        "hard-assets": [
+            {
+                "id": 0,
+                "type": "text",
+                "source": "ddfb071c-d427-4cc2-9900-9a4a75717026.txt"
+            },
+            {
+                "id": 1,
+                "type": "image",
+                "source": "57010c11-b6dd-4bb2-8b5a-fc1eaebded5e.png"
+            },
+            {
+                "id": 2,
+                "type": "image",
+                "source": "59663f0c-c592-486f-acab-184cf6e3c9c3.jpg"
+            },
+            {
+                "id": 3,
+                "type": "image",
+                "source": "7b45d74a-f476-4c50-b58f-659f58196c93.png"
+            }
+        ],
+        "virtual-assets": [
+            {
+                "id": 0,
+                "type": "text",
+                "name": "example"
+            },
+            {
+                "id": 1,
+                "type": "image",
+                "name": "squares"
+            },
+            {
+                "id": 2,
+                "type": "image",
+                "name": "test"
+            }
+        ],
+        "virtual-image-assets": [
+            {
+                "id": 3,
+                "name": "squares/i",
+                "area": {
+                    "x": 1,
+                    "y": 1,
+                    "width": 64,
+                    "height": 64
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/b",
+                "area": {
+                    "x": 67,
+                    "y": 1,
+                    "width": 32,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/d",
+                "area": {
+                    "x": 101,
+                    "y": 1,
+                    "width": 16,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/edge-test",
+                "area": {
+                    "x": 119,
+                    "y": 1,
+                    "width": 32,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/f",
+                "area": {
+                    "x": 153,
+                    "y": 1,
+                    "width": 32,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/a",
+                "area": {
+                    "x": 187,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/c",
+                "area": {
+                    "x": 205,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/e",
+                "area": {
+                    "x": 223,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/g",
+                "area": {
+                    "x": 241,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/h",
+                "area": {
+                    "x": 259,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            }
+        ]
+    },
+    "wimpy": {
+        "hard-assets": [
+            {
+                "id": 4,
+                "type": "text",
+                "source": "56d0be07-417d-4b59-a827-b9da88c6d1f4.txt"
+            },
+            {
+                "id": 5,
+                "type": "image",
+                "source": "79cbb774-0015-44f2-917f-a6202cb8937e.png"
+            },
+            {
+                "id": 6,
+                "type": "image",
+                "source": "44d5668b-5e4c-48d4-b72c-5541727360dd.png"
+            },
+            {
+                "id": 7,
+                "type": "image",
+                "source": "a1a3867f-e005-467d-a087-91d4b04ac246.png"
+            },
+            {
+                "id": 8,
+                "type": "text",
+                "source": "4720ebe2-ccc6-4987-9984-c61abbbeb9a9.txt"
+            },
+            {
+                "id": 9,
+                "type": "json",
+                "source": "72e7df49-6540-4bb6-b660-d101fd6cd139.json"
+            }
+        ],
+        "virtual-assets": [
+            {
+                "id": 4,
+                "type": "text",
+                "name": "example"
+            },
+            {
+                "id": 5,
+                "type": "image",
+                "name": "logo"
+            },
+            {
+                "id": 6,
+                "type": "image",
+                "name": "missing"
+            },
+            {
+                "id": 8,
+                "type": "text",
+                "name": "subfolder/example"
+            },
+            {
+                "id": 9,
+                "type": "json",
+                "name": "subfolder/something"
+            }
+        ],
+        "virtual-image-assets": [
+            {
+                "id": 3,
+                "name": "squares/i",
+                "area": {
+                    "x": 1,
+                    "y": 1,
+                    "width": 64,
+                    "height": 64
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/b",
+                "area": {
+                    "x": 67,
+                    "y": 1,
+                    "width": 32,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/d",
+                "area": {
+                    "x": 101,
+                    "y": 1,
+                    "width": 16,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/edge-test",
+                "area": {
+                    "x": 119,
+                    "y": 1,
+                    "width": 32,
+                    "height": 32
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/f",
+                "area": {
+                    "x": 153,
+                    "y": 1,
+                    "width": 32,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/a",
+                "area": {
+                    "x": 187,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/c",
+                "area": {
+                    "x": 205,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/e",
+                "area": {
+                    "x": 223,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/g",
+                "area": {
+                    "x": 241,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 3,
+                "name": "squares/h",
+                "area": {
+                    "x": 259,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/i",
+                "area": {
+                    "x": 1,
+                    "y": 1,
+                    "width": 64,
+                    "height": 64
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/b",
+                "area": {
+                    "x": 67,
+                    "y": 1,
+                    "width": 32,
+                    "height": 32
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/d",
+                "area": {
+                    "x": 101,
+                    "y": 1,
+                    "width": 16,
+                    "height": 32
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/f",
+                "area": {
+                    "x": 119,
+                    "y": 1,
+                    "width": 32,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/a",
+                "area": {
+                    "x": 153,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/c",
+                "area": {
+                    "x": 171,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/e",
+                "area": {
+                    "x": 189,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/g",
+                "area": {
+                    "x": 207,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            },
+            {
+                "id": 7,
+                "name": "squares/h",
+                "area": {
+                    "x": 225,
+                    "y": 1,
+                    "width": 16,
+                    "height": 16
+                }
+            }
+        ]
+    }
+}

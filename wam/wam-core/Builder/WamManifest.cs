@@ -23,7 +23,7 @@ namespace WAM.Core.Builder {
             jsonOptions.Converters.Add(new FileTypeConverter());
 
             var texturePackSettings = settings.TexturePackSettings ?? new TexturePackSettings();
-            texturePackBuilder = new(texturePackSettings);
+            texturePackBuilder = new(texturePackSettings,settings.ImageExportFormat);
             this.settings = settings;
         }
 
@@ -141,19 +141,23 @@ namespace WAM.Core.Builder {
                         null
                     );
 
-                    var id = BindAsset(
-                        runtimeFileName,
-                        manifest.Name,
-                        file,
-                        Path.GetExtension(file),
-                        type
-                    );
-
-                    namespaceBuilder.AddVirtualAsset(new() {
-                        Type = type,
-                        Name = runtimeFileName,
-                        ID = id
-                    });
+                    if(type == FileType.Image) {
+                        // TODO: Bind Asset, Create virtual image asset, Reformat Images
+                        throw new NotImplementedException();
+                    } else {
+                        var id = BindAsset(
+                            runtimeFileName,
+                            manifest.Name,
+                            file,
+                            Path.GetExtension(file),
+                            type
+                        );
+                        namespaceBuilder.AddVirtualAsset(new() {
+                            Type = type,
+                            Name = runtimeFileName,
+                            ID = id
+                        });
+                    }
                 }
                 if(useTexturePacking) {
                     var runtimeFileName = Path.GetRelativePath(manifest.Path,subdirectory);

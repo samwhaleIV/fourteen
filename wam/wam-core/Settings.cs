@@ -4,7 +4,6 @@ namespace WAM.Core {
     public record class TexturePackSettings(
         int MaxSize = 512,
         bool AllowMultipleSurfaces = true,
-        ImageFormat ExportFormat = ImageFormat.Png,
         PackPadding Padding = PackPadding.EdgeExtension
     );
 
@@ -12,6 +11,7 @@ namespace WAM.Core {
         string Source,
         string Destination,
         string TargetNamespace,
+        ImageFormat ImageExportFormat = ImageFormat.Png,
         TexturePackSettings? TexturePackSettings = null,
         bool UseGuids = true,
         bool CompressManifest = false,
