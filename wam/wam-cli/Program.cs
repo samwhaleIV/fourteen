@@ -166,7 +166,7 @@ namespace WAM.CLI {
             }
             foreach(var subdirectory in Directory.GetDirectories(directory,"*",SearchOption.TopDirectoryOnly)) {
                 Directory.Delete(subdirectory,true);
-                Console.WriteLine($"deleted directory '{directory}'");
+                Console.WriteLine($"deleted directory '{subdirectory}'");
             }
         }
 
@@ -227,8 +227,8 @@ namespace WAM.CLI {
 
         static void Debug(IEnumerable<string> args) {
             var settings = new WamManifestSettings(
-                Source: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\wam\wam-core\test-content\",
-                Destination: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\wam\wam-core\test-content\debug-output",
+                Source: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets",
+                Destination: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets\debug-output",
                 TargetNamespace: "alias"
             );
             CreateManifestPackage(settings);

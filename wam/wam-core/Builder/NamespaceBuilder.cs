@@ -3,6 +3,7 @@
         private List<HardAsset> HardAssets { get; init; } = [];
         private List<VirtualAsset> VirtualAssets { get; init; } = [];
         private List<VirtualImageAsset> VirtualImageAssets { get; init; } = [];
+        private List<VirtualModelAsset> VirtualModelAssets { get; init; } = [];
 
         private readonly Dictionary<string,int> usedNames = [];
 
@@ -16,6 +17,10 @@
 
         public void AddVirtualImageAsset(VirtualImageAsset virtualImageAsset) {
             VirtualImageAssets.Add(virtualImageAsset);
+        }
+
+        public void AddVirtualModelAsset(VirtualModelAsset virtualModelAsset) {
+            VirtualModelAssets.Add(virtualModelAsset);
         }
 
         public string QualifyAssetName(string name) {
@@ -34,6 +39,7 @@
                 HardAssets = [..HardAssets],
                 VirtualImageAssets = [..VirtualImageAssets],
                 VirtualAssets = [..VirtualAssets],
+                VirtualModelAssets = [..VirtualModelAssets],
             };
         }
 
@@ -41,6 +47,7 @@
             VirtualAssets.Clear();
             HardAssets.Clear();
             usedNames.Clear();
+            VirtualModelAssets.Clear();
         }
     }
 }

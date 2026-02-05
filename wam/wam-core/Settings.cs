@@ -4,16 +4,17 @@ namespace WAM.Core {
     public record class TexturePackSettings(
         int MaxSize = 512,
         bool AllowMultipleSurfaces = true,
-        PackPadding Padding = PackPadding.EdgeExtension
+        PackPadding Padding = PackPadding.EdgeExtension,
+        ImageFormat ExportFormat = ImageFormat.Png
     );
 
     public record class WamManifestSettings(
         string Source,
         string Destination,
         string TargetNamespace,
-        ImageFormat ImageExportFormat = ImageFormat.Png,
+        //ImageFormat ImageExportFormat = ImageFormat.Png,
         TexturePackSettings? TexturePackSettings = null,
-        bool UseGuids = true,
+        bool UseGuids = false,
         bool CompressManifest = false,
         string ManifestOutputFile = "manifest.json"
     );

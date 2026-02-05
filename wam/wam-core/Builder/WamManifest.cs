@@ -1,9 +1,12 @@
-﻿using System.Text.Json;
+﻿using System;
+using System.IO;
+using System.Text.Json;
 using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
 namespace WAM.Core.Builder {
     using InputManifestResult = Result<InputManifest>;
+    using ModelManifestResult = Result<ModelManifest>;
 
     public sealed class WamManifest {
 
@@ -23,7 +26,7 @@ namespace WAM.Core.Builder {
             jsonOptions.Converters.Add(new FileTypeConverter());
 
             var texturePackSettings = settings.TexturePackSettings ?? new TexturePackSettings();
-            texturePackBuilder = new(texturePackSettings,settings.ImageExportFormat);
+            texturePackBuilder = new(texturePackSettings);
             this.settings = settings;
         }
 
@@ -31,6 +34,8 @@ namespace WAM.Core.Builder {
         const string PACK_FILE = "pack";
         const int JSON_INDENT_SIZE = 4;
         const char JSON_INDENT_CHAR = ' ';
+
+        const string MODEL_MANIFEST_NAME = "model.json";
 
         private readonly SequentialIDGenerator idGenerator = new();
         private readonly UniqueGuidGenerator guidGenerator = new();
@@ -109,74 +114,195 @@ namespace WAM.Core.Builder {
             return ID;
         }
 
-        private Error? AddNamespace(QualifiedInputManifest manifest) {
-            namespaceBuilder.Reset();
-
-            string[] namespaceDirectories = [
-                manifest.Path,
-                ..Directory.GetDirectories(manifest.Path,"*",SearchOption.AllDirectories)
-            ];
-
-            foreach(var subdirectory in namespaceDirectories) {
-                bool useTexturePacking = File.Exists(Path.Combine(subdirectory,PACK_FILE));
-                if(useTexturePacking) {
-                    texturePackBuilder.Reset();
+        private (Error? Error,int? ID) TryGetModelItem(
+            QualifiedInputManifest manifest,
+            string directory,
+            string runtimeFileName,
+            string? item,
+            string itemKey,
+            FileType requiredType
+        ) {
+            int? assetID = null;
+            if(!string.IsNullOrWhiteSpace(item)) {
+                var itemPath = Path.Combine(directory,item);
+                if(!File.Exists(itemPath)) {
+                    return (Error.Create($"model manifest '{runtimeFileName}' points to item '{item}' but it does not exist"), null);
                 }
-                var subdirectoryFiles = Directory.GetFiles(subdirectory,"*",SearchOption.TopDirectoryOnly);
-                foreach(var file in subdirectoryFiles) {
-                    if(subdirectory == manifest.Path && Path.GetFileName(file) == INPUT_MANIFEST_NAME) {
-                        continue;
-                    }
-                    if(!FileTypeHelper.TryGetType(Path.GetExtension(file),out var type)) {
-                        continue;
-                    }
+                if(!FileTypeHelper.TryGetType(Path.GetExtension(itemPath),out var type) || type != requiredType) {
+                    return (Error.Create($"model manifest '{runtimeFileName}' points to item '{item}' but it is not of expected type '{requiredType}'"), null);
+                }
+                return (null, BindAsset(
+                    Path.Combine(runtimeFileName,itemKey),
+                    //$"{runtimeFileName}.{itemKey}",
+                    manifest.Name,
+                    itemPath,
+                    Path.GetExtension(itemPath),
+                    requiredType
+                ));
+            }
+            return (null, assetID);
+        }
 
-                    if(type == FileType.Image && useTexturePacking) {
-                        texturePackBuilder.AddImage(file);
-                        continue;
-                    }
+        private Error? BuildModel(
+            QualifiedInputManifest manifest,
+            string directory
+        ) {
+            var runtimeFileName = Path.GetRelativePath(manifest.Path,directory);
+            var result = ScanModelManifest(Path.Combine(directory,MODEL_MANIFEST_NAME));
+            if(result.IsErr) {
+                return Error.Create(result.Error);
+            }
+            var modelManifest = result.Value;
 
-                    var runtimeFileName = Path.ChangeExtension(
-                        Path.GetRelativePath(manifest.Path,file),
-                        null
+            var model = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Model,"model",FileType.Model);
+            if(model.Error != null) {
+                return model.Error;
+            }
+
+            var collision = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Collision,"collision",FileType.Model);
+            if(collision.Error != null) {
+                return collision.Error;
+            }
+            var diffuse = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Diffuse,"diffuse",FileType.Image);
+            if(diffuse.Error != null) {
+                return diffuse.Error;
+            }
+
+            var lightmap = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Lightmap,"lightmap",FileType.Image);
+            if(lightmap.Error != null) {
+                return lightmap.Error;
+            }
+
+            namespaceBuilder.AddVirtualModelAsset(new() {
+                Name = runtimeFileName,
+                ModelID = model.ID,
+                DiffuseID = diffuse.ID,
+                LightmapID = lightmap.ID,
+                CollisionID = collision.ID
+            });
+
+            return null;
+        }
+
+        private Error? BuildPack(QualifiedInputManifest manifest,string directory) {
+            texturePackBuilder.Reset();
+            var files = Directory.GetFiles(directory,"*",SearchOption.TopDirectoryOnly);
+            foreach(var file in files) {
+                if(directory == manifest.Path && Path.GetFileName(file) == INPUT_MANIFEST_NAME) {
+                    continue;
+                }
+                if(!FileTypeHelper.TryGetType(Path.GetExtension(file),out var type) || type != FileType.Image) {
+                    continue;
+                }
+                texturePackBuilder.AddImage(file);
+            }
+
+            var runtimeFileName = Path.GetRelativePath(manifest.Path,directory);
+            var buildResult = texturePackBuilder.Build(runtimeFileName,manifest.Name,this);
+            if(buildResult.IsErr) {
+                return Error.Create($"{buildResult.Error}");
+            }
+            var texturePack = buildResult.Value;
+            foreach(var image in texturePack.Images) {
+                namespaceBuilder.AddVirtualImageAsset(image);
+            }
+            foreach(var generatedFile in texturePack.Files) {
+                generatedFiles.Add(generatedFile);
+            }
+            
+            return null;
+        }
+
+        private Error? BuildAnyFiles(QualifiedInputManifest manifest,string directory) {
+            var files = Directory.GetFiles(directory,"*",SearchOption.TopDirectoryOnly);
+            foreach(var file in files) {
+                if(directory == manifest.Path && Path.GetFileName(file) == INPUT_MANIFEST_NAME) {
+                    continue;
+                }
+                if(!FileTypeHelper.TryGetType(Path.GetExtension(file),out var type)) {
+                    continue;
+                }
+
+                var runtimeFileName = Path.ChangeExtension(
+                    Path.GetRelativePath(manifest.Path,file),
+                    null
+                );
+
+                bool shouldReformatImage = type == FileType.Image && false; // TODO: Bind Asset, Create virtual image asset, Reformat Images
+
+                if(shouldReformatImage) {
+                    throw new NotImplementedException();
+                } else {
+                    var id = BindAsset(
+                        runtimeFileName,
+                        manifest.Name,
+                        file,
+                        Path.GetExtension(file),
+                        type
                     );
-
-                    if(type == FileType.Image) {
-                        // TODO: Bind Asset, Create virtual image asset, Reformat Images
-                        throw new NotImplementedException();
-                    } else {
-                        var id = BindAsset(
-                            runtimeFileName,
-                            manifest.Name,
-                            file,
-                            Path.GetExtension(file),
-                            type
-                        );
-                        namespaceBuilder.AddVirtualAsset(new() {
-                            Type = type,
-                            Name = runtimeFileName,
-                            ID = id
-                        });
-                    }
+                    namespaceBuilder.AddVirtualAsset(new() {
+                        Type = type,
+                        Name = runtimeFileName,
+                        ID = id
+                    });
                 }
-                if(useTexturePacking) {
-                    var runtimeFileName = Path.GetRelativePath(manifest.Path,subdirectory);
-                    var buildResult = texturePackBuilder.Build(runtimeFileName,manifest.Name,this);
-                    if(buildResult.IsErr) {
-                        return Error.Create($"{buildResult.Error}");
+            }
+            return null;
+        }
+
+        private Error? WalkDirectory(QualifiedInputManifest manifest,string directory) {
+
+            /* The namespace root is the most special folder of all. It can't be anything else, so we don't check for other special cases. */
+            if(directory != manifest.Path) {
+
+                /* Special folder modes - these do not recurse for generic assets. Subfolders are controller by the special folder modes. */
+                bool buildPack = File.Exists(Path.Combine(directory,PACK_FILE));
+                bool buildModel = File.Exists(Path.Combine(directory,MODEL_MANIFEST_NAME));
+
+                if(buildPack && buildModel) {
+                    return Error.Create("conflicting special directory type; can't be a model and a texture pack");
+                }
+
+                if(buildModel) {
+                    var error = BuildModel(manifest,directory);
+                    if(error.HasValue) {
+                        return error;
                     }
-                    var texturePack = buildResult.Value;
-                    foreach(var image in texturePack.Images) {
-                        namespaceBuilder.AddVirtualImageAsset(image);
+                    return null;
+                }
+
+                if(buildPack) {
+                    var error = BuildPack(manifest,directory);
+                    if(error.HasValue) {
+                        return error;
                     }
-                    foreach(var generatedFile in texturePack.Files) {
-                        generatedFiles.Add(generatedFile);
-                    }
+                    return null;
                 }
             }
 
-            namespaces[manifest.Name] = namespaceBuilder.Build(manifest.Name);
+            var filesResult = BuildAnyFiles(manifest,directory);
+            if(filesResult != null) {
+                return filesResult;
+            }
 
+            var subdirectories = Directory.GetDirectories(directory,"*",SearchOption.TopDirectoryOnly);
+
+            foreach(var subdirectory in subdirectories) {
+                var directoryResult = WalkDirectory(manifest,subdirectory);
+                if(directoryResult != null) {
+                    return directoryResult;
+                }
+            }
+            return null;
+        }
+
+        private Error? AddNamespace(QualifiedInputManifest manifest) {
+            namespaceBuilder.Reset();
+            var result = WalkDirectory(manifest,manifest.Path);
+            if(result.HasValue) {
+                return result;
+            }
+            namespaces[manifest.Name] = namespaceBuilder.Build(manifest.Name);
             return null;
         }
 
@@ -258,13 +384,13 @@ namespace WAM.Core.Builder {
             return null;
         }
 
-        private InputManifestResult ScanManifest(string path) {
+        private InputManifestResult ScanManifest(string manifestPath) {
             string text;
             try {
-                text = File.ReadAllText(path);
+                text = File.ReadAllText(manifestPath);
             } catch(Exception exception) {
                 return InputManifestResult.Err(
-                    $"could not read manifest file '{path}': {exception.Message}"
+                    $"could not read manifest file '{manifestPath}': {exception.Message}"
                 );
             }
             InputManifest? manifest;
@@ -272,15 +398,40 @@ namespace WAM.Core.Builder {
                 manifest = JsonSerializer.Deserialize<InputManifest>(text,jsonOptions);
             } catch(Exception exception) {
                 return InputManifestResult.Err(
-                    $"invalid manifest file '{path}': {exception.Message}"
+                    $"invalid manifest file '{manifestPath}': {exception.Message}"
                 );
             }
             if(manifest == null) {
                 return InputManifestResult.Err(
-                    $"manifest decode failure '{path}'"
+                    $"manifest decode failure '{manifestPath}'"
                 );
             }
             return InputManifestResult.Ok(manifest);
+        }
+
+        private ModelManifestResult ScanModelManifest(string manifestPath) {
+            string text;
+            try {
+                text = File.ReadAllText(manifestPath);
+            } catch(Exception exception) {
+                return ModelManifestResult.Err(
+                    $"could not read model manifest file '{manifestPath}': {exception.Message}"
+                );
+            }
+            ModelManifest? manifest;
+            try {
+                manifest = JsonSerializer.Deserialize<ModelManifest>(text,jsonOptions);
+            } catch(Exception exception) {
+                return ModelManifestResult.Err(
+                    $"invalid model manifest file '{manifestPath}': {exception.Message}"
+                );
+            }
+            if(manifest == null) {
+                return ModelManifestResult.Err(
+                    $"model manifest decode failure '{manifestPath}'"
+                );
+            }
+            return ModelManifestResult.Ok(manifest);
         }
     }
 }

@@ -7,7 +7,7 @@ namespace WAM.Core.Builder.TexturePack {
         GeneratedFile[] Files
     );
 
-    public sealed class TexturePackBuilder(TexturePackSettings settings,ImageFormat exportFormat) {
+    public sealed class TexturePackBuilder(TexturePackSettings settings) {
 
         private readonly List<string> imagePaths = [];
         private readonly List<GeneratedFile> generatedFiles = [];
@@ -110,7 +110,7 @@ namespace WAM.Core.Builder.TexturePack {
                 byte[] data;
                 var destination = assetGenerator.GetAssetDestination(surface.ID);
                 try {
-                    data = surface.Export(exportFormat);
+                    data = surface.Export(settings.ExportFormat);
                 } catch(Exception exception) {
                     return Result<TexturePack>.Err($"could not create pack for '{destination}': {exception.Message}");
                 }

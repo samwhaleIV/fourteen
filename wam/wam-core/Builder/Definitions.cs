@@ -4,6 +4,18 @@ using System.Text.Json.Serialization;
 
 namespace WAM.Core.Builder {
 
+    public sealed class InputManifest {
+        public string? Name { get; set; }
+        public string[]? Includes { get; set; }
+    }
+
+    public sealed class ModelManifest {
+        public string? Model { get; set; }
+        public string? Diffuse { get; set; }
+        public string? Lightmap { get; set; }
+        public string? Collision { get; set; }
+    }
+
     public readonly record struct FileMap(
         string Source,
         string Destination
@@ -35,6 +47,15 @@ namespace WAM.Core.Builder {
         Area Area
     );
 
+    public readonly record struct VirtualModelAsset(
+        [property: JsonConverter(typeof(ForwardSlashConverter))]
+        string Name,
+        int? ModelID,
+        int? DiffuseID,
+        int? LightmapID,
+        int? CollisionID
+    );
+
     public readonly record struct HardAsset(
         int ID,
         FileType Type,
@@ -46,13 +67,15 @@ namespace WAM.Core.Builder {
         HardAsset[] HardAssets,
         VirtualAsset[] VirtualAssets,
         VirtualImageAsset[] VirtualImageAssets,
+        VirtualModelAsset[] VirtualModelAssets,
         [property: JsonIgnore] string Name
     );
 
     public enum FileType {
         Image,
         Text,
-        Json
+        Json,
+        Model
     };
 
     public static class FileTypeHelper {
@@ -62,6 +85,7 @@ namespace WAM.Core.Builder {
             { ".jpeg", FileType.Image },
             { ".json", FileType.Json },
             { ".txt", FileType.Text },
+            { ".glb", FileType.Model },
         };
         public static bool TryGetType(string type,out FileType value) {
             return inputTypes.TryGetValue(type,out value);
