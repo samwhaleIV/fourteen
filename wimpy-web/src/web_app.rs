@@ -34,7 +34,7 @@ use wgpu::{
 };
 
 use wimpy_engine::{
-    WimpyApp, WimpyAppLoadError, WimpyContext, WimpyIO, WimpyImageError, input::{
+    WimpyApp, WimpyAppLoadError, WimpyContext, WimpyIO, WimpyFileError, input::{
         GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
     }, storage::{
         KeyValueStore,
@@ -146,7 +146,7 @@ impl WimpyIO for WebAppIO {
         kvs.import(data);
     }
 
-    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyImageError> {
+    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyFileError> {
         let window = get_window().expect("window exists");
 
         let image_element = HtmlImageElement::new().expect("html image element creation");
@@ -154,12 +154,16 @@ impl WimpyIO for WebAppIO {
 
         let Ok(bitmap) = get_image_bitmap(&window,&image_element).await else {
             log::error!("Could not create ImageBitmap for '{}'.",path);
-            return Err(WimpyImageError::Unknown); 
+            return Err(WimpyFileError::Unknown); 
         };
 
         return Ok(ExternalImageSourceWrapper {
             value: ExternalImageSource::ImageBitmap(bitmap),
         });
+    }
+    
+    async fn get_text(path: &'static str) -> Result<String,WimpyFileError> {
+        todo!()
     }
 }
 

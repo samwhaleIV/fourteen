@@ -5,7 +5,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum WimpyImageError {
+pub enum WimpyFileError {
     Access,
     Decode,
     UnsupportedFormat,
@@ -15,7 +15,8 @@ pub enum WimpyImageError {
 pub trait WimpyIO {
     fn save_key_value_store(kvs: &KeyValueStore);
     fn load_key_value_store(kvs: &mut KeyValueStore);
-    fn get_image(path: &'static str) -> impl Future<Output = Result<impl TextureData,WimpyImageError>>;
+    fn get_image(path: &'static str) -> impl Future<Output = Result<impl TextureData,WimpyFileError>>;
+    fn get_text(path: &'static str) -> impl Future<Output = Result<String,WimpyFileError>>;
 }
 
 pub struct WimpyContext<'a,TConfig> {
@@ -26,7 +27,7 @@ pub struct WimpyContext<'a,TConfig> {
 
 #[derive(Debug)]
 pub enum WimpyAppLoadError {
-    ImageError(WimpyImageError)
+    ImageError(WimpyFileError)
 }
 
 pub trait WimpyApp<IO,Config>

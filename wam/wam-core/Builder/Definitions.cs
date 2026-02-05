@@ -34,14 +34,13 @@ namespace WAM.Core.Builder {
     );
 
     public readonly record struct VirtualAsset(
-        int ID,
-        FileType Type,
+        uint ID,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name
     );
 
     public readonly record struct VirtualImageAsset(
-        int ID,
+        uint ID,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
         Area Area
@@ -50,14 +49,14 @@ namespace WAM.Core.Builder {
     public readonly record struct VirtualModelAsset(
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
-        int? ModelID,
-        int? DiffuseID,
-        int? LightmapID,
-        int? CollisionID
+        uint? ModelID,
+        uint? DiffuseID,
+        uint? LightmapID,
+        uint? CollisionID
     );
 
     public readonly record struct HardAsset(
-        int ID,
+        uint ID,
         FileType Type,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Source
@@ -111,6 +110,7 @@ namespace WAM.Core.Builder {
                 "image" => FileType.Image,
                 "text" => FileType.Text,
                 "json" => FileType.Json,
+                "model" => FileType.Model,
                 _ => throw new JsonException($"Unknown file type: {value}")
             };
         }

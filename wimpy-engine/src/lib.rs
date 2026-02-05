@@ -3,6 +3,7 @@ pub mod shared;
 pub mod ui;
 pub mod input;
 pub mod storage;
+pub mod wam;
 
 mod testing;
 mod wimpy_app;

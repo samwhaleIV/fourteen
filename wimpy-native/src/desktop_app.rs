@@ -34,7 +34,7 @@ use wimpy_engine::{
     WimpyApp,
     WimpyContext,
     WimpyIO,
-    WimpyImageError,
+    WimpyFileError,
     input::{
         GamepadButtonSet,
         GamepadButtons,
@@ -101,30 +101,34 @@ impl WimpyIO for DekstopAppIO {
     fn load_key_value_store(kvs: &mut wimpy_engine::storage::KeyValueStore) {
         todo!()
     }
+    
+    async fn get_text(path: &'static str) -> Result<String,WimpyFileError> {
+        todo!()
+    }
 
-    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyImageError> {
+    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyFileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => Ok(DynamicImageWrapper { value }),
                 Err(image_error) => Err(match image_error {
                     ImageError::Decoding(decoding_error) => {
                         log::error!("Image decode error: {:?}",decoding_error);
-                        WimpyImageError::Decode
+                        WimpyFileError::Decode
                     },
                     ImageError::Unsupported(unsupported_error) => {
                         log::error!("Image unsupported error: {:?}",unsupported_error);
-                        WimpyImageError::UnsupportedFormat
+                        WimpyFileError::UnsupportedFormat
                     },
                     ImageError::IoError(error) => {
                         log::error!("Image IO error: {:?}",error);
-                        WimpyImageError::Access
+                        WimpyFileError::Access
                     },
-                    _ => WimpyImageError::Unknown
+                    _ => WimpyFileError::Unknown
                 }),
             },
             Err(error) => Err({
                 log::error!("IO error: {:?}",error);
-                WimpyImageError::Access
+                WimpyFileError::Access
             }),
         }
     }

@@ -45,6 +45,7 @@
 
         public void Reset() {
             VirtualAssets.Clear();
+            VirtualImageAssets.Clear();
             HardAssets.Clear();
             usedNames.Clear();
             VirtualModelAssets.Clear();

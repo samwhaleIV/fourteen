@@ -45,7 +45,7 @@ namespace WAM.Core.Builder {
         private readonly NamespaceBuilder namespaceBuilder = new();
 
         private readonly List<GeneratedFile> generatedFiles = [];
-        private readonly Dictionary<int,string> compileTimeDestinations = [];
+        private readonly Dictionary<uint,string> compileTimeDestinations = [];
 
         private void Reset() {
             namespaces.Clear();
@@ -69,11 +69,11 @@ namespace WAM.Core.Builder {
             return generatedFiles;
         }
 
-        public string GetAssetDestination(int assetID) {
+        public string GetAssetDestination(uint assetID) {
             return compileTimeDestinations[assetID];
         }
 
-        public int BindAsset(
+        public uint BindAsset(
             string runtimeFileName,
             string runtimeNamespace,
             string compileTimeSourcePath,
@@ -114,7 +114,7 @@ namespace WAM.Core.Builder {
             return ID;
         }
 
-        private (Error? Error,int? ID) TryGetModelItem(
+        private (Error? Error,uint? ID) TryGetModelItem(
             QualifiedInputManifest manifest,
             string directory,
             string runtimeFileName,
@@ -122,7 +122,7 @@ namespace WAM.Core.Builder {
             string itemKey,
             FileType requiredType
         ) {
-            int? assetID = null;
+            uint? assetID = null;
             if(!string.IsNullOrWhiteSpace(item)) {
                 var itemPath = Path.Combine(directory,item);
                 if(!File.Exists(itemPath)) {
@@ -241,7 +241,6 @@ namespace WAM.Core.Builder {
                         type
                     );
                     namespaceBuilder.AddVirtualAsset(new() {
-                        Type = type,
                         Name = runtimeFileName,
                         ID = id
                     });

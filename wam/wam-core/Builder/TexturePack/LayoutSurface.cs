@@ -1,7 +1,7 @@
 ﻿using SkiaSharp;
 
 namespace WAM.Core.Builder.TexturePack {
-    internal sealed class LayoutSurface(int size,int id):IDisposable {
+    internal sealed class LayoutSurface(int size,uint id):IDisposable {
 
         private const int LOSSLESS_ENCODING = 101;
 
@@ -13,7 +13,7 @@ namespace WAM.Core.Builder.TexturePack {
             SKAlphaType.Unpremul
         ));
 
-        public int ID { get; init; } = id;
+        public uint ID { get; init; } = id;
         public int Size { get; init; } = size;
 
         public void Dispose() {
