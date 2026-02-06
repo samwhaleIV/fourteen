@@ -65,7 +65,7 @@ where
         for command in commands {
             match command {
 
-                FrameCommand::DrawFrame(reference,draw_data) => match self.update_sampler(*reference) {
+                FrameCommand::DrawFrame { reference, draw_data } => match self.update_sampler(*reference) {
                     CommandReturnFlow::Proceed(sampler_status) => {
                         if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
                             render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);

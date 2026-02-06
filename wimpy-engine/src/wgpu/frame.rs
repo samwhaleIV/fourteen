@@ -23,14 +23,19 @@ pub struct CacheSize {
     pub output: u32
 }
 
-pub struct DrawData {
+pub struct DrawData2D {
     pub destination: Area,
     pub source: Area,
     pub color: Color,
     pub rotation: f32
 }
 
-impl Default for DrawData {
+pub struct DrawData3D {
+    pub diffuse_color: Color,
+    pub lightmap_color: Color,
+}
+
+impl Default for DrawData2D {
     fn default() -> Self {
         Self {
             destination: Area::default(),
@@ -41,8 +46,20 @@ impl Default for DrawData {
     }
 }
 
+impl Default for DrawData3D {
+    fn default() -> Self {
+        Self {
+            diffuse_color: Color::WHITE,
+            lightmap_color: Color::WHITE,
+        }
+    }
+}
+
 pub enum FrameCommand {
-    DrawFrame(FrameCacheReference,DrawData),
+    DrawFrame {
+        reference: FrameCacheReference,
+        draw_data: DrawData2D
+    },
     SetTextureFilter(FilterMode),
     SetTextureAddressing(AddressMode),
 }
@@ -110,17 +127,17 @@ pub trait MutableFrameController: MutableFrame {
             FrameCommand::SetTextureAddressing(address_mode)
         );
     }
-    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData) {
+    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
         self.push_command(
-            FrameCommand::DrawFrame(
-                source.get_cache_reference(),
-                DrawData {
+            FrameCommand::DrawFrame {
+                reference: source.get_cache_reference(),
+                draw_data: DrawData2D {
                     destination: draw_data.destination,
                     source: draw_data.source.multiply_2d(source.get_output_uv_size()),
                     color: draw_data.color,
                     rotation: draw_data.rotation
                 }
-            )
+            }
         );
     }
     fn size(&self) -> (u32,u32) {
