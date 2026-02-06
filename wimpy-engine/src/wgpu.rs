@@ -4,7 +4,6 @@ mod command_processor;
 mod frame;
 mod graphics_context;
 mod graphics_provider;
-mod shader_definitions;
 mod frame_cache;
 
 pub mod pipelines;

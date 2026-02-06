@@ -10,14 +10,15 @@ pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 pub const DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX: u32 = 0; //Group 0, index 0
 pub const DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX: u32 = 1; //Group 0, index 1
+
+pub const LIGHTMAP_TEXTURE_BIND_GROUP_ENTRY_INDEX: u32 = 2; //Group 0, index 2
+pub const LIGHTMAP_SAMPLER_BIND_GROUP_ENTRY_INDEX: u32 = 3; //Group 0, index 2
+
 pub const CAMERA_UNIFORM_BIND_GROUP_ENTRY_INDEX: u32 =  0; //Group 1, index 0
 
 use wgpu::*;
-
-use crate::wgpu::{
-    *,
-    shader_definitions::CameraUniform
-};
+use bytemuck::*;
+use crate::wgpu::*;
 
 pub struct RenderPipelines {
     pub pipeline_2d: Pipeline2D,
@@ -109,6 +110,24 @@ impl SharedPipelineSet {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: LIGHTMAP_TEXTURE_BIND_GROUP_ENTRY_INDEX,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float {
+                            filterable: true
+                        },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: LIGHTMAP_SAMPLER_BIND_GROUP_ENTRY_INDEX,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ]
         });
 
@@ -163,3 +182,34 @@ impl SharedPipelineSet {
         self.uniform_buffer.reset();
     }
 }
+
+#[repr(C)]
+#[derive(Debug,Copy,Clone,Pod,Zeroable)]
+pub struct CameraUniform {
+    pub view_projection: [[f32;4];4]
+}
+
+impl CameraUniform {
+    pub fn placeholder() -> Self {
+        return Self {
+            view_projection: Default::default()
+        }
+    }
+    pub fn create_ortho(size: (u32,u32)) -> Self {
+        let (width,height) = size;
+
+        let view_projection = cgmath::ortho(
+            0.0, //Left
+            width as f32, //Right
+            height as f32, //Bottom
+            0.0, //Top
+            -1.0, //Near
+            1.0, //Far
+        ).into();
+
+        return Self {
+            view_projection
+        };
+    }
+}
+

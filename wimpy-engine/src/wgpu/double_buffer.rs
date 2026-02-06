@@ -17,7 +17,7 @@ use wgpu::{
 use crate::wgpu::{
     pipelines::Pipeline2D,
     DrawData,
-    shader_definitions::QuadInstance
+    pipelines::QuadInstance
 };
 
 pub struct DoubleBuffer<T> {

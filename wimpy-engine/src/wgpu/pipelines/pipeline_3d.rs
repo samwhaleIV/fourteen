@@ -6,6 +6,7 @@ use wgpu::{
 use crate::wgpu::{
     GraphicsProvider,
     pipelines::{
+        CameraUniform,
         RenderPassController,
         SharedPipelineSet
     }
@@ -30,7 +31,7 @@ impl RenderPassController for Pipeline3D {
         &mut self,
         render_pass: &mut wgpu::RenderPass,
         shared_pipeline: &mut SharedPipelineSet,
-        uniform: crate::wgpu::shader_definitions::CameraUniform
+        uniform: CameraUniform
     ) {
         todo!()
     }
@@ -46,7 +47,7 @@ impl RenderPassController for Pipeline3D {
     fn select_and_begin(
         render_pass: &mut wgpu::RenderPass,
         render_pipelines: &mut super::RenderPipelines,
-        uniform: crate::wgpu::shader_definitions::CameraUniform
+        uniform: CameraUniform
     ) {
         todo!()
     }

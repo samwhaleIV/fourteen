@@ -9,7 +9,6 @@ use crate::{
         frame_cache::*,
         graphics_provider::GraphicsProvider,
         pipelines::*,
-        shader_definitions::CameraUniform,
         texture_container::*
     }
 };
