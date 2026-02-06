@@ -1,8 +1,4 @@
-use bytemuck::{
-    Pod,
-    Zeroable
-};
-
+use bytemuck::*;
 use crate::wgpu::DrawData;
 
 #[repr(C)]
@@ -28,6 +24,30 @@ pub struct QuadInstance { //Aligned to 64
 #[derive(Debug,Copy,Clone,Pod,Zeroable)]
 pub struct CameraUniform {
     pub view_projection: [[f32;4];4]
+}
+
+impl CameraUniform {
+    pub fn placeholder() -> Self {
+        return Self {
+            view_projection: Default::default()
+        }
+    }
+    pub fn create_ortho(size: (u32,u32)) -> Self {
+        let (width,height) = size;
+
+        let view_projection = cgmath::ortho(
+            0.0, //Left
+            width as f32, //Right
+            height as f32, //Bottom
+            0.0, //Top
+            -1.0, //Near
+            1.0, //Far
+        ).into();
+
+        return Self {
+            view_projection
+        };
+    }
 }
 
 #[non_exhaustive]

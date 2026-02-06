@@ -2,7 +2,9 @@ use std::marker::PhantomData;
 
 use crate::{
     shared::{
-        CacheArena, CacheArenaConfig, CacheArenaError
+        CacheArena,
+        CacheArenaConfig,
+        CacheArenaError
     },
     wgpu::texture_container::TextureContainer
 };

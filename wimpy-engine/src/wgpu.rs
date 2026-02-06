@@ -4,10 +4,10 @@ mod command_processor;
 mod frame;
 mod graphics_context;
 mod graphics_provider;
-mod constants;
 mod shader_definitions;
 mod frame_cache;
-mod double_buffer_set;
+
+pub mod pipelines;
 
 pub use graphics_provider::*;
 pub use frame::*;
@@ -17,3 +17,4 @@ pub use texture_container::{
     TextureDataWriteParameters
 };
 
+pub use double_buffer::*;

@@ -1,6 +1,4 @@
-use wgpu::{
-    Device, Instance, Limits, Queue, RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceError, SurfaceTexture, TextureFormat
-};
+use wgpu::*;
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,

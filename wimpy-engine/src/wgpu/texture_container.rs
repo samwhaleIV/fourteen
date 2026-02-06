@@ -1,12 +1,12 @@
-use crate::wgpu::SizeError;
-
-use super::{
-    graphics_provider::GraphicsProvider,
+use crate::wgpu::{
+    *,
+    pipelines::{
+        DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
+        DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX
+    }
 };
 
-use wgpu::{
-    AddressMode, BindGroup, BindGroupLayout, Device, Extent3d, FilterMode, Origin3d, Queue, SurfaceTexture, Texture, TextureAspect, TextureUsages, TextureView
-};
+use wgpu::*;
 
 pub struct TextureContainer {
     size: Extent3d,
@@ -53,11 +53,11 @@ fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout:
             layout: bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding: 0,
+                    binding: DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX,
                     resource: wgpu::BindingResource::TextureView(&texture_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 1,
+                    binding: DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 }
             ],

@@ -272,13 +272,13 @@ where
         self.input_manager.update(gamepad_state);
         log::info!("Axes: {:?}",self.input_manager.get_axes().get_f32());
 
-        let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
-            Ok(value) => value,
-            Err(error) => {
-                log::error!("Could not create output frame: {:?}",error);
-                return;
-            }
-        };
+        // let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
+        //     Ok(value) => value,
+        //     Err(error) => {
+        //         log::error!("Could not create output frame: {:?}",error);
+        //         return;
+        //     }
+        // };
 
         /* Update and render the user app! */
         self.wimpy_app.update(&WimpyContext {
@@ -287,13 +287,13 @@ where
             input: &mut self.input_manager
         });
 
-        if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
-            log::error!("Could not render ouput frame: {:?}",error);
-        }
+        // if let Err(error) = self.graphics_context.render_frame_2D(&mut output_frame) {
+        //     log::error!("Could not render ouput frame: {:?}",error);
+        // }
 
-        if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
-            log::error!("Could not present output frame: {:?}",error);
-        }
+        // if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
+        //     log::error!("Could not present output frame: {:?}",error);
+        // }
     }
 
     fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {

@@ -11,6 +11,13 @@ use bytemuck::{
 use wgpu::{
     Buffer,
     Queue,
+    RenderPass
+};
+
+use crate::wgpu::{
+    pipelines::Pipeline2D,
+    DrawData,
+    shader_definitions::QuadInstance
 };
 
 pub struct DoubleBuffer<T> {
@@ -79,4 +86,22 @@ where
             queue.write_buffer(&self.output_buffer,(i * padding) as u64,bytemuck::bytes_of(item));
         }
     }
+}
+
+impl DoubleBuffer<QuadInstance> {
+    pub fn write_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData) {
+        let range = self.push_convert(draw_data.into());
+        render_pass.draw_indexed(0..Pipeline2D::INDEX_BUFFER_SIZE,0,downcast_range(range));
+    }
+    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,draw_data: &[DrawData]) {
+        let range = self.push_convert_all(draw_data);
+        render_pass.draw_indexed(0..Pipeline2D::INDEX_BUFFER_SIZE,0,downcast_range(range));
+    }
+}
+
+const fn downcast_range(value: Range<usize>) -> Range<u32> {
+    return Range {
+        start: value.start as u32,
+        end: value.end as u32,
+    };
 }

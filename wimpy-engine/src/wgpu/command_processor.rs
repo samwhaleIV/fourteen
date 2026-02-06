@@ -1,14 +1,14 @@
 use wgpu::{
-    AddressMode, BindGroup, FilterMode, RenderPass
+    AddressMode,
+    BindGroup,
+    FilterMode,
+    RenderPass
 };
 
 use crate::wgpu::{
     FrameCommand,
-    constants::BindGroupIndices,
-    frame_cache::FrameCacheLookup,
-    frame_cache::FrameCacheReference,
-    double_buffer::DoubleBuffer,
-    shader_definitions::QuadInstance
+    frame_cache::*,
+    pipelines::*
 };
 
 pub struct CommandProcessor<'render_pass,TFrameCacheLookup> {
@@ -58,9 +58,9 @@ where
 
     fn execute(
         &mut self,
-        instance_buffer: &mut DoubleBuffer<QuadInstance>,
+        commands: &[FrameCommand],
         render_pass: &mut RenderPass,
-        commands: &[FrameCommand]
+        render_pipelines: &mut RenderPipelines,
     ) {
         for command in commands {
             match command {
@@ -68,9 +68,9 @@ where
                 FrameCommand::DrawFrame(reference,draw_data) => match self.update_sampler(*reference) {
                     CommandReturnFlow::Proceed(sampler_status) => {
                         if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
-                            render_pass.set_bind_group(BindGroupIndices::TEXTURE,bind_group,&[]);
+                            render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
                         }
-                        instance_buffer.write_quad(render_pass,&draw_data);
+                        render_pipelines.pipeline_2d.instance_buffer.write_quad(render_pass,&draw_data);
                     },
                     CommandReturnFlow::Skip => continue,
                 },
@@ -96,7 +96,12 @@ where
     }
 }
 
-pub fn process_frame_commands<TFrameCacheLookup>(frame_cache: &TFrameCacheLookup,instance_buffer: &mut DoubleBuffer<QuadInstance>,render_pass: &mut RenderPass,commands: &[FrameCommand])
+pub fn process_frame_commands<TFrameCacheLookup>(
+    commands: &[FrameCommand],
+    render_pass: &mut RenderPass,
+    render_pipelines: &mut RenderPipelines,
+    frame_cache: &TFrameCacheLookup,
+)
 where
     TFrameCacheLookup: FrameCacheLookup
 {
@@ -107,5 +112,5 @@ where
         current_sampling_frame: Default::default(),
         frame_cache,     
     };
-    processor.execute(instance_buffer,render_pass,commands);
+    processor.execute(commands,render_pass,render_pipelines);
 }
