@@ -147,24 +147,22 @@ impl SharedPipelineSet {
             label: Some("Uniform Bind Group Layout"),
         });
 
-        let uniform_buffer = device.create_buffer(&BufferDescriptor {
+        let uniform_buffer = DoubleBuffer::new(device.create_buffer(&BufferDescriptor {
             label: Some("Uniform Buffer"),
             //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
-            size: (UNIFORM_BUFFER_ALIGNMENT * TConfig::UNIFORM_CAPACITY) as u64,
+            size: TConfig::UNIFORM_BUFFER_SIZE as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false
-        });
+        }));
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: CAMERA_UNIFORM_BIND_GROUP_ENTRY_INDEX,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: uniform_buffer.get_output_buffer().as_entire_binding(),
             }],
             label: Some("Uniform Bind Group"),
         });
-
-        let uniform_buffer = DoubleBuffer::with_capacity(TConfig::UNIFORM_CAPACITY,uniform_buffer);
 
         return Self {
             texture_layout,

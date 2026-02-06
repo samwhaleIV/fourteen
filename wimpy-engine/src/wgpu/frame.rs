@@ -8,7 +8,7 @@ use crate::{
         Area,
         Color
     }, 
-    wgpu::frame_cache::FrameCacheReference
+    wgpu::{frame_cache::FrameCacheReference, pipelines::ModelCacheEntry}
 };
 
 #[derive(Copy,Clone)]
@@ -59,6 +59,10 @@ pub enum FrameCommand {
     DrawFrame {
         reference: FrameCacheReference,
         draw_data: DrawData2D
+    },
+    DrawModel {
+        reference: ModelCacheEntry,
+        draw_data: DrawData3D
     },
     SetTextureFilter(FilterMode),
     SetTextureAddressing(AddressMode),

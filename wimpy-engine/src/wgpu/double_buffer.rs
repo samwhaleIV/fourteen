@@ -25,11 +25,14 @@ pub struct DoubleBuffer<T> {
     input_buffer: Vec<T>,
 }
 
+const START_CAPACITY: usize = 64;
+
 impl<TItem> DoubleBuffer<TItem> {
-    pub fn with_capacity(capacity: usize,output_buffer: Buffer) -> Self {
+    //TODO: Implement starting capacity
+    pub fn new(output_buffer: Buffer) -> Self {
         return Self {
             output_buffer,
-            input_buffer: Vec::with_capacity(capacity),
+            input_buffer: Vec::with_capacity(START_CAPACITY),
         }
     }
     pub fn get_output_buffer(&self) -> &Buffer {

@@ -64,7 +64,6 @@ where
     ) {
         for command in commands {
             match command {
-
                 FrameCommand::DrawFrame { reference, draw_data } => match self.update_sampler(*reference) {
                     CommandReturnFlow::Proceed(sampler_status) => {
                         if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
@@ -74,7 +73,6 @@ where
                     },
                     CommandReturnFlow::Skip => continue,
                 },
-
                 FrameCommand::SetTextureFilter(value) => {
                     let value = *value;
                     if self.filter_mode != value {
@@ -82,7 +80,6 @@ where
                         self.needs_sampler_update = true;
                     }
                 },
-
                 FrameCommand::SetTextureAddressing(value) => {
                     let value = *value;
                     if self.address_mode != value {
@@ -90,7 +87,7 @@ where
                         self.needs_sampler_update = true;
                     }
                 },
-
+                FrameCommand::DrawModel { reference, draw_data } => todo!(),
             }
         }
     }

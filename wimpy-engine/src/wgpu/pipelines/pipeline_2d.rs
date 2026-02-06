@@ -40,7 +40,7 @@ impl Pipeline2D {
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
+            label: Some("2D Render Pipeline Layout"),
             bind_group_layouts: &[
                 &shared_pipeline_set.texture_layout, // This is where the 'texture bind group' is set to bind group index '0'
                 &shared_pipeline_set.uniform_layout, // This is where the 'uniform bind group' is set to bind group index '1'
@@ -49,7 +49,7 @@ impl Pipeline2D {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("2D Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -123,14 +123,14 @@ impl Pipeline2D {
             usage: wgpu::BufferUsages::VERTEX
         });
 
-        let instance_buffer = device.create_buffer(&BufferDescriptor{
-            label: Some("Instance Buffer"),
-            size: (size_of::<QuadInstance>() * TConfig::INSTANCE_CAPACITY) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let instance_buffer = DoubleBuffer::with_capacity(TConfig::INSTANCE_CAPACITY,instance_buffer);
+        let instance_buffer = DoubleBuffer::new(
+            device.create_buffer(&BufferDescriptor{
+                label: Some("Instance Buffer"),
+                size: TConfig::INSTANCE_BUFFER_SIZE_2D as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        );
 
         return Self {
             pipeline,

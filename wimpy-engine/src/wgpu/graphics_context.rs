@@ -39,8 +39,12 @@ impl<TConfig> GraphicsContext<TConfig> {
 }
 
 pub trait GraphicsContextConfig {
-    const INSTANCE_CAPACITY: usize;
-    const UNIFORM_CAPACITY: usize;
+    // These are in byte count
+    const UNIFORM_BUFFER_SIZE: usize;
+    const INSTANCE_BUFFER_SIZE_2D: usize;
+    const VERTEX_BUFFER_SIZE_3D: usize;
+    const INDEX_BUFFER_SIZE_3D: usize;
+    const INSTANCE_BUFFER_SIZE_3D: usize;
 }
 
 pub trait GraphicsContextController {

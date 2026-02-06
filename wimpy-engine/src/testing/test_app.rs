@@ -23,7 +23,15 @@ where
 
 pub struct PlaceholderConfig;
 
+const fn mb_to_b(value: usize) -> usize {
+    value * 1000000
+}
+
 impl GraphicsContextConfig for PlaceholderConfig {
-    const INSTANCE_CAPACITY: usize = 1000;
-    const UNIFORM_CAPACITY: usize = 16;
+    // If a vertex is 32 bytes, there is 31,250 vertices per megabyte.
+    const INSTANCE_BUFFER_SIZE_2D: usize = mb_to_b(10);
+    const UNIFORM_BUFFER_SIZE: usize = mb_to_b(2);
+    const VERTEX_BUFFER_SIZE_3D: usize = mb_to_b(10);
+    const INDEX_BUFFER_SIZE_3D: usize = mb_to_b(2);
+    const INSTANCE_BUFFER_SIZE_3D: usize = mb_to_b(2);
 }
