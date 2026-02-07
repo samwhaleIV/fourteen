@@ -1,7 +1,11 @@
 use crate::{
     input::InputManager,
-    storage::KeyValueStore, 
-    wgpu::{GraphicsContext, TextureData}
+    storage::KeyValueStore,
+    wam::WamManifest,
+    wgpu::{
+        GraphicsContext,
+        TextureData
+    }
 };
 
 #[derive(Debug)]
@@ -19,10 +23,11 @@ pub trait WimpyIO {
     fn get_text(path: &'static str) -> impl Future<Output = Result<String,WimpyFileError>>;
 }
 
-pub struct WimpyContext<'a,TConfig> {
-    pub graphics: &'a mut GraphicsContext<TConfig>,
+pub struct WimpyContext<'a> {
+    pub graphics: &'a mut GraphicsContext,
     pub storage: &'a mut KeyValueStore,
     pub input: &'a mut InputManager,
+    pub manifest: &'a mut WamManifest
 }
 
 #[derive(Debug)]
@@ -30,10 +35,10 @@ pub enum WimpyAppLoadError {
     ImageError(WimpyFileError)
 }
 
-pub trait WimpyApp<IO,Config>
+pub trait WimpyApp<IO>
 where
     IO: WimpyIO
 {
-    fn load(&mut self,context: &WimpyContext<'_,Config>) -> impl Future<Output = Result<(),WimpyAppLoadError>>;
-    fn update(&mut self,context: &WimpyContext<Config>);
+    fn load(&mut self,context: &WimpyContext) -> impl Future<Output = Result<(),WimpyAppLoadError>>;
+    fn update(&mut self,context: &WimpyContext);
 }

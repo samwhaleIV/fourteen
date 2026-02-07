@@ -282,7 +282,7 @@ where
             input: &mut self.input_manager,
         });
 
-        if let Err(error) = self.graphics_context.render_frame(&mut output_frame) {
+        if let Err(error) = self.graphics_context.render_frame_pass(&mut output_frame) {
             log::error!("{:?}",error);
         }
 

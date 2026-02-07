@@ -42,13 +42,13 @@ pub struct ModelData {
 }
 
 #[derive(Debug)]
-pub struct Manifest {
+pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
     pub virtual_assets: HashMap<String,VirtualAsset>,
     string_building_buffer: String,
 }
 
-impl Manifest {
+impl WamManifest {
 
     fn create(namespace_table: HashMap<String,InputNamespace>) -> Result<Self,WamManifestError> {
         let mut manifest = Self {
@@ -319,7 +319,7 @@ pub enum WamManifestError {
     JsonError(String)
 }
 
-pub fn load_manifest_from_path(path: &str) -> Result<Manifest,WamManifestError> {
+pub fn load_manifest_from_path(path: &str) -> Result<WamManifest,WamManifestError> {
     let data = match fs::read_to_string(path) {
         Ok(value) => value,
         Err(error) => {
@@ -335,5 +335,5 @@ pub fn load_manifest_from_path(path: &str) -> Result<Manifest,WamManifestError> 
         },
     };
 
-    return Manifest::create(namespaces);
+    return WamManifest::create(namespaces);
 }

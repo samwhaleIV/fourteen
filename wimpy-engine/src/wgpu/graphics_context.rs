@@ -2,15 +2,7 @@ use wgpu::*;
 
 use crate::{
     shared::*,
-    wgpu::{
-        FrameCommand,
-        command_processor::process_frame_commands,
-        frame::*,
-        frame_cache::*,
-        graphics_provider::GraphicsProvider,
-        pipelines::*,
-        texture_container::*
-    }
+    wgpu::*
 };
 
 pub const DEFAULT_COMMAND_BUFFER_SIZE: usize = 32;
@@ -21,20 +13,40 @@ struct OutputBuilder {
     output_frame_surface: SurfaceTexture,
 }
 
-pub struct GraphicsContext<TConfig> {
+pub struct GraphicsContext {
     graphics_provider: GraphicsProvider,
     pipelines: RenderPipelines,
-    frame_cache: FrameCache<TConfig>,
+    model_cache: ModelCache,
+    frame_cache: FrameCache,
     output_builder: Option<OutputBuilder>, //Technically a finite state machine
     command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
 }
 
-impl<TConfig> GraphicsContext<TConfig> {
+impl GraphicsContext {
     pub fn get_graphics_provider(&self) -> &GraphicsProvider {
         return &self.graphics_provider;
     }
     pub fn get_graphics_provider_mut(&mut self) -> &mut GraphicsProvider {
         return &mut self.graphics_provider;
+    }
+    pub fn create<TConfig: GraphicsContextConfig>(graphics_provider: GraphicsProvider) -> Self {
+
+        let render_pipelines = RenderPipelines::create::<TConfig>(&graphics_provider);
+
+        let model_cache = ModelCache::create(
+            graphics_provider.get_device(),
+            TConfig::MODEL_CACHE_VERTEX_BUFFER_SIZE,
+            TConfig::MODEL_CACHE_INDEX_BUFFER_SIZE
+        );
+
+        return Self {
+            graphics_provider,
+            pipelines: render_pipelines,
+            frame_cache: FrameCache::default(),
+            command_buffer_pool: VecPool::new(),
+            output_builder: None,
+            model_cache,
+        }
     }
 }
 
@@ -42,16 +54,18 @@ pub trait GraphicsContextConfig {
     // These are in byte count
     const UNIFORM_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_2D: usize;
-    const VERTEX_BUFFER_SIZE_3D: usize;
-    const INDEX_BUFFER_SIZE_3D: usize;
+    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize;
+    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_3D: usize;
 }
 
 pub trait GraphicsContextController {
     fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError>;
 
-    fn render_frame_2D(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError>;
-    fn render_frame_3D(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError>;
+    fn begin_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,frame: TFrame) -> TRenderPass {
+        TRenderPass::create(frame)
+    }
+    fn finish_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,frame_render_pass: TRenderPass) -> Result<TFrame,GraphicsContextError>;
 
     fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize;
     fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize);
@@ -76,10 +90,7 @@ pub trait GraphicsContextInternalController {
     fn present_output_frame(&mut self,frame: OutputFrame) -> Result<(),GraphicsContextError>;
 }
 
-impl<TConfig> GraphicsContextInternalController for GraphicsContext<TConfig>
-where
-    TConfig: GraphicsContextConfig
-{
+impl GraphicsContextInternalController for GraphicsContext {
     fn create_output_frame(&mut self,clear_color: wgpu::Color) -> Result<OutputFrame,GraphicsContextError> {
         if self.output_builder.is_some() {
             return Err(GraphicsContextError::PipelineAlreadyActive);
@@ -140,10 +151,7 @@ where
     }
 }
 
-impl<TConfig> GraphicsContextController for GraphicsContext<TConfig>
-where
-    TConfig: GraphicsContextConfig
-{
+impl GraphicsContextController for GraphicsContext {
     fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError> {
         let texture_container = match TextureContainer::from_image(
             &self.graphics_provider,
@@ -231,42 +239,9 @@ where
         ));
     }
     
-    fn render_frame_2D(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError> {
-        let camera_uniform = CameraUniform::create_ortho(frame.get_input_size());
-        return self.render_frame::<Pipeline2D>(frame,camera_uniform);
-    }
-    
-    fn render_frame_3D(&mut self,frame: &mut impl MutableFrame) -> Result<(),GraphicsContextError> {
-        let camera_uniform = CameraUniform::placeholder(); //TODO
-        return self.render_frame::<Pipeline3D>(frame,camera_uniform);
-    }
-}
+    fn finish_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,mut frame_render_pass: TRenderPass) -> Result<TFrame,GraphicsContextError> {
+        let frame = frame_render_pass.get_frame_mut();
 
-impl<TConfig> GraphicsContext<TConfig>
-where
-    TConfig: GraphicsContextConfig
-{
-    pub fn create(graphics_provider: GraphicsProvider) -> Self {
-
-        let render_pipelines = RenderPipelines::create::<TConfig>(&graphics_provider);
-
-        return Self {
-            graphics_provider,
-            pipelines: render_pipelines,
-            frame_cache: FrameCache::default(),
-            command_buffer_pool: VecPool::new(),
-            output_builder: None,
-        }
-    }
-
-    fn render_frame<TPipelineSelector>(
-        &mut self,
-        frame: &mut impl MutableFrame,
-        uniform: CameraUniform,
-    ) -> Result<(),GraphicsContextError>
-    where
-        TPipelineSelector: RenderPassController
-    {
         let Some(frame_builder) = &mut self.output_builder else {
             frame.clear_commands();
             return Err(GraphicsContextError::PipelineNotActive);
@@ -299,11 +274,7 @@ where
             timestamp_writes: None,
         });
 
-        TPipelineSelector::select_and_begin(
-            &mut render_pass,
-            &mut self.pipelines,
-            uniform
-        );
+        let mut frame = frame_render_pass.begin_hardware_pass(&mut render_pass,&mut self.pipelines);
 
         process_frame_commands(
             frame.get_commands(),
@@ -313,6 +284,6 @@ where
         );
 
         frame.clear_commands();
-        return Ok(());
+        return Ok(frame);
     }
 }

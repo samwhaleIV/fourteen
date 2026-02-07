@@ -35,12 +35,12 @@ impl Pipeline2D {
         let device = graphics_provider.get_device();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: Some("Pipeline 2D Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pipeline2D.wgsl").into())
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("2D Render Pipeline Layout"),
+            label: Some("Pipeline 2D Render Layout"),
             bind_group_layouts: &[
                 &shared_pipeline_set.texture_layout, // This is where the 'texture bind group' is set to bind group index '0'
                 &shared_pipeline_set.uniform_layout, // This is where the 'uniform bind group' is set to bind group index '1'
@@ -49,7 +49,7 @@ impl Pipeline2D {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("2D Render Pipeline"),
+            label: Some("Pipeline 2D"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -79,6 +79,7 @@ impl Pipeline2D {
                 unclipped_depth: false,
                 conservative: false     
             },
+            // TODO: enable depth stencil
             depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
@@ -196,7 +197,6 @@ impl RenderPassController for Pipeline2D {
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct QuadVertex {
     pub position: [f32;2],
-    //_padding: [f32;2]
 }
 
 #[repr(C)]
@@ -287,5 +287,55 @@ impl<'a> From<&'a DrawData2D> for QuadInstance {
 impl From<DrawData2D> for QuadInstance {
     fn from(value: DrawData2D) -> Self {
         QuadInstance::from(&value)
+    }
+}
+
+pub struct FrameRenderPass2D<TFrame> {
+    frame: TFrame
+}
+
+impl<TFrame> FrameRenderPass<TFrame> for FrameRenderPass2D<TFrame>
+where 
+    TFrame: MutableFrame
+{
+    fn create(frame: TFrame) -> Self {
+        return Self {
+            frame
+        }
+    }
+    
+    fn get_frame(&self) -> &TFrame {
+        return &self.frame;
+    }
+    fn get_frame_mut(&mut self) -> &mut TFrame {
+        return &mut self.frame;
+    }
+   
+    fn begin_hardware_pass(self,render_pass: &mut RenderPass,render_pipelines: &mut RenderPipelines) -> TFrame {
+        render_pipelines.pipeline_2d.begin(
+            render_pass,
+            &mut render_pipelines.shared,
+            CameraUniform::create_ortho(self.size())
+        );
+        todo!()
+    }
+}
+
+impl<TFrame> FrameRenderPass2D<TFrame>
+where 
+    TFrame: MutableFrame
+{
+    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
+        self.get_frame_mut().push_command(
+            FrameCommand::DrawFrame {
+                reference: source.get_cache_reference(),
+                draw_data: DrawData2D {
+                    destination: draw_data.destination,
+                    source: draw_data.source.multiply_2d(source.get_output_uv_size()),
+                    color: draw_data.color,
+                    rotation: draw_data.rotation
+                }
+            }
+        );
     }
 }

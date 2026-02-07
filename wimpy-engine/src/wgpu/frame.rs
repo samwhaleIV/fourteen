@@ -1,6 +1,6 @@
 use wgpu::{
     AddressMode,
-    FilterMode,
+    FilterMode, RenderPass,
 };
 
 use crate::{
@@ -8,7 +8,11 @@ use crate::{
         Area,
         Color
     }, 
-    wgpu::{frame_cache::FrameCacheReference, pipelines::ModelCacheEntry}
+    wgpu::{
+        ModelCacheEntry,
+        RenderPipelines,
+        frame_cache::FrameCacheReference,
+    },
 };
 
 #[derive(Copy,Clone)]
@@ -106,102 +110,97 @@ pub trait FrameReference {
         let input = self.get_input_size();
         let output = self.get_output_size();
 
-        return (
+        (
             input.0 as f32 / output.0 as f32,
             input.1 as f32 / output.1 as f32,
         )
     }
 }
 
-pub trait MutableFrame: FrameReference {
-    fn push_command(&mut self,frame_command: FrameCommand);
-    fn get_commands(&self) -> &[FrameCommand];
-    fn clear_commands(&mut self);
-    fn get_clear_color(&self) -> Option<wgpu::Color>;
-}
+pub trait FrameRenderPass<TFrame: MutableFrame> {
+    fn create(frame: TFrame) -> Self;
 
-pub trait MutableFrameController: MutableFrame {
+    fn get_frame(&self) -> &TFrame;
+    fn get_frame_mut(&mut self) -> &mut TFrame;
+
+    fn begin_hardware_pass(self,render_pass: &mut RenderPass,render_pipelines: &mut RenderPipelines) -> TFrame;
     fn set_texture_filter(&mut self,filter_mode: FilterMode) {
-        self.push_command(
+        self.get_frame_mut().push_command(
             FrameCommand::SetTextureFilter(filter_mode)
         );
     }
+
     fn set_texture_addressing(&mut self,address_mode: AddressMode) {
-        self.push_command(
+        self.get_frame_mut().push_command(
             FrameCommand::SetTextureAddressing(address_mode)
         );
     }
-    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
-        self.push_command(
-            FrameCommand::DrawFrame {
-                reference: source.get_cache_reference(),
-                draw_data: DrawData2D {
-                    destination: draw_data.destination,
-                    source: draw_data.source.multiply_2d(source.get_output_uv_size()),
-                    color: draw_data.color,
-                    rotation: draw_data.rotation
-                }
-            }
-        );
-    }
+
     fn size(&self) -> (u32,u32) {
-        return self.get_input_size();
+        self.get_frame().get_input_size()
     }
+}
+
+pub trait MutableFrame: FrameReference {
+    fn push_command(&mut self,frame_command: FrameCommand);
+    fn clear_commands(&mut self);
+    fn get_commands(&self) -> &[FrameCommand];
+    fn get_clear_color(&self) -> Option<wgpu::Color>;
 }
 
 impl FrameReference for OutputFrame {
     fn get_cache_reference(&self) -> FrameCacheReference {
-        return self.cache_reference;
+        self.cache_reference
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size;
+        self.size
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size;
+        self.size
     }
 }
 
 impl FrameReference for TextureFrame {
     fn get_cache_reference(&self) -> FrameCacheReference {
-        return self.cache_reference;
+        self.cache_reference
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size;
+        self.size
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size;
+        self.size
     }
 }
 
 impl FrameReference for TempFrame {
     fn get_cache_reference(&self) -> FrameCacheReference {
-        return self.cache_reference;
+        self.cache_reference
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size.input;
+        self.size.input
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return (self.size.output,self.size.output);
+        (self.size.output,self.size.output)
     }
 }
 
 impl FrameReference for LongLifeFrame {
     fn get_cache_reference(&self) -> FrameCacheReference {
-        return self.cache_reference;
+        self.cache_reference
     }
 
     fn get_input_size(&self) -> (u32,u32) {
-        return self.size.input;
+        self.size.input
     }
 
     fn get_output_size(&self) -> (u32,u32) {
-        return self.size.output;
+        self.size.output
     }
 }
 
@@ -211,7 +210,7 @@ impl MutableFrame for OutputFrame {
     }
     
     fn get_commands(&self) -> &[FrameCommand] {
-        return &self.command_buffer;
+        &self.command_buffer
     }
     
     fn clear_commands(&mut self) {
@@ -229,7 +228,7 @@ impl MutableFrame for TempFrame {
     }
     
     fn get_commands(&self) -> &[FrameCommand] {
-        return &self.command_buffer;
+        &self.command_buffer
     }
     
     fn clear_commands(&mut self) {
@@ -247,7 +246,7 @@ impl MutableFrame for LongLifeFrame {
     }
     
     fn get_commands(&self) -> &[FrameCommand] {
-        return &self.command_buffer;
+        &self.command_buffer
     }
     
     fn clear_commands(&mut self) {
@@ -320,12 +319,12 @@ pub trait ReclaimCommandBuffer {
 
 impl ReclaimCommandBuffer for OutputFrame {
     fn take_command_buffer(self) -> Vec<FrameCommand> {
-        return self.command_buffer;
+        self.command_buffer
     }
 }
 
 impl ReclaimCommandBuffer for TempFrame {
     fn take_command_buffer(self) -> Vec<FrameCommand> {
-        return self.command_buffer;
+        self.command_buffer
     }
 }
