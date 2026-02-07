@@ -1,7 +1,7 @@
 use crate::{
     input::InputManager,
-    storage::KeyValueStore,
-    wam::WamManifest,
+    kvs::KeyValueStore,
+    wam::AssetManager,
     wgpu::{
         GraphicsContext,
         TextureData
@@ -17,17 +17,22 @@ pub enum WimpyFileError {
 }
 
 pub trait WimpyIO {
-    fn save_key_value_store(kvs: &KeyValueStore);
-    fn load_key_value_store(kvs: &mut KeyValueStore);
-    fn get_image(path: &'static str) -> impl Future<Output = Result<impl TextureData,WimpyFileError>>;
-    fn get_text(path: &'static str) -> impl Future<Output = Result<String,WimpyFileError>>;
+    fn save_file(path: &str,data: &[u8])-> impl Future<Output = Result<(),WimpyFileError>>;
+
+    fn load_binary_file(path: &str) -> impl Future<Output = Result<Vec<u8>,WimpyFileError>>;
+    fn load_text_file(path: &str) -> impl Future<Output = Result<String,WimpyFileError>>;
+
+    fn load_image(path: &str) -> impl Future<Output = Result<impl TextureData,WimpyFileError>>;
+    
+    fn save_key_value_store(kvs: &KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
+    fn load_key_value_store(kvs: &mut KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
 }
 
 pub struct WimpyContext<'a> {
     pub graphics: &'a mut GraphicsContext,
     pub storage: &'a mut KeyValueStore,
     pub input: &'a mut InputManager,
-    pub manifest: &'a mut WamManifest
+    pub assets: &'a mut AssetManager
 }
 
 #[derive(Debug)]

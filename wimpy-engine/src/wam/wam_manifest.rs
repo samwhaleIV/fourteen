@@ -1,4 +1,4 @@
-use std::{collections::HashMap,fs};
+use std::collections::HashMap;
 use serde::Deserialize;
 use slotmap::SlotMap;
 
@@ -41,7 +41,7 @@ pub struct ModelData {
     pub collision_id: Option<HardAssetKey>,
 }
 
-#[derive(Debug)]
+#[derive(Debug,Default)]
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
     pub virtual_assets: HashMap<String,VirtualAsset>,
@@ -50,7 +50,17 @@ pub struct WamManifest {
 
 impl WamManifest {
 
-    fn create(namespace_table: HashMap<String,InputNamespace>) -> Result<Self,WamManifestError> {
+    pub fn create(json_text: &str) -> Result<Self,WamManifestError> {
+
+        let namespace_table: HashMap<String,InputNamespace> = match serde_json::from_str(&json_text) {
+            Ok(value) => value,
+            Err(error) => {
+                // TODO: match the serde_json error instead of formatting it
+                return Err(WamManifestError::JsonError(format!("{:?}",error)))
+            },
+        };
+
+
         let mut manifest = Self {
             hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_key(),
             virtual_assets: Default::default(),
@@ -70,25 +80,6 @@ impl WamManifest {
 
         return Ok(manifest);
     }
-
-    // fn get_namespace_key(&self,namespace_name: &str) -> Option<usize> {
-    //     return self.id_table.get(namespace_name).copied();
-    // }
-
-    // fn get_namespace(&self,namespace_key: usize) -> Option<&ManifestBuilder> {
-    //     return self.namespaces.get(namespace_key);
-    // }
-
-    // pub fn get_asset_id
-
-    // pub fn get_asset<IO>(&self,id: u32) -> &HardAsset
-    // where
-    //     IO: WimpyIO
-    // {
-
-    // }
-
-    // pub fn get_text_asset
 
     fn add_virtual_asset(&mut self,asset: VirtualAsset,mut local_name: String,namespace_name: &str) {
         self.string_building_buffer.insert_str(0,namespace_name);
@@ -317,23 +308,4 @@ pub enum WamManifestError {
     MismatchedModelResource(MismatchedModelResourceInfo),
     IOError(std::io::Error),
     JsonError(String)
-}
-
-pub fn load_manifest_from_path(path: &str) -> Result<WamManifest,WamManifestError> {
-    let data = match fs::read_to_string(path) {
-        Ok(value) => value,
-        Err(error) => {
-            return Err(WamManifestError::IOError(error))
-        },
-    };
-
-    let namespaces: HashMap<String,InputNamespace> = match serde_json::from_str(&data) {
-        Ok(value) => value,
-        Err(error) => {
-            // TODO: match the serde_json error instead of formatting it
-            return Err(WamManifestError::JsonError(format!("{:?}",error)))
-        },
-    };
-
-    return WamManifest::create(namespaces);
 }

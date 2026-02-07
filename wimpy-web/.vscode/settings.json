@@ -1,7 +1,3 @@
 {
     "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
-    "editor.renderWhitespace": "all",
-    "editor.renderControlCharacters": true,
-    "editor.guides.indentation": true,
-    "editor.guides.highlightActiveIndentation": true
 }

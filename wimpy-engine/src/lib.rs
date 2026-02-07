@@ -2,7 +2,7 @@ pub mod wgpu;
 pub mod shared;
 pub mod ui;
 pub mod input;
-pub mod storage;
+pub mod kvs;
 pub mod wam;
 
 mod testing;

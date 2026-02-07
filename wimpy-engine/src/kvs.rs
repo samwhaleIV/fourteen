@@ -1,3 +1,5 @@
+use crate::WimpyIO;
+
 #[derive(Default)]
 pub struct KeyValueStore {
     //todo... dictionary structure
@@ -7,21 +9,6 @@ pub enum StorageValueType {
     String,
     Integer,
     Flag,
-}
-
-pub trait KeyValueStoreIO {
-    fn export<'a>(&self) -> &'a [u8];
-    fn import(&mut self,data: &[u8]);
-}
-
-impl KeyValueStoreIO for KeyValueStore {
-    fn export<'a>(&self) -> &'a [u8] {
-        todo!();
-    }
-    fn import(&mut self,data: &[u8]) {
-        self.delete_all();
-        todo!();
-    }
 }
 
 pub enum KeyValueStoreError {
@@ -60,4 +47,12 @@ impl KeyValueStore {
     pub fn has_key(&self,key: &'static str) -> bool {
         todo!()
     }
+
+    // fn save() {
+
+    // }
+
+    // fn load() -> Result<{
+
+    // }
 }

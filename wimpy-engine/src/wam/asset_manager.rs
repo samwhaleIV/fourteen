@@ -5,5 +5,9 @@ pub struct AssetManager {
 }
 
 impl AssetManager {
-
+    pub fn create(manifest: WamManifest) -> Self {
+        return Self {
+            manifest
+        }
+    }
 }

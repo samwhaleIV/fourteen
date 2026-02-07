@@ -3,12 +3,6 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
 use std::collections::HashMap;
 
-use image::{
-    DynamicImage,
-    ImageError,
-    ImageReader
-};
-
 use sdl2::{
     EventPump,
     GameControllerSubsystem,
@@ -22,139 +16,44 @@ use sdl2::{
         Event,
         WindowEvent
     },
-    sys::Window
 };
 
-use wgpu::{
-    Color,
-    Limits
-};
+use wgpu::Limits;
 
 use wimpy_engine::{
-    WimpyApp,
-    WimpyContext,
-    WimpyIO,
-    WimpyFileError,
-    input::{
-        GamepadButtonSet,
-        GamepadButtons,
-        GamepadInput,
-        GamepadJoystick,
-        InputManager,
-        InputManagerAppController,
-        InputManagerReadonly,
-        InputType,
-        significant_axis_difference,
-        significant_trigger_difference
-    },
-    storage::KeyValueStore, wgpu::{
-        GraphicsContext,
-        GraphicsContextConfig,
-        GraphicsContextController,
-        GraphicsContextInternalController,
-        GraphicsProvider,
-        GraphicsProviderConfig,
-        TextureData,
-        TextureDataWriteParameters
-    }
+    WimpyApp, WimpyContext, WimpyIO, input::*, kvs::KeyValueStore, wam::{self, AssetManager, WamManifest}, wgpu::*
 };
 
-use crate::key_code::translate_key_code;
-
-struct DynamicImageWrapper {
-    value: DynamicImage
-}
-
-impl TextureData for DynamicImageWrapper {
-
-    fn size(&self) -> (u32,u32) {
-        (self.value.width(),self.value.height())
-    }
-    
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-            },
-            self.value.as_bytes(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
-                bytes_per_row: Some(self.value.width() * 4), 
-                rows_per_image: Some(self.value.height()),
-            },
-            parameters.texture_size,
-        );
-    }
-}
-
-pub struct DekstopAppIO;
-
-impl WimpyIO for DekstopAppIO {
-    fn save_key_value_store(kvs: &wimpy_engine::storage::KeyValueStore) {
-        todo!()
-    }
-
-    fn load_key_value_store(kvs: &mut wimpy_engine::storage::KeyValueStore) {
-        todo!()
-    }
-    
-    async fn get_text(path: &'static str) -> Result<String,WimpyFileError> {
-        todo!()
-    }
-
-    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyFileError> {
-        match ImageReader::open(path) {
-            Ok(image_reader) => match image_reader.decode() {
-                Ok(value) => Ok(DynamicImageWrapper { value }),
-                Err(image_error) => Err(match image_error {
-                    ImageError::Decoding(decoding_error) => {
-                        log::error!("Image decode error: {:?}",decoding_error);
-                        WimpyFileError::Decode
-                    },
-                    ImageError::Unsupported(unsupported_error) => {
-                        log::error!("Image unsupported error: {:?}",unsupported_error);
-                        WimpyFileError::UnsupportedFormat
-                    },
-                    ImageError::IoError(error) => {
-                        log::error!("Image IO error: {:?}",error);
-                        WimpyFileError::Access
-                    },
-                    _ => WimpyFileError::Unknown
-                }),
-            },
-            Err(error) => Err({
-                log::error!("IO error: {:?}",error);
-                WimpyFileError::Access
-            }),
-        }
-    }
-}
+use crate::{
+    desktop_io::DekstopAppIO,
+    key_code::translate_key_code
+};
 
 enum EventLoopOperation {
     Continue,
     Terminate
 }
 
-struct InnerApp<TWimpyApp,TConfig> {
+struct InnerApp<TWimpyApp> {
     wimpy_app: TWimpyApp,
     active_gamepad: Option<GameController>,
     unused_gamepads: HashMap<u32,GameController>,
-    graphics_context: GraphicsContext<TConfig>,
+    graphics_context: GraphicsContext,
     game_controller_subsystem: Option<GameControllerSubsystem>,
     input_manager: InputManager,
+    asset_manager: AssetManager,
     window_id: u32,
     kvs_store: KeyValueStore,
     sdl_context: Sdl,
 }
 
-async fn async_load<TWimpyApp,TConfig>(mut wimpy_app: TWimpyApp) -> Option<InnerApp<TWimpyApp,TConfig>>
+async fn async_load<TWimpyApp,TConfig>(
+    mut wimpy_app: TWimpyApp,
+    manifest_path: Option<&str>,
+) -> Option<InnerApp<TWimpyApp>>
 where
     TConfig: GraphicsContextConfig,
-    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
+    TWimpyApp: WimpyApp<DekstopAppIO>
 {
     let sdl_context = sdl2::init().expect("sdl context creation");
     let video_subsystem = sdl_context.video().expect("sdl video subsystem creation");
@@ -204,7 +103,7 @@ where
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+    let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
     let mut kvs_store = KeyValueStore::default();
 
     let mut input_manager = InputManager::with_input_type_hint(
@@ -212,12 +111,30 @@ where
         // Reminder: Set input type ahead of time on specific platforms.
     );
 
+    let mut asset_manager = AssetManager::create(match manifest_path {
+        Some(path) => match DekstopAppIO::load_text_file(path).await {
+            Ok(json_text) => match WamManifest::create(&json_text) {
+                Ok(manifest) => manifest,
+                Err(error) => {
+                    log::error!("Could not load manifest '{}': {:?}",path,error);
+                    Default::default()
+                },
+            },
+            Err(error) => {
+                log::error!("Could not load manifest '{}': {:?}",path,error);
+                Default::default()
+            },
+        },
+        None => Default::default(),
+    });
+
     if let Err(error) = wimpy_app.load(&WimpyContext {
         graphics: &mut graphics_context,
         storage: &mut kvs_store,
-        input: &mut input_manager
+        input: &mut input_manager,
+        assets: &mut asset_manager
     }).await {
-        log::error!("Failure to load wimpy add: {:?}",error);
+        log::error!("Failure to load wimpy app: {:?}",error);
         return None;
     }
 
@@ -225,6 +142,7 @@ where
         sdl_context,
         active_gamepad: None,
         wimpy_app,
+        asset_manager,
         unused_gamepads: Default::default(),
         graphics_context,
         game_controller_subsystem,
@@ -234,20 +152,19 @@ where
     })
 }
 
-pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp)
+pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp,wam_manifest_path: Option<&str>)
 where
-    TConfig: GraphicsContextConfig,
-    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
+    TWimpyApp: WimpyApp<DekstopAppIO>,
+    TConfig: GraphicsContextConfig
 {
-    if let Some(mut inner_app) = pollster::block_on(async_load(wimpy_app)) {
+    if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(wimpy_app,wam_manifest_path)) {
         inner_app.start_loop();
     }
 }
 
-impl<TWimpyApp,TConfig> InnerApp<TWimpyApp,TConfig>
+impl<TWimpyApp> InnerApp<TWimpyApp>
 where
-    TConfig: GraphicsContextConfig,
-    TWimpyApp: WimpyApp<DekstopAppIO,TConfig>
+    TWimpyApp: WimpyApp<DekstopAppIO>
 {
     fn start_loop(&mut self) {
         let mut event_pump = self.sdl_context.event_pump().expect("sdl event pump creation");
@@ -270,30 +187,13 @@ where
         };
 
         self.input_manager.update(gamepad_state);
-        log::info!("Axes: {:?}",self.input_manager.get_axes().get_f32());
 
-        // let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
-        //     Ok(value) => value,
-        //     Err(error) => {
-        //         log::error!("Could not create output frame: {:?}",error);
-        //         return;
-        //     }
-        // };
-
-        /* Update and render the user app! */
         self.wimpy_app.update(&WimpyContext {
             graphics: &mut self.graphics_context,
             storage: &mut self.kvs_store,
-            input: &mut self.input_manager
+            input: &mut self.input_manager,
+            assets: &mut self.asset_manager
         });
-
-        // if let Err(error) = self.graphics_context.render_frame_2D(&mut output_frame) {
-        //     log::error!("Could not render ouput frame: {:?}",error);
-        // }
-
-        // if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
-        //     log::error!("Could not present output frame: {:?}",error);
-        // }
     }
 
     fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {

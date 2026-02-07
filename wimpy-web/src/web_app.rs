@@ -19,7 +19,8 @@ use web_sys::{
     ImageBitmap,
     KeyboardEvent,
     MouseEvent,
-    Window, js_sys::{self, Float32Array}
+    Window,
+    js_sys::Float32Array
 };
 
 use wgpu::{
@@ -34,21 +35,18 @@ use wgpu::{
 };
 
 use wimpy_engine::{
-    WimpyApp, WimpyAppLoadError, WimpyContext, WimpyIO, WimpyFileError, input::{
-        GamepadButtonSet, GamepadButtons, GamepadInput, GamepadJoystick, InputManager, InputManagerAppController, InputManagerReadonly
-    }, storage::{
-        KeyValueStore,
-        KeyValueStoreIO
-    }, wgpu::{
-        GraphicsContext,
-        GraphicsContextConfig,
-        GraphicsContextController,
-        GraphicsContextInternalController,
-        GraphicsProvider,
-        GraphicsProviderConfig,
-        GraphicsProviderError,
-        TextureData
-    }
+    WimpyApp,
+    WimpyAppLoadError,
+    WimpyContext,
+    WimpyFileError,
+    WimpyIO,
+    input::*,
+    kvs::KeyValueStore,
+    wam::{
+        AssetManager,
+        WamManifest
+    },
+    wgpu::*
 };
 
 const CANVAS_ID: &'static str = "main-canvas";
@@ -89,10 +87,11 @@ pub enum WebAppError {
     WimpyAppLoadFailure(WimpyAppLoadError)
 }
 
-pub struct WebApp<TWimpyApp,TConfig> {
-    graphics_context: GraphicsContext<TConfig>,
+pub struct WebApp<TWimpyApp> {
+    graphics_context: GraphicsContext,
     input_manager: InputManager,
     wimpy_app: TWimpyApp,
+    asset_manager: AssetManager,
     gamepad_manager: GamepadManager,
     kvs_store: KeyValueStore
 }
@@ -136,17 +135,7 @@ impl TextureData for ExternalImageSourceWrapper {
 }
 
 impl WimpyIO for WebAppIO {
-    fn save_key_value_store(kvs: &KeyValueStore) {
-        let data = kvs.export();
-        todo!()
-    }
-
-    fn load_key_value_store(kvs: &mut KeyValueStore) {
-        let data = todo!();
-        kvs.import(data);
-    }
-
-    async fn get_image(path: &'static str) -> Result<impl TextureData,WimpyFileError> {
+    async fn load_image(path: &str) -> Result<impl TextureData,WimpyFileError> {
         let window = get_window().expect("window exists");
 
         let image_element = HtmlImageElement::new().expect("html image element creation");
@@ -162,21 +151,40 @@ impl WimpyIO for WebAppIO {
         });
     }
     
-    async fn get_text(path: &'static str) -> Result<String,WimpyFileError> {
+    async fn save_file(path: &str,data: &[u8])-> Result<(),WimpyFileError> {
         todo!()
     }
+    
+    async fn load_binary_file(path: &str) -> Result<Vec<u8>,WimpyFileError> {
+        todo!()
+    }
+    
+    async fn load_text_file(path: &str) -> Result<String,WimpyFileError> {
+        todo!()
+    }
+    
+    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),WimpyFileError> {
+        todo!()
+    }
+    
+    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),WimpyFileError> {
+        todo!()
+    }
+
 }
 
 async fn get_image_bitmap(window: &Window,image_element: &HtmlImageElement) -> Result<ImageBitmap,JsValue> {
     Ok(JsFuture::from(window.create_image_bitmap_with_html_image_element(image_element)?).await?.dyn_into::<ImageBitmap>()?)
 }
 
-impl<TWimpyApp,TConfig> WebApp<TWimpyApp,TConfig>
+impl<TWimpyApp> WebApp<TWimpyApp>
 where
-    TWimpyApp: WimpyApp<WebAppIO,TConfig> + 'static,
-    TConfig: GraphicsContextConfig + 'static
+    TWimpyApp: WimpyApp<WebAppIO> + 'static,
 {
-    pub async fn create_app(mut wimpy_app: TWimpyApp) -> Result<Rc<RefCell<Self>>,WebAppError> {
+    pub async fn create_app<TConfig>(mut wimpy_app: TWimpyApp,manifest_path: Option<&str>) -> Result<Rc<RefCell<Self>>,WebAppError>
+    where
+        TConfig: GraphicsContextConfig
+    {
         let canvas = get_canvas()?;
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
@@ -198,16 +206,34 @@ where
             Err(error) => Err(WebAppError::WGPUInitFailure(error)),
         }?;
 
-        let mut graphics_context = GraphicsContext::<TConfig>::create(graphics_provider);
+        let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
         let mut input_manager = InputManager::default();
         let mut kvs_store = KeyValueStore::default();
 
         let gamepad_manager = GamepadManager::new();
 
+        let mut asset_manager = AssetManager::create(match manifest_path {
+            Some(path) => match WebAppIO::load_text_file(path).await {
+                Ok(json_text) => match WamManifest::create(&json_text) {
+                    Ok(manifest) => manifest,
+                    Err(error) => {
+                        log::error!("Could not load manifest '{}': {:?}",path,error);
+                        Default::default()
+                    },
+                },
+                Err(error) => {
+                    log::error!("Could not load manifest '{}': {:?}",path,error);
+                    Default::default()
+                },
+            },
+            None => Default::default(),
+        });
+
         if let Err(error) = wimpy_app.load(&WimpyContext {
             graphics: &mut graphics_context,
             storage: &mut kvs_store,
-            input: &mut input_manager
+            input: &mut input_manager,
+            assets: &mut asset_manager
         }).await {
             return Err(WebAppError::WimpyAppLoadFailure(error));
         }
@@ -216,6 +242,7 @@ where
             gamepad_manager,
             graphics_context,
             input_manager,
+            asset_manager,
             wimpy_app,
             kvs_store: Default::default(),
         })));
@@ -234,8 +261,11 @@ where
         return Ok(());
     }
 
-    pub async fn run(wimpy_app: TWimpyApp,resize_config: ResizeConfig) -> Result<(),WebAppError> {
-        let app = Self::create_app(wimpy_app).await?;
+    pub async fn run<TConfig>(wimpy_app: TWimpyApp,manifest_path: Option<&str>,resize_config: ResizeConfig) -> Result<(),WebAppError>
+    where
+        TConfig: GraphicsContextConfig
+    {
+        let app = Self::create_app::<TConfig>(wimpy_app,manifest_path).await?;
         app.borrow_mut().update_size();
         Self::setup_events(&app,resize_config)?;
         Self::start_render_loop(app.clone())?;
@@ -260,35 +290,17 @@ where
             self.gamepad_manager.buffer()
         );
         self.input_manager.update(gamepad_state);
-
-        let axes = self.input_manager.get_axes();
-        log::info!("GAMEPAD BS: Y Axis: {:?}",axes.y);
     }
 
     fn render_frame(&mut self) {
         self.update_input();
 
-        let mut output_frame = match self.graphics_context.create_output_frame(Color::RED) {
-            Ok(value) => value,
-            Err(error) => {
-                log::error!("Could not create output frame: {:?}",error);
-                return;
-            }
-        };
-
         self.wimpy_app.update(&WimpyContext {
             graphics: &mut self.graphics_context,
             storage: &mut self.kvs_store,
             input: &mut self.input_manager,
+            assets: &mut self.asset_manager
         });
-
-        if let Err(error) = self.graphics_context.render_frame_pass(&mut output_frame) {
-            log::error!("{:?}",error);
-        }
-
-        if let Err(error) = self.graphics_context.present_output_frame(output_frame) {
-            log::error!("{:?}",error);
-        }
     }
 
     fn key_down(&mut self,code: String) {

@@ -1,10 +1,12 @@
 mod desktop_app;
 mod key_code;
+mod desktop_io;
 
-use std::{env, fs};
+use std::env;
 
 use wimpy_engine::{
-    PlaceholderApp, PlaceholderConfig, wam
+    PlaceholderApp,
+    PlaceholderConfig
 };
 
 use env_logger::{
@@ -20,18 +22,7 @@ pub fn main() {
         Err(error) => println!("Error {}: {}",log_variable,error),
     }
 
-    let manifest_path = "C:\\Users\\pinks\\OneDrive\\Documents\\Rust Projects\\fourteen\\assets\\debug-output\\manifest.json";
-    match wam::load_manifest_from_path(manifest_path) {
-        Ok(manifest) => {
-            println!("{:?}",manifest);
-        },
-        Err(error) => {
-            println!("bad manifest: {:?}",error);
-            return
-        },
-    };
-
-    return;
+    let manifest_path = include_str!("../manifest-path.txt");
 
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
@@ -39,5 +30,5 @@ pub fn main() {
 
     let wimpy_app = PlaceholderApp {};
 
-    crate::desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(wimpy_app);
+    crate::desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(wimpy_app,Some(manifest_path));
 }
