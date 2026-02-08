@@ -132,14 +132,17 @@ pub struct ModelVertex {
     pub diffuse_uv: [f32;2],
     pub lightmap_uv: [f32;2],
     pub position: [f32;3],
-    pub _padding: [f32;1],
 }
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct ModelInstance {
-    pub diffuse_color: [f32;4],
-    pub lightmap_color: [f32;4]
+    pub transform_0: [f32;4],
+    pub transform_1: [f32;4],
+    pub transform_2: [f32;4],
+    pub transform_3: [f32;4],
+    pub diffuse_color: [u8;4],
+    pub lightmap_color: [u8;4]
 }
 
 #[non_exhaustive]
@@ -149,8 +152,12 @@ impl ATTR {
     pub const DIFFUSE_UV: u32 = 0;
     pub const LIGHTMAP_UV: u32 = 1;
     pub const POSITION: u32 = 2;
-    pub const DIFFUSE_COLOR: u32 = 3;
-    pub const LIGHTMAP_COLOR: u32 = 4;
+    pub const TRANSFORM_0: u32 = 3;
+    pub const TRANSFORM_1: u32 = 4;
+    pub const TRANSFORM_2: u32 = 5;
+    pub const TRANSFORM_3: u32 = 6;
+    pub const DIFFUSE_COLOR: u32 = 7;
+    pub const LIGHTMAP_COLOR: u32 = 8;
 }
 
 impl ModelVertex {
@@ -170,9 +177,13 @@ impl ModelVertex {
 }
 
 impl ModelInstance {
-    const ATTRS: [wgpu::VertexAttribute;2] = wgpu::vertex_attr_array![
-        ATTR::DIFFUSE_COLOR => Float32x4,
-        ATTR::LIGHTMAP_COLOR => Float32x4,
+    const ATTRS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
+        ATTR::TRANSFORM_0 => Float32x4,
+        ATTR::TRANSFORM_1 => Float32x4,
+        ATTR::TRANSFORM_2 => Float32x4,
+        ATTR::TRANSFORM_3 => Float32x4,
+        ATTR::DIFFUSE_COLOR => Unorm8x4,
+        ATTR::LIGHTMAP_COLOR => Unorm8x4,
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -187,8 +198,12 @@ impl ModelInstance {
 impl<'a> From<&'a DrawData3D> for ModelInstance {
     fn from(value: &'a DrawData3D) -> Self {
         return ModelInstance {
-            diffuse_color: value.diffuse_color.to_float_array(),
-            lightmap_color: value.lightmap_color.to_float_array(),
+            transform_0: value.transform.x.into(),
+            transform_1: value.transform.y.into(),
+            transform_2: value.transform.z.into(),
+            transform_3: value.transform.w.into(),
+            diffuse_color: value.diffuse_color.decompose(),
+            lightmap_color: value.lightmap_color.decompose(),
         }
     }
 }

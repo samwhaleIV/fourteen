@@ -201,14 +201,13 @@ pub struct QuadVertex {
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct QuadInstance { //Aligned to 64
+pub struct QuadInstance {
     pub position: [f32;2],
     pub size: [f32;2],
     pub uv_position: [f32;2],
     pub uv_size: [f32;2],
-    pub color: [f32;4],
+    pub color: [u8;4],
     pub rotation: f32,
-    pub _padding: [f32;3]
 }
 
 #[non_exhaustive]
@@ -244,7 +243,7 @@ impl QuadInstance {
         ATTR::SIZE => Float32x2,
         ATTR::UV_POS => Float32x2,
         ATTR::UV_SIZE => Float32x2,
-        ATTR::COLOR => Float32x4,
+        ATTR::COLOR => Unorm8x4,
         ATTR::ROTATION => Float32,
     ];
 
@@ -277,9 +276,8 @@ impl<'a> From<&'a DrawData2D> for QuadInstance {
                 value.source.width,
                 value.source.height,
             ],
-            color: value.color.to_float_array(),
-            rotation: value.rotation,
-            _padding: [0.0,0.0,0.0],
+            color: value.color.decompose(),
+            rotation: value.rotation
         }
     }
 }
@@ -325,7 +323,7 @@ impl<TFrame> FrameRenderPass2D<TFrame>
 where 
     TFrame: MutableFrame
 {
-    fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
+    pub fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
         self.get_frame_mut().push_command(
             FrameCommand::DrawFrame {
                 reference: source.get_cache_reference(),

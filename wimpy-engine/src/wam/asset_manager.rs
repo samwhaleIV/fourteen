@@ -10,4 +10,6 @@ impl AssetManager {
             manifest
         }
     }
+
+    //pub fn load_model<IO: WimpyIO>(man
 }

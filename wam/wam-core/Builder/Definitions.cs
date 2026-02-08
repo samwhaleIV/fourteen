@@ -13,7 +13,6 @@ namespace WAM.Core.Builder {
         public string? Model { get; set; }
         public string? Diffuse { get; set; }
         public string? Lightmap { get; set; }
-        public string? Collision { get; set; }
     }
 
     public readonly record struct FileMap(

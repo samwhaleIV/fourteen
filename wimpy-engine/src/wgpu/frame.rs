@@ -1,18 +1,20 @@
+use cgmath::Matrix4;
 use wgpu::{
     AddressMode,
-    FilterMode, RenderPass,
+    FilterMode,
+    RenderPass,
 };
 
 use crate::{
     shared::{
         Area,
         Color
-    }, 
+    },
+    wam::ModelCacheReference,
     wgpu::{
-        ModelCacheEntry,
         RenderPipelines,
         frame_cache::FrameCacheReference,
-    },
+    }
 };
 
 #[derive(Copy,Clone)]
@@ -35,6 +37,7 @@ pub struct DrawData2D {
 }
 
 pub struct DrawData3D {
+    pub transform: Matrix4<f32>,
     pub diffuse_color: Color,
     pub lightmap_color: Color,
 }
@@ -53,6 +56,7 @@ impl Default for DrawData2D {
 impl Default for DrawData3D {
     fn default() -> Self {
         Self {
+            transform: crate::shared::get_identity_matrix(),
             diffuse_color: Color::WHITE,
             lightmap_color: Color::WHITE,
         }
@@ -65,7 +69,7 @@ pub enum FrameCommand {
         draw_data: DrawData2D
     },
     DrawModel {
-        reference: ModelCacheEntry,
+        reference: ModelCacheReference,
         draw_data: DrawData3D
     },
     SetTextureFilter(FilterMode),

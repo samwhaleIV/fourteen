@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use slotmap::SlotMap;
 
+use crate::{wam::ModelCacheReference, wgpu::FrameCacheReference};
+
 const NAME_BUILDING_BUFFER_START_CAPACITY: usize = 64;
 
 #[derive(Deserialize,Debug)]
@@ -18,19 +20,46 @@ slotmap::new_key_type! {
 }
 
 #[derive(Debug)]
+pub enum HardAssetData {
+    Unloaded,
+    String(String),
+    Image(FrameCacheReference),
+    Model {
+        model_id: Option<ModelCacheReference>,
+        diffuse_id: Option<FrameCacheReference>,
+        lightmap_id: Option<FrameCacheReference>,
+    },
+    Json
+}
+
+#[derive(Debug)]
 pub struct HardAsset {
     pub file_source: String,
+    pub data: HardAssetData,
     pub asset_type: HardAssetType
 }
 
 #[derive(Debug)]
 pub enum VirtualAsset {
-    Text(HardAssetKey),
-    TextureData(HardAssetKey),
-    Json(HardAssetKey),
-    Image(HardAssetKey),
-    ImageWithArea(HardAssetKey,ImageArea),
-    Model(ModelData)
+    Text {
+        key: HardAssetKey
+    },
+    TextureData {
+        key: HardAssetKey
+    },
+    Json {
+        key: HardAssetKey
+    },
+    Image {
+        key: HardAssetKey
+    },
+    ImageSlice {
+        key: HardAssetKey,
+        area: ImageArea
+    },
+    Model {
+        data: ModelData
+    }
 }
 
 #[derive(Debug)]
@@ -106,7 +135,8 @@ impl WamManifest {
 
             let key = self.hard_assets.insert(HardAsset {
                 file_source: hard_asset_input.source,
-                asset_type: hard_asset_input.r#type
+                asset_type: hard_asset_input.r#type,
+                data: HardAssetData::Unloaded,
             });
 
             namespaces_ids.insert(id,key);
@@ -122,13 +152,13 @@ impl WamManifest {
             let hard_asset = self.hard_assets.get(*key).unwrap();
             let value = match hard_asset.asset_type {
                 HardAssetType::Text => {
-                    VirtualAsset::Text(*key)
+                    VirtualAsset::Text { key: *key }
                 },
                 HardAssetType::Image => {
-                    VirtualAsset::Image(*key)
+                    VirtualAsset::Image { key: *key }
                 },
                 HardAssetType::Json => {
-                    VirtualAsset::Json(*key)
+                    VirtualAsset::Json { key: *key }
                 },
                 _ => return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
                     name: asset.name,
@@ -156,7 +186,10 @@ impl WamManifest {
                 }));
             }
             self.add_virtual_asset(
-                VirtualAsset::ImageWithArea(*key,image.area),
+                VirtualAsset::ImageSlice {
+                    key: *key,
+                    area: image.area
+                },
                 image.name,
                 namespace_name
             );
@@ -165,7 +198,6 @@ impl WamManifest {
         for model in namespace.virtual_model_assets {
             let assets = [
                 (model.model_id,HardAssetType::Model,ModelField::Model),
-                (model.collision_id,HardAssetType::Model,ModelField::Collision),
                 (model.diffuse_id,HardAssetType::Image,ModelField::Diffuse),
                 (model.lightmap_id,HardAssetType::Image,ModelField::Lightmap),
             ];
@@ -199,14 +231,13 @@ impl WamManifest {
 
                 match field {
                     ModelField::Model => model_data.model_id = Some(*key),
-                    ModelField::Collision => model_data.collision_id = Some(*key),
                     ModelField::Diffuse => model_data.collision_id = Some(*key),
                     ModelField::Lightmap => model_data.collision_id = Some(*key),
                 }
             }
 
             self.add_virtual_asset(
-                VirtualAsset::Model(model_data),
+                VirtualAsset::Model { data: model_data },
                 model.name,
                 namespace_name
             );
@@ -287,7 +318,6 @@ pub struct UnexpectedTypeInfo {
 #[derive(Debug)]
 pub enum ModelField {
     Model,
-    Collision,
     Diffuse,
     Lightmap
 }

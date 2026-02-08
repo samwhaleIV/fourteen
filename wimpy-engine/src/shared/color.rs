@@ -25,13 +25,22 @@ impl Color {
         return Color { r, g, b, a };
     }
 
-    pub fn to_float_array(&self) -> [f32;4] {
+    pub fn decompose_float(self) -> [f32;4] {
         return [
             self.r as f32 / 255.0,
             self.g as f32 / 255.0,
             self.b as f32 / 255.0,
             self.a as f32 / 255.0,
         ];
+    }
+
+    pub fn decompose(self) -> [u8;4] {
+        return [
+            self.r,
+            self.g,
+            self.b,
+            self.a
+        ]
     }
 
     pub const BLACK: Self = Self {

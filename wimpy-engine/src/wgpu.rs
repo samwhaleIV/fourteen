@@ -5,7 +5,6 @@ mod frame;
 mod graphics_context;
 mod graphics_provider;
 mod frame_cache;
-mod model_cache;
 mod pipelines;
 
 pub use texture_container::*;
@@ -15,5 +14,4 @@ pub use frame::*;
 pub use graphics_context::*;
 pub use graphics_provider::*;
 pub use frame_cache::*;
-pub use model_cache::*;
 pub use pipelines::*;

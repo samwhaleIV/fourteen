@@ -52,20 +52,20 @@ impl NodeOutputBuilder<UINodeInput,UINodeOutput> for UIRenderer {
     }
 }
 
-// impl UIRenderer {
-//     pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: &impl GraphicsContextController) {
-//         for command in &self.command_buffer {
-//             match command {
-//                 UIRendererCommand::OpenFrame(area) => {
-//                     let frame = graphics_context.create_frame(FrameConfig {
-//                         lifetime: FrameLifetime::Temporary,
-//                         size: area.size(),
-//                         render_once: true,
-//                     });
-//                 },
-//                 UIRendererCommand::CloseFrame => todo!(),
-//                 UIRendererCommand::Draw(output) => todo!(),
-//             }
-//         }
-//     }
-// }
+impl UIRenderer {
+    pub fn render(&self,texture_locator: impl LocateTexture<Frame>,graphics_context: &impl GraphicsContextController) {
+        for command in &self.command_buffer {
+            match command {
+                UIRendererCommand::OpenFrame(area) => {
+                    let frame = graphics_context.create_frame(FrameConfig {
+                        lifetime: FrameLifetime::Temporary,
+                        size: area.size(),
+                        render_once: true,
+                    });
+                },
+                UIRendererCommand::CloseFrame => todo!(),
+                UIRendererCommand::Draw(output) => todo!(),
+            }
+        }
+    }
+}

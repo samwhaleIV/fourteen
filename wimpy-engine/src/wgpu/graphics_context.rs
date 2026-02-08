@@ -16,7 +16,6 @@ struct OutputBuilder {
 pub struct GraphicsContext {
     graphics_provider: GraphicsProvider,
     pipelines: RenderPipelines,
-    model_cache: ModelCache,
     frame_cache: FrameCache,
     output_builder: Option<OutputBuilder>, //Technically a finite state machine
     command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
@@ -33,19 +32,12 @@ impl GraphicsContext {
 
         let render_pipelines = RenderPipelines::create::<TConfig>(&graphics_provider);
 
-        let model_cache = ModelCache::create(
-            graphics_provider.get_device(),
-            TConfig::MODEL_CACHE_VERTEX_BUFFER_SIZE,
-            TConfig::MODEL_CACHE_INDEX_BUFFER_SIZE
-        );
-
         return Self {
             graphics_provider,
             pipelines: render_pipelines,
             frame_cache: FrameCache::default(),
             command_buffer_pool: VecPool::new(),
             output_builder: None,
-            model_cache,
         }
     }
 }

@@ -10,8 +10,12 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(3) diffuse_color: vec4<f32>,
-    @location(4) lightmap_color: vec4<f32>
+    @location(3) transform_0: vec4<f32>,
+    @location(4) transform_1: vec4<f32>,
+    @location(5) transform_2: vec4<f32>,
+    @location(6) transform_3: vec4<f32>,
+    @location(7) diffuse_color: vec4<f32>,
+    @location(8) lightmap_color: vec4<f32>
 }
 
 struct VertexOutput {
@@ -25,7 +29,14 @@ struct VertexOutput {
 @vertex fn vs_main(vertex: VertexInput,instance: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = camera.view_projection * vec4<f32>(vertex.position,1.0);
+    var transform = mat4x4<f32>(
+        instance.transform_0,
+        instance.transform_1,
+        instance.transform_2,
+        instance.transform_3
+    );
+
+    out.clip_position = camera.view_projection * transform * vec4<f32>(vertex.position,1.0);
 
     out.diffuse_uv = vertex.diffuse_uv;
     out.lightmap_uv = vertex.lightmap_uv;

@@ -159,10 +159,6 @@ namespace WAM.Core.Builder {
                 return model.Error;
             }
 
-            var collision = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Collision,"collision",FileType.Model);
-            if(collision.Error != null) {
-                return collision.Error;
-            }
             var diffuse = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Diffuse,"diffuse",FileType.Image);
             if(diffuse.Error != null) {
                 return diffuse.Error;
@@ -177,8 +173,7 @@ namespace WAM.Core.Builder {
                 Name = runtimeFileName,
                 ModelID = model.ID,
                 DiffuseID = diffuse.ID,
-                LightmapID = lightmap.ID,
-                CollisionID = collision.ID
+                LightmapID = lightmap.ID
             });
 
             return null;
