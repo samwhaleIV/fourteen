@@ -49,7 +49,7 @@ impl TextureData for DynamicImageWrapper {
 }
 
 impl WimpyIO for DekstopAppIO {
-    async fn load_image(path: &Path) -> Result<impl TextureData + 'static,WimpyFileError> {
+    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,WimpyFileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => Ok(DynamicImageWrapper { value }),

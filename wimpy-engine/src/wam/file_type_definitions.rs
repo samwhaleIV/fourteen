@@ -1,30 +1,32 @@
 use std::rc::Rc;
-
 use serde::Deserialize;
 
-use crate::{wam::*, wgpu::TextureFrame};
+use crate::{
+    wam::*,
+    wgpu::TextureFrame
+};
 
 #[derive(Debug,Default)]
 pub struct HardImageAsset {
-    pub state: AssetState<TextureFrame>
+    pub state: HardAssetState<TextureFrame>
 }
 
 #[derive(Debug,Default)]
 pub struct HardModelAsset {
-    pub state: AssetState<ModelCacheReference>
+    pub state: HardAssetState<ModelCacheReference>
 }
 
 #[derive(Debug,Default)]
 pub struct HardTextAsset {
-    pub state: AssetState<String>
+    pub state: HardAssetState<Rc<str>>
 }
 
-pub trait DataResolver {
+pub trait HardAssetResolver {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self>;
     fn get_type() -> HardAssetType;
 }
 
-impl DataResolver for HardImageAsset {
+impl HardAssetResolver for HardImageAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Image(data) => Some(data),
@@ -37,7 +39,7 @@ impl DataResolver for HardImageAsset {
     }
 }
 
-impl DataResolver for HardModelAsset {
+impl HardAssetResolver for HardModelAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Model(data) => Some(data),
@@ -49,7 +51,7 @@ impl DataResolver for HardModelAsset {
     }
 }
 
-impl DataResolver for HardTextAsset {
+impl HardAssetResolver for HardTextAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Text(data) => Some(data),
@@ -86,18 +88,18 @@ impl HardAssetData {
     }
 }
 
-pub trait VirtualAssetResolver<T> {
-    fn type_check(asset: &VirtualAsset) -> Option<&T>;
+pub trait AssetReferenceResolver<T> {
+    fn type_check(asset: &AssetReference) -> Option<&T>;
 }
 
 #[derive(Debug,Clone)]
-pub struct VirtualTextAsset {
+pub struct TextAssetReference {
     pub name: Rc<str>,
     pub key: HardAssetKey
 }
 
 #[derive(Debug,Clone)]
-pub struct VirtualImageAsset {
+pub struct ImageAssetReference {
     pub name: Rc<str>,
     pub key: HardAssetKey
 }
@@ -110,64 +112,64 @@ pub struct VirtualImageSliceAsset {
 }
 
 #[derive(Debug,Clone)]
-pub struct VirtualModelAsset {
+pub struct ModelAssetReference {
     pub name: Rc<str>,
     pub model: Option<HardAssetKey>,
     pub diffuse: Option<HardAssetKey>,
     pub lightmap: Option<HardAssetKey>,
 }
 
-impl VirtualAssetResolver<Self> for VirtualTextAsset {
-    fn type_check(asset: &VirtualAsset) -> Option<&Self> {
+impl AssetReferenceResolver<Self> for TextAssetReference {
+    fn type_check(asset: &AssetReference) -> Option<&Self> {
         match asset {
-            VirtualAsset::Text(virtual_text_asset) => Some(virtual_text_asset),
+            AssetReference::Text(virtual_text_asset) => Some(virtual_text_asset),
             _ => None
         }
     }
 }
 
-impl VirtualAssetResolver<Self> for VirtualImageAsset {
-    fn type_check(untyped_asset: &VirtualAsset) -> Option<&Self> {
+impl AssetReferenceResolver<Self> for ImageAssetReference {
+    fn type_check(untyped_asset: &AssetReference) -> Option<&Self> {
         match untyped_asset {
-            VirtualAsset::Image(image_asset) => Some(image_asset),
+            AssetReference::Image(image_asset) => Some(image_asset),
             _ => None
         }
     }
 }
 
-impl VirtualAssetResolver<Self> for VirtualImageSliceAsset {
-    fn type_check(untyped_asset: &VirtualAsset) -> Option<&Self> {
+impl AssetReferenceResolver<Self> for VirtualImageSliceAsset {
+    fn type_check(untyped_asset: &AssetReference) -> Option<&Self> {
         match untyped_asset {
-            VirtualAsset::ImageSlice(image_asset) => Some(image_asset),
+            AssetReference::ImageSlice(image_asset) => Some(image_asset),
             _ => None
         }
     }
 }
 
-impl VirtualAssetResolver<Self> for VirtualModelAsset {
-    fn type_check(untyped_asset: &VirtualAsset) -> Option<&Self> {
+impl AssetReferenceResolver<Self> for ModelAssetReference {
+    fn type_check(untyped_asset: &AssetReference) -> Option<&Self> {
         match untyped_asset {
-            VirtualAsset::Model(model_asset) => Some(model_asset),
+            AssetReference::Model(model_asset) => Some(model_asset),
             _ => None
         }
     }
 }
 
 #[derive(Debug)]
-pub enum VirtualAsset {
-    Text(VirtualTextAsset),
-    Image(VirtualImageAsset),
+pub enum AssetReference {
+    Text(TextAssetReference),
+    Image(ImageAssetReference),
     ImageSlice(VirtualImageSliceAsset),
-    Model(VirtualModelAsset),
+    Model(ModelAssetReference),
 }
 
-impl VirtualAsset {
+impl AssetReference {
     pub fn get_type(&self) -> HardAssetType {
         return match self {
-            VirtualAsset::Text { .. } => HardAssetType::Text,
-            VirtualAsset::Image { .. } => HardAssetType::Image,
-            VirtualAsset::ImageSlice { .. } => HardAssetType::Image,
-            VirtualAsset::Model { .. } => HardAssetType::Model,
+            AssetReference::Text { .. } => HardAssetType::Text,
+            AssetReference::Image { .. } => HardAssetType::Image,
+            AssetReference::ImageSlice { .. } => HardAssetType::Image,
+            AssetReference::Model { .. } => HardAssetType::Model,
         };
     }
 }

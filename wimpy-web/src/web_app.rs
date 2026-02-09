@@ -135,7 +135,7 @@ impl TextureData for ExternalImageSourceWrapper {
 }
 
 impl WimpyIO for WebAppIO {
-    async fn load_image(path: &str) -> Result<impl TextureData,WimpyFileError> {
+    async fn load_image_file(path: &str) -> Result<impl TextureData,WimpyFileError> {
         let window = get_window().expect("window exists");
 
         let image_element = HtmlImageElement::new().expect("html image element creation");

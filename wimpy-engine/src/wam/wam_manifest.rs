@@ -20,7 +20,7 @@ slotmap::new_key_type! {
 }
 
 #[derive(Debug,Default)]
-pub enum AssetState<T> {
+pub enum HardAssetState<T> {
     #[default]
     Unloaded,
     Loaded(T)
@@ -36,10 +36,9 @@ pub struct HardAsset {
 #[derive(Debug,Default)]
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
-    pub virtual_assets: HashMap<Rc<str>,VirtualAsset>,
+    pub virtual_assets: HashMap<Rc<str>,AssetReference>,
     string_building_buffer: String,
 }
-
 
 #[derive(Deserialize,Debug)]
 pub struct HardAssetInput {
@@ -166,7 +165,7 @@ impl WamManifest {
         return Rc::from(local_name);
     }
 
-    pub fn add_virtual_asset(&mut self,asset: VirtualAsset,name: Rc<str>) {
+    pub fn add_virtual_asset(&mut self,asset: AssetReference,name: Rc<str>) {
         self.virtual_assets.insert(name,asset);
     }
 

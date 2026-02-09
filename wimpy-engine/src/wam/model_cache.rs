@@ -132,6 +132,7 @@ pub struct ModelCache {
     collision_shapes: SecondaryMap<ModelCacheReference,CollisionShape>,
 }
 
+#[derive(Debug,Default)]
 pub struct Meshes<'a> {
     pub render: Option<&'a RenderBufferReference>,
     pub collision: Option<&'a CollisionShape>

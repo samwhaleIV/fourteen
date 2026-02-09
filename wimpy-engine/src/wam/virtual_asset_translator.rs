@@ -1,4 +1,8 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::HashMap, 
+    rc::Rc
+};
+
 use crate::wam::*;
 
 pub struct VirtualAssetTranslator<'a> {
@@ -35,11 +39,11 @@ impl VirtualAssetTranslator<'_> {
 
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             let value = match hard_asset.data_type {
-                HardAssetType::Text => VirtualAsset::Text(VirtualTextAsset {
+                HardAssetType::Text => AssetReference::Text(TextAssetReference {
                     name: rc_name.clone(),
                     key: *key
                 }),
-                HardAssetType::Image => VirtualAsset::Image(VirtualImageAsset {
+                HardAssetType::Image => AssetReference::Image(ImageAssetReference {
                     name: rc_name.clone(),
                     key: *key
                 }),
@@ -73,7 +77,7 @@ impl VirtualAssetTranslator<'_> {
                 }));
             }
             self.manifest.add_virtual_asset(
-                VirtualAsset::ImageSlice(VirtualImageSliceAsset {
+                AssetReference::ImageSlice(VirtualImageSliceAsset {
                     name: rc_name.clone(),
                     key: *key,
                     area: image.area,
@@ -94,7 +98,7 @@ impl VirtualAssetTranslator<'_> {
 
             let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
 
-            let mut model_data = VirtualModelAsset {
+            let mut model_data = ModelAssetReference {
                 name: rc_name.clone(),
                 model: None,
                 diffuse: None,
@@ -129,7 +133,7 @@ impl VirtualAssetTranslator<'_> {
             }
 
             self.manifest.add_virtual_asset(
-                VirtualAsset::Model(model_data),
+                AssetReference::Model(model_data),
                 rc_name.clone()
             );
         }

@@ -24,7 +24,7 @@ pub trait WimpyIO {
     fn load_binary_file(path: &Path) -> impl Future<Output = Result<Vec<u8>,WimpyFileError>>;
     fn load_text_file(path: &Path) -> impl Future<Output = Result<String,WimpyFileError>>;
 
-    fn load_image(path: &Path) -> impl Future<Output = Result<impl TextureData + 'static,WimpyFileError>>;
+    fn load_image_file(path: &Path) -> impl Future<Output = Result<impl TextureData + 'static,WimpyFileError>>;
 
     fn save_key_value_store(kvs: &KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
     fn load_key_value_store(kvs: &mut KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
