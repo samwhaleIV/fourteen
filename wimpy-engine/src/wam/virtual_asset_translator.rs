@@ -35,7 +35,6 @@ impl VirtualAssetTranslator<'_> {
             let value = match hard_asset.data_type {
                 HardAssetType::Text => VirtualAsset::Text(*key),
                 HardAssetType::Image => VirtualAsset::Image(*key),
-                HardAssetType::Json => VirtualAsset::Json(*key),
                 HardAssetType::Model => return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
                     name: asset.name,
                     id: asset.id,

@@ -72,7 +72,6 @@ namespace WAM.Core.Builder {
     public enum FileType {
         Image,
         Text,
-        Json,
         Model
     };
 
@@ -81,7 +80,6 @@ namespace WAM.Core.Builder {
             { ".png", FileType.Image },
             { ".jpg", FileType.Image },
             { ".jpeg", FileType.Image },
-            { ".json", FileType.Json },
             { ".txt", FileType.Text },
             { ".glb", FileType.Model },
         };
@@ -108,7 +106,6 @@ namespace WAM.Core.Builder {
             return value?.ToLowerInvariant() switch {
                 "image" => FileType.Image,
                 "text" => FileType.Text,
-                "json" => FileType.Json,
                 "model" => FileType.Model,
                 _ => throw new JsonException($"Unknown file type: {value}")
             };

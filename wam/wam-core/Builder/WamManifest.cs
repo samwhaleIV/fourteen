@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Text.Json;
+﻿using System.Text.Json;
 using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 

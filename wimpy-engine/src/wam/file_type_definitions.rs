@@ -11,9 +11,6 @@ pub struct HardModelAsset(pub AssetState<ModelCacheReference>);
 #[derive(Debug,Default)]
 pub struct HardTextAsset(pub AssetState<String>);
 
-#[derive(Debug,Default)]
-pub struct HardJsonAsset(pub AssetState<String>);
-
 impl DataResolver<Self> for HardImageAsset {
     fn resolve_asset(asset: &HardAsset) -> Option<&Self> {
         return match &asset.data {
@@ -51,25 +48,12 @@ impl DataResolver<Self> for HardTextAsset {
     }
 }
 
-impl DataResolver<Self> for HardJsonAsset {
-    fn resolve_asset(asset: &HardAsset) -> Option<&Self> {
-        return match &asset.data {
-            HardAssetData::Json(data) => Some(data),
-            _ => None
-        }
-    }
-    fn get_type() -> HardAssetType {
-        return HardAssetType::Json;
-    }
-}
-
 #[derive(Deserialize,Debug,Copy,Clone,PartialEq,Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HardAssetType {
     Text,
     Image,
     Model,
-    Json
 }
 
 #[derive(Debug)]
@@ -77,7 +61,6 @@ pub enum HardAssetData {
     Image(HardImageAsset),
     Model(HardModelAsset),
     Text(HardTextAsset),
-    Json(HardJsonAsset),
 }
 
 impl HardAssetData {
@@ -86,7 +69,6 @@ impl HardAssetData {
             HardAssetType::Text => HardAssetData::Text(Default::default()),
             HardAssetType::Image => HardAssetData::Image(Default::default()),
             HardAssetType::Model => HardAssetData::Model(Default::default()),
-            HardAssetType::Json => HardAssetData::Json(Default::default()),
         }
     }
 }
@@ -101,7 +83,6 @@ pub struct VirtualModelData {
 #[derive(Debug)]
 pub enum VirtualAsset {
     Text(HardAssetKey),
-    Json(HardAssetKey),
     Image(HardAssetKey),
     Model(VirtualModelData),
     ImageSlice {
@@ -114,7 +95,6 @@ impl VirtualAsset {
     pub fn get_type(&self) -> HardAssetType {
         return match self {
             VirtualAsset::Text { .. } => HardAssetType::Text,
-            VirtualAsset::Json { .. } => HardAssetType::Json,
             VirtualAsset::Image { .. } => HardAssetType::Image,
             VirtualAsset::ImageSlice { .. } => HardAssetType::Image,
             VirtualAsset::Model { .. } => HardAssetType::Model,
