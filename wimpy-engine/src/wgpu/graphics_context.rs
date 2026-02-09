@@ -17,8 +17,82 @@ pub struct GraphicsContext {
     graphics_provider: GraphicsProvider,
     pipelines: RenderPipelines,
     frame_cache: FrameCache,
-    output_builder: Option<OutputBuilder>, //Technically a finite state machine
+    output_builder: Option<OutputBuilder>,
     command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
+    fallback_texture: TextureFrame
+}
+
+struct FallbackTexture {
+    data: [u8;Self::DATA_SIZE]
+}
+
+impl FallbackTexture {
+    const COLOR_1: [u8;Self::BYTES_PER_PIXEL] = [182,0,205,255];
+    const COLOR_2: [u8;Self::BYTES_PER_PIXEL] = [53,23,91,255];
+
+    const SIZE: usize = 32;
+    const GRID_DIVISION: usize = 4;
+    const BYTES_PER_PIXEL: usize = 4;
+    const PIXEL_COUNT: usize = Self::SIZE * Self::SIZE;
+    const DATA_SIZE: usize = Self::PIXEL_COUNT * 4;
+
+    fn get_color(x: usize,y: usize) -> [u8;Self::BYTES_PER_PIXEL] {
+        let column = x / Self::GRID_DIVISION;
+        let row = y / Self::GRID_DIVISION;
+
+        let checker_pattern = (column + row) % 2 == 0;
+
+        return match checker_pattern {
+            true => Self::COLOR_1,
+            false => Self::COLOR_2
+        };
+    }
+
+    fn create() -> Self {
+        let mut data: [u8;Self::DATA_SIZE] = [0;Self::DATA_SIZE];
+
+        let mut i: usize = 0;
+        while i < Self::PIXEL_COUNT {
+            let x = i % Self::SIZE;
+            let y = i / Self::SIZE;
+
+            let color = Self::get_color(x,y);
+
+            data[i * Self::BYTES_PER_PIXEL + 0] = color[0];
+            data[i * Self::BYTES_PER_PIXEL + 1] = color[1];
+            data[i * Self::BYTES_PER_PIXEL + 2] = color[2];
+            data[i * Self::BYTES_PER_PIXEL + 3] = color[3];
+
+            i += 1;
+        }
+
+        return Self {
+            data
+        }
+    }
+}
+
+impl TextureData for FallbackTexture {
+    fn write_to_queue(&self,parameters: &TextureDataWriteParameters) {
+        parameters.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: parameters.texture,
+                mip_level: parameters.mip_level,
+                origin: parameters.origin,
+                aspect: parameters.aspect,
+            },
+            &self.data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(Self::SIZE as u32 * 4), 
+                rows_per_image: Some(Self::SIZE as u32),
+            },
+            parameters.texture_size,
+        );
+    }
+    fn size(&self) -> (u32,u32) {
+        return (Self::SIZE as u32,Self::SIZE as u32);
+    }
 }
 
 impl GraphicsContext {
@@ -32,13 +106,23 @@ impl GraphicsContext {
 
         let render_pipelines = RenderPipelines::create::<TConfig>(&graphics_provider);
 
-        return Self {
+        let mut graphics_context = Self {
             graphics_provider,
             pipelines: render_pipelines,
             frame_cache: FrameCache::default(),
             command_buffer_pool: VecPool::new(),
             output_builder: None,
+            fallback_texture: TextureFrame::get_fake()
+        };
+
+        let texture_data = FallbackTexture::create();
+        if let Ok(texture_frame) = graphics_context.create_texture_frame(&texture_data) {
+            graphics_context.fallback_texture = texture_frame;
+        } else {
+            log::error!("Could not create a computed fallback texture frame. The fallback texture is set to a fake frame cache reference.");
         }
+
+        return graphics_context;
     }
 }
 
@@ -52,7 +136,7 @@ pub trait GraphicsContextConfig {
 }
 
 pub trait GraphicsContextController {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError>;
+    fn create_texture_frame(&mut self,texture_data: &impl TextureData) -> Result<TextureFrame,TextureContainerError>;
 
     fn begin_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,frame: TFrame) -> TRenderPass {
         TRenderPass::create(frame)
@@ -67,6 +151,8 @@ pub trait GraphicsContextController {
 
     fn get_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame;
     fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),GraphicsContextError>;
+
+    fn get_fallback_texture_frame(&self) -> &TextureFrame;
 }
 
 #[derive(Debug)]
@@ -75,7 +161,6 @@ pub enum GraphicsContextError {
     PipelineNotActive,
     CantCreateOutputSurface(SurfaceError),
     FrameCacheError(CacheArenaError<u32,FrameCacheReference>),
-    TextureCreationFailure(TextureContainerError)
 }
 
 pub trait GraphicsContextInternalController {
@@ -145,15 +230,12 @@ impl GraphicsContextInternalController for GraphicsContext {
 }
 
 impl GraphicsContextController for GraphicsContext {
-    fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,GraphicsContextError> {
-        let texture_container = match TextureContainer::from_image(
+    fn create_texture_frame(&mut self,texture_data: &impl TextureData) -> Result<TextureFrame,TextureContainerError> {
+        let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
             &self.pipelines.shared.texture_layout,
             texture_data
-        ) {
-            Ok(value) => value,
-            Err(error) => return Err(GraphicsContextError::TextureCreationFailure(error))
-        };
+        )?;
         return Ok(FrameFactory::create_texture(
             texture_container.size(),
             self.frame_cache.insert_keyless(texture_container)
@@ -290,5 +372,9 @@ impl GraphicsContextController for GraphicsContext {
 
         frame.clear_commands();
         return Ok(frame);
+    }
+    
+    fn get_fallback_texture_frame(&self) -> &TextureFrame {
+        return &self.fallback_texture;
     }
 }

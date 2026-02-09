@@ -1,21 +1,34 @@
 use std::{
-    marker::PhantomData, num::NonZero, ops::Range
+    marker::PhantomData,
+    num::NonZero,
+    ops::Range
 };
 
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{
+    Pod,
+    Zeroable
+};
+
 use gltf::{
     Document,
     Mesh,
     Primitive,
-    buffer::Data, mesh::util::{ReadIndices, ReadPositions}
+    buffer::Data,
+    mesh::util::{
+        ReadIndices, 
+        ReadPositions
+    }
 };
 
-use rapier3d::{math::Vec3, prelude::{
-    Ball,
-    Capsule,
-    Cuboid,
-    TriMesh
-}};
+use rapier3d::{
+    math::Vec3,
+    prelude::{
+        Ball,
+        Capsule,
+        Cuboid,
+        TriMesh
+    }
+};
 
 use slotmap::{
     SecondaryMap,
@@ -119,12 +132,18 @@ pub struct ModelCache {
     collision_shapes: SecondaryMap<ModelCacheReference,CollisionShape>,
 }
 
+pub struct Meshes<'a> {
+    pub render: Option<&'a RenderBufferReference>,
+    pub collision: Option<&'a CollisionShape>
+}
+
 #[derive(Debug)]
 pub struct RenderBufferReference {
     pub index_range: Range<u32>,
     pub base_vertex: i32,
 }
 
+#[derive(Debug)]
 pub enum ModelImportError {
     GltfParseFailure(String),
 
@@ -336,7 +355,7 @@ impl ModelCache {
         }
     }
 
-    fn get_collision_primitive(
+    fn create_collision_primitive(
         buffers: &Vec<Data>,
         primitive: Primitive
     ) -> Result<TriMesh,ModelImportError> {
@@ -387,10 +406,19 @@ impl ModelCache {
         let model_cache_reference = self.entries.insert(render_buffer_reference);
 
         if let Some(primitive) = primitive_set.collision {
-            let trimesh = Self::get_collision_primitive(&buffers,primitive)?;
+            let trimesh = Self::create_collision_primitive(&buffers,primitive)?;
             self.collision_shapes.insert(model_cache_reference,CollisionShape::TriMesh(trimesh));
         }
 
         return Ok(model_cache_reference);
+    }
+
+    pub fn get_meshes<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Meshes<'a> {
+        let render = self.entries.get(model_cache_reference);
+        let collision = self.collision_shapes.get(model_cache_reference);
+        return Meshes {
+            render,
+            collision,
+        }
     }
 }

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::{
     input::InputManager,
     kvs::KeyValueStore,
@@ -17,13 +19,13 @@ pub enum WimpyFileError {
 }
 
 pub trait WimpyIO {
-    fn save_file(path: &str,data: &[u8])-> impl Future<Output = Result<(),WimpyFileError>>;
+    fn save_file(path: &Path,data: &[u8])-> impl Future<Output = Result<(),WimpyFileError>>;
 
-    fn load_binary_file(path: &str) -> impl Future<Output = Result<Vec<u8>,WimpyFileError>>;
-    fn load_text_file(path: &str) -> impl Future<Output = Result<String,WimpyFileError>>;
+    fn load_binary_file(path: &Path) -> impl Future<Output = Result<Vec<u8>,WimpyFileError>>;
+    fn load_text_file(path: &Path) -> impl Future<Output = Result<String,WimpyFileError>>;
 
-    fn load_image(path: &str) -> impl Future<Output = Result<impl TextureData,WimpyFileError>>;
-    
+    fn load_image(path: &Path) -> impl Future<Output = Result<impl TextureData + 'static,WimpyFileError>>;
+
     fn save_key_value_store(kvs: &KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
     fn load_key_value_store(kvs: &mut KeyValueStore) -> impl Future<Output = Result<(),WimpyFileError>>;
 }

@@ -2,7 +2,7 @@ mod desktop_app;
 mod key_code;
 mod desktop_io;
 
-use std::env;
+use std::{env, path::Path};
 
 use wimpy_engine::{
     PlaceholderApp,
@@ -22,7 +22,7 @@ pub fn main() {
         Err(error) => println!("Error {}: {}",log_variable,error),
     }
 
-    let manifest_path = include_str!("../manifest-path.txt");
+    let manifest_path = Path::new(include_str!("../manifest-path.txt"));
 
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);

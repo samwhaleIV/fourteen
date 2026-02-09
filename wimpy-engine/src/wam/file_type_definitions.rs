@@ -2,11 +2,11 @@ use std::rc::Rc;
 
 use serde::Deserialize;
 
-use crate::{wam::*, wgpu::FrameCacheReference};
+use crate::{wam::*, wgpu::TextureFrame};
 
 #[derive(Debug,Default)]
 pub struct HardImageAsset {
-    pub state: AssetState<FrameCacheReference>
+    pub state: AssetState<TextureFrame>
 }
 
 #[derive(Debug,Default)]
@@ -19,12 +19,12 @@ pub struct HardTextAsset {
     pub state: AssetState<String>
 }
 
-pub trait DataResolver<T> {
-    fn type_check(asset: &mut HardAsset) -> Option<&mut T>;
+pub trait DataResolver {
+    fn type_check(asset: &mut HardAsset) -> Option<&mut Self>;
     fn get_type() -> HardAssetType;
 }
 
-impl DataResolver<Self> for HardImageAsset {
+impl DataResolver for HardImageAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Image(data) => Some(data),
@@ -37,7 +37,7 @@ impl DataResolver<Self> for HardImageAsset {
     }
 }
 
-impl DataResolver<Self> for HardModelAsset {
+impl DataResolver for HardModelAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Model(data) => Some(data),
@@ -49,7 +49,7 @@ impl DataResolver<Self> for HardModelAsset {
     }
 }
 
-impl DataResolver<Self> for HardTextAsset {
+impl DataResolver for HardTextAsset {
     fn type_check(asset: &mut HardAsset) -> Option<&mut Self> {
         return match &mut asset.data {
             HardAssetData::Text(data) => Some(data),

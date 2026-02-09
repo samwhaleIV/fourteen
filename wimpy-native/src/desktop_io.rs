@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use image::{
     DynamicImage,
@@ -28,7 +28,7 @@ impl TextureData for DynamicImageWrapper {
         (self.value.width(),self.value.height())
     }
     
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
+    fn write_to_queue(&self,parameters: &TextureDataWriteParameters) {
         parameters.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: parameters.texture,
@@ -49,7 +49,7 @@ impl TextureData for DynamicImageWrapper {
 }
 
 impl WimpyIO for DekstopAppIO {
-    async fn load_image(path: &str) -> Result<impl TextureData,WimpyFileError> {
+    async fn load_image(path: &Path) -> Result<impl TextureData + 'static,WimpyFileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => Ok(DynamicImageWrapper { value }),
@@ -76,40 +76,40 @@ impl WimpyIO for DekstopAppIO {
         }
     }
     
-    async fn save_file(path: &str,data: &[u8])-> Result<(),WimpyFileError> {
+    async fn save_file(path: &Path,data: &[u8])-> Result<(),WimpyFileError> {
         if let Err(error) = (|| -> std::io::Result<()> {
             fs::create_dir_all(path)?;
             fs::write(path,data)?;
             Ok(())
         })() {
-            log::error!("Save binary file error ({}): {:?}",path,error);
+            log::error!("Save binary file error ({:?}): {:?}",path,error);
             return Err(WimpyFileError::Access);
         }
         Ok(())
     }
     
-    async fn load_binary_file(path: &str) -> Result<Vec<u8>,WimpyFileError> {
+    async fn load_binary_file(path: &Path) -> Result<Vec<u8>,WimpyFileError> {
         let data = match (|| -> std::io::Result<Vec<u8>> {
             std::fs::create_dir_all(path)?;
             Ok(std::fs::read(path)?)
         })() {
             Ok(value) => value,
             Err(error) => {
-                log::error!("Load binary file error ({}): {:?}",path,error);
+                log::error!("Load binary file error ({:?}): {:?}",path,error);
                 return Err(WimpyFileError::Access);
             }
         };
         return Ok(data);
     }
-    
-    async fn load_text_file(path: &str) -> Result<String,WimpyFileError> {
+
+    async fn load_text_file(path: &Path) -> Result<String,WimpyFileError> {
         let data = match (|| -> std::io::Result<String> {
             std::fs::create_dir_all(path)?;
             Ok(std::fs::read_to_string(path)?)
         })() {
             Ok(value) => value,
             Err(error) => {
-                log::error!("Load text file error ({}): {:?}",path,error);
+                log::error!("Load text file error ({:?}): {:?}",path,error);
                 return Err(WimpyFileError::Access);
             }
         };

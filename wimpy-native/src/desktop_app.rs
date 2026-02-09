@@ -1,7 +1,7 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::{Path, PathBuf}};
 
 use sdl2::{
     EventPump,
@@ -21,7 +21,7 @@ use sdl2::{
 use wgpu::Limits;
 
 use wimpy_engine::{
-    WimpyApp, WimpyContext, WimpyIO, input::*, kvs::KeyValueStore, wam::{self, AssetManager, WamManifest}, wgpu::*
+    WimpyApp, WimpyContext, WimpyIO, input::*, kvs::KeyValueStore, wam::{self, AssetManager, AssetManagerCreationData, WamManifest}, wgpu::*
 };
 
 use crate::{
@@ -49,7 +49,7 @@ struct InnerApp<TWimpyApp> {
 
 async fn async_load<TWimpyApp,TConfig>(
     mut wimpy_app: TWimpyApp,
-    manifest_path: Option<&str>,
+    manifest_path: Option<&Path>,
 ) -> Option<InnerApp<TWimpyApp>>
 where
     TConfig: GraphicsContextConfig,
@@ -99,9 +99,33 @@ where
         }
     };
 
-
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
+
+    let mut asset_manager: AssetManager = match manifest_path {
+        Some(path) => match DekstopAppIO::load_text_file(path).await {
+            Ok(json_text) => match WamManifest::create(&json_text) {
+                Ok(manifest) => {
+                    let mut path_buffer = PathBuf::from(path);
+                    path_buffer.pop();
+                    AssetManager::create::<TConfig>(AssetManagerCreationData {
+                        graphics_provider: &graphics_provider,
+                        content_root: Some(path_buffer),
+                        manifest
+                    })
+                },
+                Err(error) => {
+                    log::error!("Could not parse manifest data '{:?}': {:?}",path,error);
+                    AssetManager::create_without_manifest::<TConfig>(&graphics_provider)
+                },
+            },
+            Err(error) => {
+                log::error!("Could not load manifest file '{:?}': {:?}",path,error);
+                AssetManager::create_without_manifest::<TConfig>(&graphics_provider)
+            },
+        },
+        None => AssetManager::create_without_manifest::<TConfig>(&graphics_provider),
+    };
 
     let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
     let mut kvs_store = KeyValueStore::default();
@@ -110,23 +134,6 @@ where
         InputType::Unknown
         // Reminder: Set input type ahead of time on specific platforms.
     );
-
-    let mut asset_manager = AssetManager::create(match manifest_path {
-        Some(path) => match DekstopAppIO::load_text_file(path).await {
-            Ok(json_text) => match WamManifest::create(&json_text) {
-                Ok(manifest) => manifest,
-                Err(error) => {
-                    log::error!("Could not load manifest '{}': {:?}",path,error);
-                    Default::default()
-                },
-            },
-            Err(error) => {
-                log::error!("Could not load manifest '{}': {:?}",path,error);
-                Default::default()
-            },
-        },
-        None => Default::default(),
-    });
 
     if let Err(error) = wimpy_app.load(&WimpyContext {
         graphics: &mut graphics_context,
@@ -152,7 +159,7 @@ where
     })
 }
 
-pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp,wam_manifest_path: Option<&str>)
+pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp,wam_manifest_path: Option<&Path>)
 where
     TWimpyApp: WimpyApp<DekstopAppIO>,
     TConfig: GraphicsContextConfig

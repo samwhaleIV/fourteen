@@ -83,9 +83,19 @@ pub struct OutputFrame {
     clear_color: wgpu::Color
 }
 
+#[derive(Copy,Clone,Debug)]
 pub struct TextureFrame {
     size: (u32,u32),
     cache_reference: FrameCacheReference,
+}
+
+impl TextureFrame {
+    pub fn get_fake() -> Self {
+        return Self {
+            size: (0,0),
+            cache_reference: Default::default(),
+        }
+    }
 }
 
 pub struct TempFrame {
