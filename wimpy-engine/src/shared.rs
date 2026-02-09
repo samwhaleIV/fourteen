@@ -28,3 +28,7 @@ pub const fn get_identity_matrix() -> Matrix4<f32> {
         0.0, 0.0, 0.0, 1.0
     )
 }
+pub trait IdentityTrait<T> {
+    fn get(&self) -> &T;
+    fn get_mut(&mut self) -> &mut T;
+}
