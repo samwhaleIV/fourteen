@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use slotmap::SlotMap;
 
-use crate::{wam::ModelCacheReference, wgpu::FrameCacheReference};
+use crate::wam::*;
 
 const NAME_BUILDING_BUFFER_START_CAPACITY: usize = 64;
 
@@ -19,55 +19,32 @@ slotmap::new_key_type! {
     pub struct HardAssetKey;
 }
 
-#[derive(Debug)]
-pub enum HardAssetData {
+#[derive(Debug,Default)]
+pub enum AssetState<T> {
+    #[default]
     Unloaded,
-    String(String),
-    Image(FrameCacheReference),
-    Model {
-        model_id: Option<ModelCacheReference>,
-        diffuse_id: Option<FrameCacheReference>,
-        lightmap_id: Option<FrameCacheReference>,
-    },
-    Json
+    Loaded(T)
+}
+
+impl<T> AssetState<T> {
+    pub fn is_loaded(&self) -> bool {
+        return match self {
+            AssetState::Unloaded => false,
+            AssetState::Loaded(_) => true,
+        }
+    }
+}
+
+pub trait DataResolver<T> {
+    fn resolve_asset(asset: &HardAsset) -> Option<&T>;
+    fn get_type() -> HardAssetType;
 }
 
 #[derive(Debug)]
 pub struct HardAsset {
     pub file_source: String,
+    pub data_type: HardAssetType,
     pub data: HardAssetData,
-    pub asset_type: HardAssetType
-}
-
-#[derive(Debug)]
-pub enum VirtualAsset {
-    Text {
-        key: HardAssetKey
-    },
-    TextureData {
-        key: HardAssetKey
-    },
-    Json {
-        key: HardAssetKey
-    },
-    Image {
-        key: HardAssetKey
-    },
-    ImageSlice {
-        key: HardAssetKey,
-        area: ImageArea
-    },
-    Model {
-        data: ModelData
-    }
-}
-
-#[derive(Debug)]
-pub struct ModelData {
-    pub model_id: Option<HardAssetKey>,
-    pub diffuse_id: Option<HardAssetKey>,
-    pub lightmap_id: Option<HardAssetKey>,
-    pub collision_id: Option<HardAssetKey>,
 }
 
 #[derive(Debug,Default)]
@@ -89,7 +66,6 @@ impl WamManifest {
             },
         };
 
-
         let mut manifest = Self {
             hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_key(),
             virtual_assets: Default::default(),
@@ -110,7 +86,7 @@ impl WamManifest {
         return Ok(manifest);
     }
 
-    fn add_virtual_asset(&mut self,asset: VirtualAsset,mut local_name: String,namespace_name: &str) {
+    pub fn add_virtual_asset(&mut self,asset: VirtualAsset,mut local_name: String,namespace_name: &str) {
         self.string_building_buffer.insert_str(0,namespace_name);
         self.string_building_buffer.push('/');
         self.string_building_buffer.push_str(&local_name);
@@ -128,120 +104,16 @@ impl WamManifest {
             So, we sandbox namespaces and translate their IDs to runtime-only slotmap keys.
         */
 
-        let mut namespaces_ids = HashMap::<u32,HardAssetKey>::with_capacity(hard_asset_count);
+        let mut translator = VirtualAssetTranslator {
+            manifest: self,
+            namespaces_ids: HashMap::with_capacity(hard_asset_count),
+            namespace_name,
+        };
 
-        for hard_asset_input in namespace.hard_assets.into_iter() {
-            let id = hard_asset_input.id;
-
-            let key = self.hard_assets.insert(HardAsset {
-                file_source: hard_asset_input.source,
-                asset_type: hard_asset_input.r#type,
-                data: HardAssetData::Unloaded,
-            });
-
-            namespaces_ids.insert(id,key);
-        }
-
-        for asset in namespace.virtual_assets.into_iter() {
-            let Some(key) = namespaces_ids.get(&asset.id) else {
-                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                    name: asset.name,
-                    id: asset.id
-                }));
-            };
-            let hard_asset = self.hard_assets.get(*key).unwrap();
-            let value = match hard_asset.asset_type {
-                HardAssetType::Text => {
-                    VirtualAsset::Text { key: *key }
-                },
-                HardAssetType::Image => {
-                    VirtualAsset::Image { key: *key }
-                },
-                HardAssetType::Json => {
-                    VirtualAsset::Json { key: *key }
-                },
-                _ => return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
-                    name: asset.name,
-                    id: asset.id,
-                    found_type: hard_asset.asset_type
-                }))
-            };
-            self.add_virtual_asset(value,asset.name,namespace_name);
-        }
-
-        for image in namespace.virtual_image_assets {
-            let Some(key) = namespaces_ids.get(&image.id) else {
-                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                    name: image.name,
-                    id: image.id
-                }));
-            };
-            let hard_asset = self.hard_assets.get(*key).unwrap();
-            if hard_asset.asset_type != HardAssetType::Image {
-                return Err(WamManifestError::AssetTypeMismatch(TypeMismatchInfo {
-                    name: image.name,
-                    id: image.id,
-                    expected_type: HardAssetType::Image,
-                    found_type: hard_asset.asset_type
-                }));
-            }
-            self.add_virtual_asset(
-                VirtualAsset::ImageSlice {
-                    key: *key,
-                    area: image.area
-                },
-                image.name,
-                namespace_name
-            );
-        }
-
-        for model in namespace.virtual_model_assets {
-            let assets = [
-                (model.model_id,HardAssetType::Model,ModelField::Model),
-                (model.diffuse_id,HardAssetType::Image,ModelField::Diffuse),
-                (model.lightmap_id,HardAssetType::Image,ModelField::Lightmap),
-            ];
-
-            let mut model_data = ModelData {
-                model_id: None,
-                diffuse_id: None,
-                lightmap_id: None,
-                collision_id: None,
-            };
-
-            for (id,expected_type,field) in assets {
-                let Some(id) = id else {
-                    continue;
-                };
-                let Some(key) = namespaces_ids.get(&id) else {
-                    return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                        name: model.name,
-                        id
-                    }));
-                };
-                let hard_asset = self.hard_assets.get(*key).unwrap();
-                if hard_asset.asset_type != expected_type {
-                    return Err(WamManifestError::MismatchedModelResource(MismatchedModelResourceInfo {
-                        name: model.name,
-                        field,
-                        expected_type,
-                        found_type: hard_asset.asset_type 
-                    }));
-                }
-
-                match field {
-                    ModelField::Model => model_data.model_id = Some(*key),
-                    ModelField::Diffuse => model_data.collision_id = Some(*key),
-                    ModelField::Lightmap => model_data.collision_id = Some(*key),
-                }
-            }
-
-            self.add_virtual_asset(
-                VirtualAsset::Model { data: model_data },
-                model.name,
-                namespace_name
-            );
-        }
+        translator.load_hard_assets(namespace.hard_assets)?;
+        translator.load_untyped_assets(namespace.virtual_assets)?;
+        translator.load_images(namespace.virtual_image_assets)?;
+        translator.load_models(namespace.virtual_model_assets)?;
 
         return Ok(());
     }
@@ -252,15 +124,6 @@ pub struct HardAssetInput {
     pub id: u32,
     pub source: String,
     pub r#type: HardAssetType
-}
-
-#[derive(Deserialize,Debug,Copy,Clone,PartialEq,Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum HardAssetType {
-    Text,
-    Image,
-    Model,
-    Json
 }
 
 #[derive(Deserialize,Debug)]
@@ -291,7 +154,6 @@ pub struct VirtualModelAsset {
     pub model_id: Option<u32>,
     pub diffuse_id: Option<u32>,
     pub lightmap_id: Option<u32>,
-    pub collision_id: Option<u32>
 }
 
 #[derive(Debug)]

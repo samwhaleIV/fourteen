@@ -65,7 +65,8 @@ pub trait GraphicsContextController {
     fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame;
     fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),GraphicsContextError>;
 
-    fn create_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame;
+    fn get_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame;
+    fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),GraphicsContextError>;
 }
 
 #[derive(Debug)]
@@ -192,7 +193,7 @@ impl GraphicsContextController for GraphicsContext {
         Ok(())
     }
 
-    fn create_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
+    fn get_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
         let output = self.graphics_provider.get_safe_texture_size(size);
         return FrameFactory::create_long_life(
             RestrictedSize {
@@ -206,6 +207,18 @@ impl GraphicsContextController for GraphicsContext {
             )),
             Vec::with_capacity(DEFAULT_COMMAND_BUFFER_SIZE)
         );
+    }
+
+    fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),GraphicsContextError> {
+        let cache_reference = frame.get_cache_reference();
+
+        self.command_buffer_pool.return_item(frame.take_command_buffer());
+
+        if let Err(error) = self.frame_cache.remove(cache_reference) {
+            return Err(GraphicsContextError::FrameCacheError(error));
+        }
+
+        Ok(())
     }
 
     fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize {

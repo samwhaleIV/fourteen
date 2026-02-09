@@ -332,3 +332,9 @@ impl ReclaimCommandBuffer for TempFrame {
         self.command_buffer
     }
 }
+
+impl ReclaimCommandBuffer for LongLifeFrame {
+    fn take_command_buffer(self) -> Vec<FrameCommand> {
+        self.command_buffer
+    }
+}

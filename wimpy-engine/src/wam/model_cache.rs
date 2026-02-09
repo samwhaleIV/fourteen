@@ -37,6 +37,7 @@ slotmap::new_key_type! {
     pub struct ModelCacheReference;
 }
 
+#[derive(Debug)]
 pub enum CollisionShape {
     TriMesh(TriMesh),
     //Other shapes not yet implemented
@@ -118,6 +119,7 @@ pub struct ModelCache {
     collision_shapes: SecondaryMap<ModelCacheReference,CollisionShape>,
 }
 
+#[derive(Debug)]
 pub struct RenderBufferReference {
     pub index_range: Range<u32>,
     pub base_vertex: i32,
