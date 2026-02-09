@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use crate::wam::*;
 
 pub struct VirtualAssetTranslator<'a> {
@@ -13,7 +13,7 @@ impl VirtualAssetTranslator<'_> {
             let id = hard_asset_input.id;
 
             let key = self.manifest.hard_assets.insert(HardAsset {
-                file_source: hard_asset_input.source,
+                file_source: Rc::from(hard_asset_input.source),
                 data_type: hard_asset_input.r#type,
                 data: HardAssetData::get_uninit(hard_asset_input.r#type),
             });
@@ -25,57 +25,66 @@ impl VirtualAssetTranslator<'_> {
 
     pub fn load_untyped_assets(&mut self,assets: Vec<VirtualAssetInput>) -> Result<(),WamManifestError> {
         for asset in assets.into_iter() {
+            let rc_name = self.manifest.get_virtual_asset_name(asset.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&asset.id) else {
                 return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                    name: asset.name,
+                    name: rc_name,
                     id: asset.id
                 }));
             };
+
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             let value = match hard_asset.data_type {
-                HardAssetType::Text => VirtualAsset::Text(*key),
-                HardAssetType::Image => VirtualAsset::Image(*key),
+                HardAssetType::Text => VirtualAsset::Text(VirtualTextAsset {
+                    name: rc_name.clone(),
+                    key: *key
+                }),
+                HardAssetType::Image => VirtualAsset::Image(VirtualImageAsset {
+                    name: rc_name.clone(),
+                    key: *key
+                }),
                 HardAssetType::Model => return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
-                    name: asset.name,
+                    name: rc_name,
                     id: asset.id,
                     found_type: hard_asset.data_type
                 }))
             };
-            self.manifest.add_virtual_asset(value,asset.name,self.namespace_name);
+            self.manifest.add_virtual_asset(value,rc_name);
         }
         return Ok(())
     }
 
     pub fn load_images(&mut self,images: Vec<VirtualImageAssetInput>) -> Result<(),WamManifestError> {
         for image in images.into_iter() {
+            let rc_name = self.manifest.get_virtual_asset_name(image.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&image.id) else {
                 return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                    name: image.name,
+                    name: rc_name,
                     id: image.id
                 }));
             };
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             if hard_asset.data_type != HardAssetType::Image {
                 return Err(WamManifestError::AssetTypeMismatch(TypeMismatchInfo {
-                    name: image.name,
+                    name: rc_name,
                     id: image.id,
                     expected_type: HardAssetType::Image,
                     found_type: hard_asset.data_type
                 }));
             }
             self.manifest.add_virtual_asset(
-                VirtualAsset::ImageSlice {
+                VirtualAsset::ImageSlice(VirtualImageSliceAsset {
+                    name: rc_name.clone(),
                     key: *key,
-                    area: image.area
-                },
-                image.name,
-                self.namespace_name
+                    area: image.area,
+                }),
+                rc_name
             );
         }
         return Ok(());
     }
 
-    pub fn load_models(&mut self,models: Vec<VirtualModelAsset>) -> Result<(),WamManifestError> {
+    pub fn load_models(&mut self,models: Vec<VirtualModelAssetInput>) -> Result<(),WamManifestError> {
         for model in models.into_iter() {
             let assets = [
                 (model.model_id,HardAssetType::Model,ModelField::Model),
@@ -83,7 +92,10 @@ impl VirtualAssetTranslator<'_> {
                 (model.lightmap_id,HardAssetType::Image,ModelField::Lightmap),
             ];
 
-            let mut model_data = VirtualModelData {
+            let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
+
+            let mut model_data = VirtualModelAsset {
+                name: rc_name.clone(),
                 model: None,
                 diffuse: None,
                 lightmap: None,
@@ -95,14 +107,14 @@ impl VirtualAssetTranslator<'_> {
                 };
                 let Some(key) = self.namespaces_ids.get(&id) else {
                     return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                        name: model.name,
+                        name: rc_name,
                         id
                     }));
                 };
                 let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
                 if hard_asset.data_type != expected_type {
                     return Err(WamManifestError::MismatchedModelResource(MismatchedModelResourceInfo {
-                        name: model.name,
+                        name: rc_name,
                         field,
                         expected_type,
                         found_type: hard_asset.data_type
@@ -118,8 +130,7 @@ impl VirtualAssetTranslator<'_> {
 
             self.manifest.add_virtual_asset(
                 VirtualAsset::Model(model_data),
-                model.name,
-                self.namespace_name
+                rc_name.clone()
             );
         }
 

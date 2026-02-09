@@ -1,4 +1,6 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, rc::Rc};
+
+use slotmap::SlotMap;
 
 use crate::{
     WimpyIO,
@@ -11,11 +13,10 @@ use crate::{
     }
 };
 
-pub struct AssetManager<IO> {
+pub struct AssetManager {
     content_root: String,
     manifest: WamManifest,
     model_cache: ModelCache,
-    phantom_data: PhantomData<IO>
 }
 
 pub enum AssetManagerError {
@@ -35,20 +36,17 @@ pub struct ModelData<'a> {
     pub lightmap: Option<FrameCacheReference>,
 }
 
+pub struct ImageSliceData {
+    pub texture_reference: FrameCacheReference,
+    pub area: ImageArea
+}
+
 struct Asset<'a,TData> {
-    data: &'a TData,
-    key: HardAssetKey,
-    hard_asset: &'a HardAsset
+    data: &'a mut TData,
+    file_source: Rc<str>
 }
 
-impl<TData> Asset<'_,TData> {
-    
-}
-
-impl<IO> AssetManager<IO>
-where
-    IO: WimpyIO
-{
+impl AssetManager {
     pub fn create<TConfig>(graphics_provider: &GraphicsProvider,content_root: String,manifest: WamManifest) -> Self
     where
         TConfig: GraphicsContextConfig
@@ -61,64 +59,107 @@ where
                 TConfig::MODEL_CACHE_INDEX_BUFFER_SIZE
             ),
             content_root,
-            phantom_data: Default::default(),
         }
     }
 
-    fn try_get_asset<'a,TData>(&'a self,hard_asset_key: HardAssetKey,virtual_name: &str) -> Result<Asset<'a,TData>,AssetManagerError>
+    fn get_hard_asset<'a,TData>(hard_assets: &'a mut SlotMap<HardAssetKey,HardAsset>,hard_asset_key: HardAssetKey,virtual_name: &str) -> Result<Asset<'a,TData>,AssetManagerError>
     where
         TData: DataResolver<TData>
     {
-        let hard_asset = self.manifest.hard_assets.get(hard_asset_key).ok_or_else(
+        let hard_asset = hard_assets.get_mut(hard_asset_key).ok_or_else(
             || AssetManagerError::MissingHardAsset(virtual_name.to_string())
         )?;
-        let data = TData::resolve_asset(hard_asset).ok_or_else(
-            || AssetManagerError::MismatchedType { expected: TData::get_type(), found: hard_asset.data_type}
+        let data_type = hard_asset.data_type;
+        let file_source = hard_asset.file_source.clone();
+        let data = TData::type_check(hard_asset).ok_or_else(
+            || AssetManagerError::MismatchedType { expected: TData::get_type(), found: data_type}
         )?;
         return Ok(Asset {
             data,
-            hard_asset,
-            key: hard_asset_key
+            file_source
         });
     }
 
-    fn load_image(asset: Asset<'_, HardModelAsset>) {
-        //todo make get or load interface
+    fn get_virtual_asset<TVirtualAsset>(&self,name: &str) -> Result<TVirtualAsset,AssetManagerError>
+    where
+        TVirtualAsset: VirtualAssetResolver<TVirtualAsset> + Clone
+    {
+        return match self.manifest.virtual_assets.get(name) {
+            Some(virtual_asset) => match TVirtualAsset::type_check(virtual_asset) {
+                Some(typed_virtual_asset) => Ok(typed_virtual_asset.clone()),
+                None => return Err(AssetManagerError::MismatchedType {
+                    expected: HardAssetType::Text,
+                    found: virtual_asset.get_type()
+                })
+            },
+            None => return Err(AssetManagerError::VirtualAssetNotFound(name.to_string()))
+        };
     }
 
-    fn load_model(asset: Asset<'_, HardModelAsset>) {
-        
+    pub fn find_text_asset(&self,name: &str) -> Result<VirtualTextAsset,AssetManagerError> {
+        self.get_virtual_asset::<VirtualTextAsset>(name)
     }
 
-    pub async fn get_texture(
+    pub fn find_image_asset(&self,name: &str) -> Result<VirtualImageAsset,AssetManagerError> {
+        self.get_virtual_asset::<VirtualImageAsset>(name)
+    }
+
+    pub fn find_image_slice_asset(&self,name: &str) -> Result<VirtualImageSliceAsset,AssetManagerError> {
+        self.get_virtual_asset::<VirtualImageSliceAsset>(name)
+    }
+
+    pub fn find_model_asset(&self,name: &str) -> Result<VirtualModelAsset,AssetManagerError> {
+        self.get_virtual_asset::<VirtualModelAsset>(name)
+    }
+
+    pub async fn load_text(
         &mut self,
-        name: &str,
+        asset: &VirtualTextAsset,
+    ) -> Result<String,AssetManagerError> {
+        todo!();
+    }
+
+    pub async fn load_image(
+        &mut self,
+        asset: &VirtualImageAsset,
         graphics_context: &GraphicsContext
     ) -> Result<FrameCacheReference,AssetManagerError> {
         todo!();
     }
 
-    pub async fn get_model(
+    pub async fn load_image_slice_asset(
         &mut self,
-        name: &str,
+        asset: &VirtualImageAsset,
+        graphics_context: &GraphicsContext
+    ) -> Result<ImageSliceData,AssetManagerError> {
+        todo!();
+    }
+
+    pub async fn load_model(
+        &mut self,
+        asset: &VirtualModelAsset,
         graphics_context: &GraphicsContext
     ) -> Result<ModelData<'_>,AssetManagerError> {
 
-        let Some(virtual_asset) = self.manifest.virtual_assets.get(name) else {
-            return Err(AssetManagerError::VirtualAssetNotFound(name.to_string()));
-        };
+        let mut hard_assets = &mut self.manifest.hard_assets;
 
-        let v_data = match virtual_asset {
-            VirtualAsset::Model(data) => data,
-            _ => return Err(AssetManagerError::MismatchedType {
-                expected: HardAssetType::Model,
-                found: virtual_asset.get_type()
-            }),
-        };
+        if let Some(model) = asset.model.map(|key|
+            Self::get_hard_asset::<HardModelAsset>(hard_assets,key,&asset.name)
+        ).transpose()? {
 
-        let model = v_data.model.map(|key|self.try_get_asset::<HardModelAsset>(key,name)).transpose()?;
-        let diffuse = v_data.model.map(|key|self.try_get_asset::<HardImageAsset>(key,name)).transpose()?;
-        let lightmap = v_data.model.map(|key|self.try_get_asset::<HardImageAsset>(key,name)).transpose()?;
+        }
+
+        if let Some(diffuse) = asset.diffuse.map(|key|
+            Self::get_hard_asset::<HardImageAsset>(hard_assets,key,&asset.name)
+        ).transpose()? {
+
+        }
+
+        if let Some(lightmap) = asset.lightmap.map(|key|
+            Self::get_hard_asset::<HardImageAsset>(hard_assets,key,&asset.name)
+        ).transpose()? {
+
+        }
 
         todo!();
     }

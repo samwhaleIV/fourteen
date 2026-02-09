@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use serde::Deserialize;
 use slotmap::SlotMap;
 
@@ -12,7 +12,7 @@ pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
     pub virtual_image_assets: Vec<VirtualImageAssetInput>,
-    pub virtual_model_assets: Vec<VirtualModelAsset>
+    pub virtual_model_assets: Vec<VirtualModelAssetInput>
 }
 
 slotmap::new_key_type! {
@@ -35,14 +35,9 @@ impl<T> AssetState<T> {
     }
 }
 
-pub trait DataResolver<T> {
-    fn resolve_asset(asset: &HardAsset) -> Option<&T>;
-    fn get_type() -> HardAssetType;
-}
-
 #[derive(Debug)]
 pub struct HardAsset {
-    pub file_source: String,
+    pub file_source: Rc<str>,
     pub data_type: HardAssetType,
     pub data: HardAssetData,
 }
@@ -50,7 +45,7 @@ pub struct HardAsset {
 #[derive(Debug,Default)]
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
-    pub virtual_assets: HashMap<String,VirtualAsset>,
+    pub virtual_assets: HashMap<Rc<str>,VirtualAsset>,
     string_building_buffer: String,
 }
 
@@ -86,14 +81,18 @@ impl WamManifest {
         return Ok(manifest);
     }
 
-    pub fn add_virtual_asset(&mut self,asset: VirtualAsset,mut local_name: String,namespace_name: &str) {
+    pub fn get_virtual_asset_name(&mut self,mut local_name: String,namespace_name: &str) -> Rc<str> {
         self.string_building_buffer.insert_str(0,namespace_name);
         self.string_building_buffer.push('/');
         self.string_building_buffer.push_str(&local_name);
         local_name.clear();
         local_name.push_str(&self.string_building_buffer);
         self.string_building_buffer.clear();
-        self.virtual_assets.insert(local_name,asset);
+        return Rc::from(local_name);
+    }
+
+    pub fn add_virtual_asset(&mut self,asset: VirtualAsset,name: Rc<str>) {
+        self.virtual_assets.insert(name,asset);
     }
 
     fn add_namespace(&mut self,namespace: InputNamespace,namespace_name: &str) -> Result<(),WamManifestError> {
@@ -139,7 +138,7 @@ pub struct VirtualImageAssetInput {
     pub area: ImageArea
 }
 
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize,Debug,Copy,Clone)]
 pub struct ImageArea {
     pub x: u32,
     pub y: u32,
@@ -149,7 +148,7 @@ pub struct ImageArea {
 
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
-pub struct VirtualModelAsset {
+pub struct VirtualModelAssetInput {
     pub name: String,
     pub model_id: Option<u32>,
     pub diffuse_id: Option<u32>,
@@ -158,13 +157,13 @@ pub struct VirtualModelAsset {
 
 #[derive(Debug)]
 pub struct MissingAssetInfo {
-    pub name: String,
+    pub name: Rc<str>,
     pub id: u32,
 }
 
 #[derive(Debug)]
 pub struct TypeMismatchInfo {
-    pub name: String,
+    pub name: Rc<str>,
     pub id: u32,
     pub expected_type: HardAssetType,
     pub found_type: HardAssetType
@@ -172,7 +171,7 @@ pub struct TypeMismatchInfo {
 
 #[derive(Debug)]
 pub struct UnexpectedTypeInfo {
-    pub name: String,
+    pub name: Rc<str>,
     pub id: u32,
     pub found_type: HardAssetType
 }
@@ -186,7 +185,7 @@ pub enum ModelField {
 
 #[derive(Debug)]
 pub struct MismatchedModelResourceInfo {
-    pub name: String,
+    pub name: Rc<str>,
     pub field: ModelField,
     pub expected_type: HardAssetType,
     pub found_type: HardAssetType
