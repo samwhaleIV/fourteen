@@ -1,13 +1,3 @@
-use crate::{
-    shared::Area,
-    ui::{
-        LocateTexture,
-        NodeOutputBuilder,
-        UINodeInput,
-        UINodeOutput,
-    }, wgpu::TempFrame
-};
-
 enum UIRendererCommand {
     OpenFrame(Area),
     CloseFrame,
@@ -47,7 +37,7 @@ impl NodeOutputBuilder<UINodeInput,UINodeOutput> for UIRenderer {
             uv: input.uv,
             rotation: input.rotation,
             color: input.color,
-            texture: input.texture,    
+            texture: input.texture,
         };
     }
 }

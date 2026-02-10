@@ -1,0 +1,3 @@
+pub const PATH_BUFFER_START_SIZE: usize = 64;
+pub const NAME_BUILDING_BUFFER_START_CAPACITY: usize = 64;
+

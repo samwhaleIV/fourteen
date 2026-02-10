@@ -2545,7 +2545,6 @@ dependencies = [
  "pollster",
  "sdl2",
  "wgpu",
- "wimpy-engine",
 ]
 
 [[package]]
