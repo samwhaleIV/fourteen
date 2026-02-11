@@ -1,13 +1,11 @@
 mod texture_container;
 mod graphics_provider;
 mod constants;
-mod pipelines;
 mod double_buffer;
 mod graphics_context;
 mod frame;
 mod frame_cache;
 mod fallback_texture;
-mod command_processor;
 mod model_cache;
 
 mod prelude {
@@ -30,7 +28,6 @@ mod prelude {
     pub use constants::*;
     pub use double_buffer::*;
     pub use frame_cache::*;
-    pub use command_processor::*;
     pub use model_cache::*;
     pub use texture_container::*;
 }
@@ -42,6 +39,5 @@ pub use texture_container::{
 
 pub use graphics_provider::*;
 pub use frame::*;
-pub use pipelines::*;
 pub use model_cache::*;
 pub use graphics_context::*;

@@ -1,10 +1,10 @@
-use super::super::prelude::*;
+use super::*;
 
 pub struct Pipeline2D {
-    pub pipeline: RenderPipeline,
-    pub vertex_buffer: Buffer,
-    pub index_buffer: Buffer,
-    pub instance_buffer: DoubleBuffer<QuadInstance>,
+    render_pipeline: RenderPipeline,
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+    instance_buffer: DoubleBuffer<QuadInstance>,
 }
 
 impl Pipeline2D {
@@ -14,7 +14,7 @@ impl Pipeline2D {
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        shared_pipeline_set: &SharedPipelineSet
+        shared_pipeline: &SharedPipeline
     ) -> Self
     where 
         TConfig: GraphicsContextConfig
@@ -29,8 +29,10 @@ impl Pipeline2D {
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 2D Render Layout"),
             bind_group_layouts: &[
-                &shared_pipeline_set.texture_layout, // This is where the 'texture bind group' is set to bind group index '0'
-                &shared_pipeline_set.uniform_layout, // This is where the 'uniform bind group' is set to bind group index '1'
+                // This is where the 'texture bind group' is set to bind group index '0'
+                &shared_pipeline.get_texture_layout(),
+                // This is where the 'uniform bind group' is set to bind group index '1'
+                &shared_pipeline.get_uniform_layout(),
             ],
             push_constant_ranges: &[]
         });
@@ -121,62 +123,31 @@ impl Pipeline2D {
         );
 
         return Self {
-            pipeline,
+            render_pipeline: pipeline,
             vertex_buffer,
             index_buffer,
             instance_buffer
         }
     }
+
+    pub fn write_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData2D) {
+        let range = self.instance_buffer.push_convert(draw_data.into());
+        render_pass.draw_indexed(0..Self::INDEX_BUFFER_SIZE,0,downcast_range(range));
+    }
+
+    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,draw_data: &[DrawData2D]) {
+        let range = self.instance_buffer.push_convert_all(draw_data);
+        render_pass.draw_indexed(0..Self::INDEX_BUFFER_SIZE,0,downcast_range(range));
+    }
 }
 
-impl RenderPassController for Pipeline2D {
-    fn begin(
-        &mut self,
-        render_pass: &mut RenderPass,
-        shared_pipeline: &mut SharedPipelineSet,
-        uniform: CameraUniform
-    ) {
-        render_pass.set_pipeline(&self.pipeline); 
-
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint32
-        ); // Index Buffer
-
-        render_pass.set_vertex_buffer(
-            Self::VERTEX_BUFFER_INDEX,
-            self.vertex_buffer.slice(..)
-        ); // Vertex Buffer
-
-        render_pass.set_vertex_buffer(
-            Self::INSTANCE_BUFFER_INDEX,
-            self.instance_buffer.get_output_buffer().slice(..)
-        ); // Instance Buffer
-
-        let uniform_buffer_range = shared_pipeline.uniform_buffer.push(uniform);
-        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-
-        render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
-            &shared_pipeline.uniform_bind_group,
-            &[dynamic_offset as u32]
-        ); // Uniform Buffer Bind Group
-    }
-
-    fn write_buffers(&mut self,queue: &Queue) {
+impl PipelineController for Pipeline2D {
+    fn write_dynamic_buffers(&mut self,queue: &Queue) {
         self.instance_buffer.write_out(queue);
     }
-
-    fn reset_buffers(&mut self) {
-        self.instance_buffer.reset();
-    }
     
-    fn select_and_begin(
-        render_pass: &mut RenderPass,
-        render_pipelines: &mut super::RenderPipelines,
-        uniform: CameraUniform
-    ) {
-        render_pipelines.pipeline_2d.begin(render_pass,&mut render_pipelines.shared,uniform);
+    fn reset_pipeline_state(&mut self) {
+        self.instance_buffer.reset();
     }
 }
 
@@ -296,13 +267,40 @@ where
         return &mut self.frame;
     }
    
-    fn begin_hardware_pass(self,render_pass: &mut RenderPass,render_pipelines: &mut RenderPipelines) -> TFrame {
-        render_pipelines.pipeline_2d.begin(
-            render_pass,
-            &mut render_pipelines.shared,
-            CameraUniform::create_ortho(self.size())
+    fn begin_render_pass(self,render_pass: &mut RenderPass,pipeline_view: &mut RenderPassView) -> TFrame {
+        let pipeline_2d = pipeline_view.get_2d_pipeline();
+
+        render_pass.set_pipeline(&pipeline_2d.render_pipeline); 
+
+        render_pass.set_index_buffer(
+            pipeline_2d.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint32
+        ); // Index Buffer
+
+        render_pass.set_vertex_buffer(
+            Pipeline2D::VERTEX_BUFFER_INDEX,
+            pipeline_2d.vertex_buffer.slice(..)
+        ); // Vertex Buffer
+
+        render_pass.set_vertex_buffer(
+            Pipeline2D::INSTANCE_BUFFER_INDEX,
+            pipeline_2d.instance_buffer.get_output_buffer().slice(..)
+        ); // Instance Buffer
+
+
+        let shared_pipeline = pipeline_view.get_shared_pipeline_mut();
+
+        let transform = MatrixTransformUniform::create_ortho(self.size());
+        let uniform_buffer_range = shared_pipeline.get_uniform_buffer().push(transform);
+
+        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
+
+        render_pass.set_bind_group(
+            UNIFORM_BIND_GROUP_INDEX,
+            shared_pipeline.get_uniform_bind_group(),
+            &[dynamic_offset as u32]
         );
-        todo!()
+        self.frame
     }
 }
 

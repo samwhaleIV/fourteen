@@ -1,3 +1,8 @@
+mod command_processor;
+mod pipelines;
+pub use pipelines::*;
+use command_processor::*;
+
 use crate::collections::{
     VecPool,
     cache_arena::CacheArenaError
@@ -19,6 +24,23 @@ pub struct GraphicsContext {
     output_builder: Option<OutputBuilder>,
     command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
     fallback_texture: TextureFrame
+}
+
+pub struct RenderPassView<'a> {
+    model_cache: &'a ModelCache,
+    render_pipelines: &'a mut RenderPipelines,
+}
+
+impl RenderPassView<'_> {
+    pub fn get_model_cache(&self) -> &ModelCache {
+        return self.model_cache;
+    }
+    pub fn get_shared_pipeline(&self) -> &SharedPipeline {
+        return self.render_pipelines.get_shared();
+    }
+    pub fn get_shared_pipeline_mut(&mut self) -> &mut SharedPipeline {
+        return  self.render_pipelines.get_shared_mut();
+    }
 }
 
 pub trait GraphicsContextConfig {
@@ -80,7 +102,7 @@ impl GraphicsContext {
     pub fn create_texture_frame(&mut self,texture_data: &impl TextureData) -> Result<TextureFrame,TextureError> {
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
-            &self.pipelines.shared.texture_layout,
+            &self.pipelines.get_shared().get_texture_layout(),
             texture_data
         )?;
         return Ok(FrameFactory::create_texture(
@@ -97,7 +119,7 @@ impl GraphicsContext {
                 log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
                 self.frame_cache.insert_with_lease(size,TextureContainer::create_mutable(
                     &self.graphics_provider,
-                    &self.pipelines.shared.texture_layout,
+                    &self.pipelines.get_shared().get_texture_layout(),
                     (size,size)
                 ))
             },
@@ -131,7 +153,7 @@ impl GraphicsContext {
             },
             self.frame_cache.insert_keyless(TextureContainer::create_mutable(
                 &self.graphics_provider,
-                &self.pipelines.shared.texture_layout,
+                &self.pipelines.get_shared().get_texture_layout(),
                 output
             )),
             Vec::with_capacity(DEFAULT_COMMAND_BUFFER_SIZE)
@@ -168,7 +190,7 @@ impl GraphicsContext {
         }
         self.frame_cache.insert(size,TextureContainer::create_mutable(
             &self.graphics_provider,
-            &self.pipelines.shared.texture_layout,
+            &self.pipelines.get_shared().get_texture_layout(),
             (size,size)
         ));
     }
@@ -208,19 +230,27 @@ impl GraphicsContext {
             timestamp_writes: None,
         });
 
-        let mut frame = frame_render_pass.begin_hardware_pass(&mut render_pass,&mut self.pipelines);
+        let render_pass_view = &mut RenderPassView {
+            model_cache: &self.model_cache,
+            render_pipelines: &mut self.pipelines,
+        };
+
+        let mut frame = frame_render_pass.begin_render_pass(
+            &mut render_pass,
+            render_pass_view
+        );
 
         process_frame_commands(
             frame.get_commands(),
             &mut render_pass,
-            &mut self.pipelines,
+            render_pass_view,
             &self.frame_cache
         );
 
         frame.clear_commands();
         return Ok(frame);
     }
-    
+
     pub fn get_fallback_texture_frame(&self) -> &TextureFrame {
         &self.fallback_texture
     }
@@ -276,25 +306,19 @@ pub mod swap_chain_control {
             let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
                 return Err(GraphicsContextError::PipelineNotActive);
             };
+
             let queue = self.graphics_provider.get_queue();
-            
-            // Investigate: only finalize the pipelines that were used during this output builder's life (or let the pipelines no-op on their own?)
-            self.pipelines.pipeline_2d.write_buffers(queue);
-            self.pipelines.pipeline_3d.write_buffers(queue);
-            
-            // We always write the shared buffers
-            self.pipelines.shared.write_buffers(queue);
+
+            self.pipelines.write_pipeline_buffers(queue);
 
             queue.submit(std::iter::once(output_builder.encoder.finish()));
             if let Err(error) = self.frame_cache.remove(output_builder.output_frame_reference) {
                 log::warn!("Output frame was not present in the frame cache: {:?}",error);
             };
+    
             output_builder.output_frame_surface.present();
             
-            self.pipelines.pipeline_2d.reset_buffers();
-            self.pipelines.pipeline_3d.reset_buffers();
-
-            self.pipelines.shared.reset_buffers();
+            self.pipelines.reset_pipeline_states();
 
             self.command_buffer_pool.return_item(frame.take_command_buffer());
             return Ok(());

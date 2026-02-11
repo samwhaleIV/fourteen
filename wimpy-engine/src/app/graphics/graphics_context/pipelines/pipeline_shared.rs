@@ -1,72 +1,15 @@
-use super::prelude::*;
+use super::*;
 
-mod pipeline_2d;
-mod pipeline_3d;
-
-pub use pipeline_2d::*;
-pub use pipeline_3d::*;
-
-pub struct RenderPipelines {
-    pub pipeline_2d: Pipeline2D,
-    pub pipeline_3d: Pipeline3D,
-    pub shared: SharedPipelineSet,
+pub struct SharedPipeline {
+    texture_layout: BindGroupLayout,
+    uniform_layout: BindGroupLayout,
+    uniform_bind_group: BindGroup,
+    uniform_buffer: DoubleBuffer<MatrixTransformUniform>
 }
 
-pub trait RenderPassController {
+// Not really a render pipeline. What're you going to do about it? Cry?
 
-    fn begin(
-        &mut self,
-        render_pass: &mut RenderPass,
-        shared_pipeline: &mut SharedPipelineSet,
-        uniform: CameraUniform
-    );
-
-    fn select_and_begin(
-        render_pass: &mut RenderPass,
-        render_pipelines: &mut RenderPipelines,
-        uniform: CameraUniform
-    );
-
-    fn write_buffers(&mut self,queue: &Queue);
-
-    fn reset_buffers(&mut self);
-}
-
-impl RenderPipelines {
-    pub fn create<TConfig>(graphics_provider: &GraphicsProvider) -> Self
-    where
-        TConfig: GraphicsContextConfig
-    {
-        let shared_pipeline_set = SharedPipelineSet::create::<TConfig>(graphics_provider);
-        let pipeline_2d = Pipeline2D::create::<TConfig>(
-            graphics_provider,
-            &shared_pipeline_set
-        );
-        let pipeline_3d = Pipeline3D::create::<TConfig>(
-            graphics_provider,
-            &shared_pipeline_set
-        );
-        return Self {
-            pipeline_2d,
-            pipeline_3d,
-            shared: shared_pipeline_set,
-        }
-    }
-    pub fn reset_buffers(&mut self) {
-        self.pipeline_2d.reset_buffers();
-        self.pipeline_3d.reset_buffers();
-        self.shared.reset_buffers();
-    }
-}
-
-pub struct SharedPipelineSet {
-    pub texture_layout: BindGroupLayout,
-    pub uniform_layout: BindGroupLayout,
-    pub uniform_bind_group: BindGroup,
-    pub uniform_buffer: DoubleBuffer<CameraUniform>
-}
-
-impl SharedPipelineSet {
+impl SharedPipeline {
 
     pub fn create<TConfig>(graphics_provider: &GraphicsProvider) -> Self
     where
@@ -158,41 +101,27 @@ impl SharedPipelineSet {
         }
     }
 
-    pub fn write_buffers(&mut self,queue: &Queue) {
+    pub fn write_uniform_buffer(&mut self,queue: &Queue) {
         self.uniform_buffer.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
     }
 
-    pub fn reset_buffers(&mut self) {
+    pub fn reset_uniform_buffer(&mut self) {
         self.uniform_buffer.reset();
     }
-}
 
-#[repr(C)]
-#[derive(Debug,Copy,Clone,Pod,Zeroable)]
-pub struct CameraUniform {
-    pub view_projection: [[f32;4];4]
-}
-
-impl CameraUniform {
-    pub fn placeholder() -> Self {
-        return Self {
-            view_projection: Default::default()
-        }
+    pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<MatrixTransformUniform> {
+        return &mut self.uniform_buffer;
     }
-    pub fn create_ortho(size: (u32,u32)) -> Self {
-        let (width,height) = size;
 
-        let view_projection = cgmath::ortho(
-            0.0, //Left
-            width as f32, //Right
-            height as f32, //Bottom
-            0.0, //Top
-            -1.0, //Near
-            1.0, //Far
-        ).into();
+    pub fn get_texture_layout(&self) -> &BindGroupLayout {
+        return &self.texture_layout;
+    }
 
-        return Self {
-            view_projection
-        };
+    pub fn get_uniform_layout(&self) -> &BindGroupLayout {
+        return &self.uniform_layout;
+    }
+
+    pub fn get_uniform_bind_group(&self) -> &BindGroup {
+        return &self.uniform_bind_group;
     }
 }

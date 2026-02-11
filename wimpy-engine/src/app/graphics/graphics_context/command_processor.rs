@@ -49,7 +49,7 @@ where
         &mut self,
         commands: &[FrameCommand],
         render_pass: &mut RenderPass,
-        render_pipelines: &mut RenderPipelines,
+        render_pass_view: &mut RenderPassView,
     ) {
         for command in commands {
             match command {
@@ -61,7 +61,7 @@ where
                         if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
                             render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
                         }
-                        render_pipelines.pipeline_2d.instance_buffer.write_quad(render_pass,&draw_data);
+                        render_pass_view.get_2d_pipeline_mut().write_quad(render_pass,draw_data);
                     },
                     CommandReturnFlow::Skip => continue,
                 },
@@ -88,7 +88,7 @@ where
 pub fn process_frame_commands<TFrameCacheLookup>(
     commands: &[FrameCommand],
     render_pass: &mut RenderPass,
-    render_pipelines: &mut RenderPipelines,
+    render_pass_view: &mut RenderPassView,
     frame_cache: &TFrameCacheLookup,
 )
 where
@@ -101,5 +101,5 @@ where
         current_sampling_frame: Default::default(),
         frame_cache,     
     };
-    processor.execute(commands,render_pass,render_pipelines);
+    processor.execute(commands,render_pass,render_pass_view);
 }

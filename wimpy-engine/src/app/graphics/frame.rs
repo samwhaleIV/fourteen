@@ -120,7 +120,12 @@ pub trait FrameRenderPass<TFrame: MutableFrame> {
     fn get_frame(&self) -> &TFrame;
     fn get_frame_mut(&mut self) -> &mut TFrame;
 
-    fn begin_hardware_pass(self,render_pass: &mut RenderPass,render_pipelines: &mut RenderPipelines) -> TFrame;
+    fn begin_render_pass(
+        self,
+        render_pass: &mut RenderPass,
+        pipeline_view: &mut RenderPassView
+    ) -> TFrame;
+
     fn set_texture_filter(&mut self,filter_mode: FilterMode) {
         self.get_frame_mut().push_command(
             FrameCommand::SetTextureFilter(filter_mode)

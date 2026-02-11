@@ -1,4 +1,4 @@
-use super::super::prelude::*;
+use super::*;
 
 pub struct Pipeline3D {
     pipeline: RenderPipeline,
@@ -8,10 +8,10 @@ pub struct Pipeline3D {
 impl Pipeline3D {
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        shared_pipeline_set: &SharedPipelineSet
+        shared_pipeline: &SharedPipeline
     ) -> Self
     where
-        TConfig: GraphicsContextConfig    
+        TConfig: GraphicsContextConfig
     {
         let device = graphics_provider.get_device();
 
@@ -23,8 +23,8 @@ impl Pipeline3D {
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 3D Render Layout"),
             bind_group_layouts: &[
-                &shared_pipeline_set.texture_layout,
-                &shared_pipeline_set.uniform_layout,
+                &shared_pipeline.get_texture_layout(),
+                &shared_pipeline.get_uniform_layout(),
             ],
             push_constant_ranges: &[]
         });
@@ -87,30 +87,12 @@ impl Pipeline3D {
     }
 }
 
-impl RenderPassController for Pipeline3D {
-    fn begin(
-        &mut self,
-        render_pass: &mut wgpu::RenderPass,
-        shared_pipeline: &mut SharedPipelineSet,
-        uniform: CameraUniform
-    ) {
-        todo!()
-    }
-
-    fn write_buffers(&mut self,queue: &wgpu::Queue) {
+impl PipelineController for Pipeline3D {
+    fn write_dynamic_buffers(&mut self,queue: &Queue) {
         todo!();
     }
-
-    fn reset_buffers(&mut self) {
+    fn reset_pipeline_state(&mut self) {
         self.instance_buffer.reset();
-    }
-    
-    fn select_and_begin(
-        render_pass: &mut wgpu::RenderPass,
-        render_pipelines: &mut super::RenderPipelines,
-        uniform: CameraUniform
-    ) {
-        todo!()
     }
 }
 
@@ -210,16 +192,20 @@ impl<TFrame> FrameRenderPass<TFrame> for FrameRenderPass3D<TFrame>
 where 
     TFrame: MutableFrame
 {
+
+    fn begin_render_pass(
+        self,
+        render_pass: &mut RenderPass,
+        pipeline_view: &mut RenderPassView
+    ) -> TFrame {
+        todo!();
+    }
+
     fn create(frame: TFrame) -> Self {
         return Self {
             frame
         }
     }
-    
-    fn begin_hardware_pass(self,render_pass: &mut RenderPass,render_pipelines: &mut RenderPipelines) -> TFrame {
-        todo!()
-    }
-    
     fn get_frame(&self) -> &TFrame {
         return &self.frame;
     }
