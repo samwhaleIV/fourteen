@@ -1,7 +1,9 @@
+mod runtime_textures;
 mod command_processor;
 mod pipelines;
 pub use pipelines::*;
 use command_processor::*;
+use runtime_textures::*;
 
 use crate::collections::{
     VecPool,
@@ -23,12 +25,13 @@ pub struct GraphicsContext {
     model_cache: ModelCache,
     output_builder: Option<OutputBuilder>,
     command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
-    fallback_texture: TextureFrame
+    runtime_textures: RuntimeTextures
 }
 
 pub struct RenderPassView<'a> {
     model_cache: &'a ModelCache,
     render_pipelines: &'a mut RenderPipelines,
+    runtime_textures: &'a RuntimeTextures
 }
 
 impl RenderPassView<'_> {
@@ -39,7 +42,10 @@ impl RenderPassView<'_> {
         return self.render_pipelines.get_shared();
     }
     pub fn get_shared_pipeline_mut(&mut self) -> &mut SharedPipeline {
-        return  self.render_pipelines.get_shared_mut();
+        return self.render_pipelines.get_shared_mut();
+    }
+    pub fn get_runtime_textures(&self) -> &RuntimeTextures {
+        return self.runtime_textures;
     }
 }
 
@@ -77,24 +83,23 @@ impl GraphicsContext {
             TConfig::MODEL_CACHE_INDEX_BUFFER_SIZE
         );
 
-        let mut graphics_context = Self {
+        let mut frame_cache = FrameCache::default();
+
+        let runtime_textures = RuntimeTextures::create(
+            &mut frame_cache,
+            &graphics_provider,
+            pipelines.get_shared().get_texture_layout()
+        );
+
+        return Self {
             graphics_provider,
             pipelines,
             model_cache,
-            frame_cache: FrameCache::default(),
+            frame_cache,
             command_buffer_pool: VecPool::new(),
             output_builder: None,
-            fallback_texture: TextureFrame::placeholder()
+            runtime_textures
         };
-
-        let texture_data = FallbackTexture::create();
-        if let Ok(texture_frame) = graphics_context.create_texture_frame(&texture_data) {
-            graphics_context.fallback_texture = texture_frame;
-        } else {
-            log::error!("Could not create a computed fallback texture frame. The fallback texture is set to a fake frame cache reference.");
-        }
-
-        return graphics_context;
     }
 }
 
@@ -233,6 +238,7 @@ impl GraphicsContext {
         let render_pass_view = &mut RenderPassView {
             model_cache: &self.model_cache,
             render_pipelines: &mut self.pipelines,
+            runtime_textures: &self.runtime_textures
         };
 
         let mut frame = frame_render_pass.begin_render_pass(
@@ -249,10 +255,6 @@ impl GraphicsContext {
 
         frame.clear_commands();
         return Ok(frame);
-    }
-
-    pub fn get_fallback_texture_frame(&self) -> &TextureFrame {
-        &self.fallback_texture
     }
 
     pub fn create_model_cache_entry(&mut self,gltf_data: &[u8]) -> Result<ModelCacheReference,ModelError> {

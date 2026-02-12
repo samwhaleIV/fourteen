@@ -146,14 +146,12 @@ impl TextureContainer {
         })
     }
 
-    pub fn from_image(
+    pub fn from_image_unchecked(
         graphics_provider: &GraphicsProvider,
         bind_group_layout: &BindGroupLayout,
         texture_data: &impl TextureData
-    ) -> Result<TextureContainer,TextureError> {
+    ) -> TextureContainer {
         let size = texture_data.size();
-
-        graphics_provider.test_size(size)?;
 
         let texture_container = Self::create(graphics_provider,bind_group_layout,TextureCreationParameters {
             size,
@@ -170,7 +168,17 @@ impl TextureContainer {
             origin: Origin3d::ZERO
         });
 
-        return Ok(texture_container);
+        return texture_container;
+    }
+
+    pub fn from_image(
+        graphics_provider: &GraphicsProvider,
+        bind_group_layout: &BindGroupLayout,
+        texture_data: &impl TextureData
+    ) -> Result<TextureContainer,TextureError> {
+        graphics_provider.test_size(texture_data.size())?;
+
+        return Ok(Self::from_image_unchecked(graphics_provider,bind_group_layout,texture_data));
     }
 
     pub fn create_output(

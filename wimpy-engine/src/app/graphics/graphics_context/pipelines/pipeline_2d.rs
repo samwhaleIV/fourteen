@@ -66,7 +66,7 @@ impl Pipeline2D {
                 cull_mode: None,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
-                conservative: false     
+                conservative: false
             },
             // TODO: enable depth stencil
             depth_stencil: None,
@@ -308,13 +308,13 @@ impl<TFrame> FrameRenderPass2D<TFrame>
 where 
     TFrame: MutableFrame
 {
-    pub fn draw(&mut self,source: &impl FrameReference,draw_data: DrawData2D) {
+    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: DrawData2D) {
         self.get_frame_mut().push_command(
-            FrameCommand::DrawFrame {
-                reference: source.get_cache_reference(),
+            FrameCommand::Draw2D {
+                reference: frame_reference.get_cache_reference(),
                 draw_data: DrawData2D {
                     destination: draw_data.destination,
-                    source: draw_data.source.multiply_2d(source.get_output_uv_size()),
+                    source: draw_data.source.multiply_2d(frame_reference.get_output_uv_size()),
                     color: draw_data.color,
                     rotation: draw_data.rotation
                 }

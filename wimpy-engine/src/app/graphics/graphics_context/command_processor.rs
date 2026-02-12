@@ -53,7 +53,7 @@ where
     ) {
         for command in commands {
             match command {
-                FrameCommand::DrawFrame {
+                FrameCommand::Draw2D {
                     reference,
                     draw_data
                 } => match self.update_sampler(*reference) {
@@ -79,7 +79,12 @@ where
                         self.needs_sampler_update = true;
                     }
                 },
-                FrameCommand::DrawModel { reference, draw_data } => todo!(),
+                FrameCommand::Draw3D {
+                    reference,
+                    draw_data
+                } => {
+                    
+                },
             }
         }
     }

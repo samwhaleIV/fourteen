@@ -1,14 +1,14 @@
-use super::prelude::*;
+use super::*;
 
-pub struct FallbackTexture {
+pub struct MissingTexture {
     data: [u8;Self::DATA_SIZE]
 }
 
-impl FallbackTexture {
+impl MissingTexture {
     const COLOR_1: [u8;Self::BYTES_PER_PIXEL] = [182,0,205,255];
     const COLOR_2: [u8;Self::BYTES_PER_PIXEL] = [53,23,91,255];
 
-    const SIZE: usize = 32;
+    const SIZE: usize = 16;
     const GRID_DIVISION: usize = 4;
     const BYTES_PER_PIXEL: usize = 4;
     const PIXEL_COUNT: usize = Self::SIZE * Self::SIZE;
@@ -50,17 +50,17 @@ impl FallbackTexture {
     }
 }
 
-impl TextureData for FallbackTexture {
+impl TextureData for MissingTexture {
     fn write_to_queue(&self,parameters: &TextureDataWriteParameters) {
         parameters.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
+            TexelCopyTextureInfo {
                 texture: parameters.texture,
                 mip_level: parameters.mip_level,
                 origin: parameters.origin,
                 aspect: parameters.aspect,
             },
             &self.data,
-            wgpu::TexelCopyBufferLayout {
+            TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(Self::SIZE as u32 * 4), 
                 rows_per_image: Some(Self::SIZE as u32),

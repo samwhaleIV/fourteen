@@ -43,8 +43,5 @@ fn rotate(rotation: f32) -> mat2x2<f32> {
 @group(0) @binding(1) var s_diffuse: sampler;
 
 @fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
-    if (fragment.color.a < 0.005) {
-        discard;
-    }
     return textureSample(t_diffuse,s_diffuse,fragment.uv) * fragment.color;
 }

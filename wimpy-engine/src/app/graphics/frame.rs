@@ -47,14 +47,22 @@ impl Default for DrawData3D {
 }
 
 pub enum FrameCommand {
-    DrawFrame {
+    Draw2D {
         reference: FrameCacheReference,
         draw_data: DrawData2D
     },
-    DrawModel {
+    Draw3D {
         reference: ModelCacheReference,
         draw_data: DrawData3D
     },
+    // Draw2DInstanced {
+    //     reference: FrameCacheReference,
+    //     draw_data: &[DrawData2D]
+    // },
+    // Draw3DInstanced {
+    //     reference: ModelCacheReference,
+    //     draw_data: &[DrawData3D]
+    // },
     SetTextureFilter(FilterMode),
     SetTextureAddressing(AddressMode),
 }

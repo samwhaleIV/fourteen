@@ -58,7 +58,7 @@ impl Pipeline3D {
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
-                conservative: false     
+                conservative: false
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState {
@@ -69,7 +69,6 @@ impl Pipeline3D {
             multiview: None,
             cache: None
         });
-
 
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
@@ -219,5 +218,12 @@ impl<TFrame> FrameRenderPass3D<TFrame>
 where 
     TFrame: MutableFrame
 {
-    // TODO
+    pub fn draw(&mut self,model_reference: ModelCacheReference,draw_data: DrawData3D) {
+        self.get_frame_mut().push_command(
+            FrameCommand::Draw3D {
+                reference: model_reference,
+                draw_data
+            }
+        );
+    }
 }

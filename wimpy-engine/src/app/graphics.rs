@@ -5,7 +5,6 @@ mod double_buffer;
 mod graphics_context;
 mod frame;
 mod frame_cache;
-mod fallback_texture;
 mod model_cache;
 
 mod prelude {
@@ -16,7 +15,6 @@ mod prelude {
         DeviceExt,
         BufferInitDescriptor
     };
-    pub use fallback_texture::*;
     pub use cgmath::Matrix4;
     pub use crate::shared::*;
     pub use bytemuck::{
