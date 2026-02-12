@@ -3,11 +3,11 @@ use crate::app::graphics::{
     RenderBufferReference
 };
 
-use super::super::prelude::*;
+use super::*;
 
 #[derive(Debug)]
 pub struct ModelData<'a> {
-    pub render: Option<&'a RenderBufferReference>,
+    pub render: Option<RenderBufferReference>,
     pub collision: Option<&'a CollisionShape>,
     pub diffuse: Option<TextureFrame>,
     pub lightmap: Option<TextureFrame>,

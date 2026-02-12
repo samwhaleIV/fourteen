@@ -10,12 +10,12 @@ pub struct Pipeline2D {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<QuadInstance>,
-    command_buffer_pool: VecPool<PipelineCommand,DEFAULT_COMMAND_BUFFER_SIZE>
+    command_buffer_pool: VecPool<Pipeline2DCommand,DEFAULT_COMMAND_BUFFER_SIZE>
 }
 
 pub struct FrameRenderPass2D<TFrame> {
     frame: TFrame,
-    command_buffer: Vec<PipelineCommand>
+    command_buffer: Vec<Pipeline2DCommand>
 }
 
 pub struct DrawData2D {
@@ -115,34 +115,17 @@ where
         };
         command_processor.execute(&self.command_buffer,render_pass);
 
+        render_pass_view.get_2d_pipeline_mut().command_buffer_pool.return_item(self.command_buffer);
+
         self.frame
     }
-    
+
     fn get_frame(&self) -> &TFrame {
         return &self.frame;
     }
     
     fn get_frame_mut(&mut self) -> &mut TFrame {
         return &mut self.frame;
-    }
-}
-
-impl<TFrame> FrameRenderPass2D<TFrame>
-where 
-    TFrame: MutableFrame
-{
-    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: DrawData2D) {
-        self.command_buffer.push(
-            PipelineCommand::Draw {
-                reference: frame_reference.get_cache_reference(),
-                draw_data: DrawData2D {
-                    destination: draw_data.destination,
-                    source: draw_data.source.multiply_2d(frame_reference.get_output_uv_size()),
-                    color: draw_data.color,
-                    rotation: draw_data.rotation
-                }
-            }
-        );
     }
 }
 
@@ -164,7 +147,7 @@ enum SamplerStatus<'command> {
     UpdateNeeded(&'command BindGroup)
 }
 
-enum PipelineCommand {
+enum Pipeline2DCommand {
     Draw {
         reference: FrameCacheReference,
         draw_data: DrawData2D
@@ -199,12 +182,12 @@ impl CommandProcessor<'_,'_> {
 
     fn execute(
         mut self,
-        commands: &[PipelineCommand],
+        commands: &[Pipeline2DCommand],
         render_pass: &mut RenderPass,
     ) {
         for command in commands {
             match command {
-                PipelineCommand::Draw {
+                Pipeline2DCommand::Draw {
                     reference,
                     draw_data
                 } => match self.update_sampler(*reference) {
@@ -216,14 +199,14 @@ impl CommandProcessor<'_,'_> {
                     },
                     CommandReturnFlow::Skip => continue,
                 },
-                PipelineCommand::SetTextureFilter(value) => {
+                Pipeline2DCommand::SetTextureFilter(value) => {
                     let value = *value;
                     if self.filter_mode != value {
                         self.filter_mode = value;
                         self.needs_sampler_update = true;
                     }
                 },
-                PipelineCommand::SetTextureAddressing(value) => {
+                Pipeline2DCommand::SetTextureAddressing(value) => {
                     let value = *value;
                     if self.address_mode != value {
                         self.address_mode = value;
@@ -235,34 +218,32 @@ impl CommandProcessor<'_,'_> {
     }
 }
 
-impl<'a> From<&'a DrawData2D> for QuadInstance {
-    fn from(value: &'a DrawData2D) -> Self {
-        let area = value.destination.to_center_encoded();
-        return QuadInstance {
-            position: [
-                area.x,
-                area.y,
-            ],
-            size: [
-                area.width,
-                area.height,
-            ],
-            uv_position: [
-                value.source.x,
-                value.source.y,
-            ],
-            uv_size: [
-                value.source.width,
-                value.source.height,
-            ],
-            color: value.color.decompose(),
-            rotation: value.rotation
-        }
+impl<TFrame> FrameRenderPass2D<TFrame>
+where 
+    TFrame: MutableFrame
+{
+    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: DrawData2D) {
+        self.command_buffer.push(
+            Pipeline2DCommand::Draw {
+                reference: frame_reference.get_cache_reference(),
+                draw_data: DrawData2D {
+                    destination: draw_data.destination,
+                    source: draw_data.source.multiply_2d(frame_reference.get_output_uv_size()),
+                    color: draw_data.color,
+                    rotation: draw_data.rotation
+                }
+            }
+        );
     }
-}
+    pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
+        self.command_buffer.push(
+            Pipeline2DCommand::SetTextureFilter(filter_mode)
+        );
+    }
 
-impl From<DrawData2D> for QuadInstance {
-    fn from(value: DrawData2D) -> Self {
-        QuadInstance::from(&value)
+    pub fn set_texture_addressing(&mut self,address_mode: AddressMode) {
+        self.command_buffer.push(
+            Pipeline2DCommand::SetTextureAddressing(address_mode)
+        );
     }
 }

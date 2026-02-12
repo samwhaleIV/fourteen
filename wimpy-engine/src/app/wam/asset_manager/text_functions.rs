@@ -1,4 +1,4 @@
-use super::super::prelude::*;
+use super::*;
 
 impl AssetManager {
     pub fn get_text_reference(&self,name: &str) -> Result<TextAssetReference,AssetManagerError> {

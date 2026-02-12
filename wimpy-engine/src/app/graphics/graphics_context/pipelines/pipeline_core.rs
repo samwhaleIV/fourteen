@@ -70,8 +70,6 @@ impl RenderPipelines {
     }
 }
 
-
-
 #[repr(C)]
 #[derive(Debug,Copy,Clone,Pod,Zeroable)]
 pub struct MatrixTransformUniform {

@@ -1,5 +1,8 @@
 use super::prelude::*;
 
+mod draw_data_set_buffers;
+use draw_data_set_buffers::*;
+
 pub mod pipeline_shared;
 pub mod pipeline_core;
 pub mod pipeline_2d;

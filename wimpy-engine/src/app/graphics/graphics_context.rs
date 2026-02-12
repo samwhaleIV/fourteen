@@ -1,9 +1,8 @@
 mod runtime_textures;
 mod pipelines;
-pub use pipelines::*;
-use runtime_textures::*;
 
-use crate::collections::cache_arena::CacheArenaError;
+pub use pipelines::*;
+pub use runtime_textures::*;
 
 use super::prelude::*;
 
@@ -74,7 +73,7 @@ pub enum GraphicsContextError {
     OutputBuilderAlreadyActive,
     OutputBuilderNotActive,
     CantCreateOutputSurface(SurfaceError),
-    FrameCacheError(CacheArenaError<u32,FrameCacheReference>),
+    FrameCacheError(FrameCacheError),
 }
 
 impl GraphicsContext {
@@ -267,8 +266,8 @@ impl GraphicsContext {
         self.model_cache.create_entry(self.graphics_provider.get_queue(),gltf_data)
     }
 
-    pub fn get_render_mesh<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Option<&'a RenderBufferReference> {
-        self.model_cache.entries.get(model_cache_reference)
+    pub fn get_render_mesh(&self,model_cache_reference: ModelCacheReference) -> Option<RenderBufferReference> {
+        self.model_cache.entries.get(model_cache_reference).cloned()
     }
 
     pub fn get_collision_mesh<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Option<&'a CollisionShape> {

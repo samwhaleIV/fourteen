@@ -117,7 +117,7 @@ impl Pipeline2D {
             vertex_buffer,
             index_buffer,
             instance_buffer,
-            command_buffer_pool: VecPool::new()
+            command_buffer_pool: VecPool::with_capacity(CONCURRENT_COMMAND_BUFFERS_PER_PIPELINE)
         }
     }
 }

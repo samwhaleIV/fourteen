@@ -1,6 +1,9 @@
-pub mod text_functions;
-pub mod model_functions;
-pub mod image_functions;
+mod text_functions;
+mod model_functions;
+mod image_functions;
+
+pub use model_functions::*;
+pub use image_functions::*;
 
 mod generic;
 use super::prelude::*;

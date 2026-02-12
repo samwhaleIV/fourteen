@@ -68,3 +68,23 @@ impl ModelInstance {
         }
     }
 }
+
+impl<'a> From<&'a DrawData3D> for ModelInstance {
+    fn from(value: &'a DrawData3D) -> Self {
+        return ModelInstance {
+            transform_0: value.transform.x.into(),
+            transform_1: value.transform.y.into(),
+            transform_2: value.transform.z.into(),
+            transform_3: value.transform.w.into(),
+            diffuse_color: value.diffuse_color.decompose(),
+            lightmap_color: value.lightmap_color.decompose(),
+        }
+    }
+}
+
+impl From<DrawData3D> for ModelInstance {
+    fn from(value: DrawData3D) -> Self {
+        ModelInstance::from(&value)
+    }
+}
+

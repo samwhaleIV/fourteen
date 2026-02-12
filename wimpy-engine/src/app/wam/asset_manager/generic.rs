@@ -1,4 +1,4 @@
-use super::super::prelude::*;
+use super::*;
 
 pub struct Asset<'a,TData> {
     pub data: &'a TData,

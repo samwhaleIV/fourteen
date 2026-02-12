@@ -14,6 +14,8 @@ use input::{
     InputManager
 };
 
+use wam::*;
+
 #[derive(Debug)]
 pub enum FileError {
     Access,

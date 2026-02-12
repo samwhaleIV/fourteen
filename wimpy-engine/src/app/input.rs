@@ -6,11 +6,6 @@ mod key_code;
 mod keyboard_state;
 
 mod prelude {
-    pub use super::direction::*;
-    pub use super::impulse::*;
-    pub use super::key_code::*;
-    pub use super::gamepad::*;
-    pub use super::keyboard_state::*;
     pub use std::{
         array,
         collections::{
@@ -18,4 +13,12 @@ mod prelude {
             HashSet
         }
     };
+    pub use super::*;
 }
+
+pub use input_manager::*;
+pub use direction::*;
+pub use gamepad::*;
+pub use impulse::*;
+pub use key_code::*;
+pub use keyboard_state::*;

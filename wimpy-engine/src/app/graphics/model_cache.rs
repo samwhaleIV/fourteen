@@ -121,9 +121,10 @@ impl ModelCache {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Copy,Clone)]
 pub struct RenderBufferReference {
-    pub index_range: Range<u32>,
+    pub index_start: u32,
+    pub index_end: u32,
     pub base_vertex: i32,
 }
 
@@ -274,11 +275,9 @@ impl RenderBuffer {
         };
 
         let entry = RenderBufferReference {
-            index_range: Range {
-                start: index_range.start as u32,
-                end: index_range.end as u32
-            },
             base_vertex: vertex_range.end as i32,
+            index_start: index_range.start as u32,
+            index_end: index_range.end as u32,
         };
 
         return Ok(entry);

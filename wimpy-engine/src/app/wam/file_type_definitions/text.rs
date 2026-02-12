@@ -1,4 +1,4 @@
-use super::super::prelude::*;
+use super::*;
 
 #[derive(Debug,Clone)]
 pub struct TextAssetReference {

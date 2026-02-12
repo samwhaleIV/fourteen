@@ -1,3 +1,5 @@
+use crate::collections::SetBuffers;
+
 pub use super::*;
 
 impl Pipeline3D {
@@ -76,7 +78,9 @@ impl Pipeline3D {
 
         return Self {
             pipeline,
-            instance_buffer,
+            vertex_instance_buffer: instance_buffer,
+            command_buffer_pool: VecPool::with_capacity(CONCURRENT_COMMAND_BUFFERS_PER_PIPELINE),
+            set_buffers: SetBuffers::create(CONCURRENT_DRAW_BUFFER_CAPACITY),
         }
     }
 }

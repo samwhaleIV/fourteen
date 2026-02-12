@@ -1,4 +1,4 @@
-use super::super::prelude::*;
+use super::*;
 
 pub struct ImageSliceData {
     pub texture: TextureFrame,
