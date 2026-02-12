@@ -16,13 +16,3 @@ pub type FrameCacheError = CacheArenaError<u32,FrameCacheReference>;
 slotmap::new_key_type! {
     pub struct FrameCacheReference;
 }
-
-pub trait FrameCacheLookup {
-    fn get_texture_container(&self,reference: FrameCacheReference) ->  Result<&TextureContainer,FrameCacheError>;
-}
-
-impl FrameCacheLookup for FrameCache {
-    fn get_texture_container(&self,reference: FrameCacheReference) -> Result<&TextureContainer,FrameCacheError> {
-        return self.get(reference);
-    }
-}

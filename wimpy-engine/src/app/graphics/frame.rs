@@ -12,65 +12,9 @@ pub struct CacheSize {
     pub output: u32
 }
 
-pub struct DrawData2D {
-    pub destination: WimpyArea,
-    pub source: WimpyArea,
-    pub color: WimpyColor,
-    pub rotation: f32
-}
-
-pub struct DrawData3D {
-    pub transform: Matrix4<f32>,
-    pub diffuse_color: WimpyColor,
-    pub lightmap_color: WimpyColor,
-}
-
-impl Default for DrawData2D {
-    fn default() -> Self {
-        Self {
-            destination: WimpyArea::default(),
-            source: WimpyArea::default(),
-            color: WimpyColor::WHITE,
-            rotation: 0.0
-        }
-    }
-}
-
-impl Default for DrawData3D {
-    fn default() -> Self {
-        Self {
-            transform: get_identity_matrix(),
-            diffuse_color: WimpyColor::WHITE,
-            lightmap_color: WimpyColor::WHITE,
-        }
-    }
-}
-
-pub enum FrameCommand {
-    Draw2D {
-        reference: FrameCacheReference,
-        draw_data: DrawData2D
-    },
-    Draw3D {
-        reference: ModelCacheReference,
-        draw_data: DrawData3D
-    },
-    // Draw2DInstanced {
-    //     reference: FrameCacheReference,
-    //     draw_data: &[DrawData2D]
-    // },
-    // Draw3DInstanced {
-    //     reference: ModelCacheReference,
-    //     draw_data: &[DrawData3D]
-    // },
-    SetTextureFilter(FilterMode),
-    SetTextureAddressing(AddressMode),
-}
-
 pub struct OutputFrame {
     size: (u32,u32),
     cache_reference: FrameCacheReference,
-    command_buffer: Vec<FrameCommand>,
     clear_color: wgpu::Color
 }
 
@@ -92,14 +36,12 @@ impl TextureFrame {
 pub struct TempFrame {
     size: CacheSize,
     cache_reference: FrameCacheReference,
-    command_buffer: Vec<FrameCommand>,
     clear_color: wgpu::Color,
 }
 
 pub struct LongLifeFrame {
     size: RestrictedSize,
     cache_reference: FrameCacheReference,
-    command_buffer: Vec<FrameCommand>,  
 }
 
 pub trait FrameReference {
@@ -122,37 +64,7 @@ pub trait FrameReference {
     }
 }
 
-pub trait FrameRenderPass<TFrame: MutableFrame> {
-    fn get_frame(&self) -> &TFrame;
-    fn get_frame_mut(&mut self) -> &mut TFrame;
-
-    fn begin_render_pass(
-        self,
-        render_pass: &mut RenderPass,
-        pipeline_view: &mut RenderPassView
-    ) -> TFrame;
-
-    fn set_texture_filter(&mut self,filter_mode: FilterMode) {
-        self.get_frame_mut().push_command(
-            FrameCommand::SetTextureFilter(filter_mode)
-        );
-    }
-
-    fn set_texture_addressing(&mut self,address_mode: AddressMode) {
-        self.get_frame_mut().push_command(
-            FrameCommand::SetTextureAddressing(address_mode)
-        );
-    }
-
-    fn size(&self) -> (u32,u32) {
-        self.get_frame().get_input_size()
-    }
-}
-
 pub trait MutableFrame: FrameReference {
-    fn push_command(&mut self,frame_command: FrameCommand);
-    fn clear_commands(&mut self);
-    fn get_commands(&self) -> &[FrameCommand];
     fn get_clear_color(&self) -> Option<wgpu::Color>;
 }
 
@@ -213,54 +125,18 @@ impl FrameReference for LongLifeFrame {
 }
 
 impl MutableFrame for OutputFrame {
-    fn push_command(&mut self,frame_command: FrameCommand) {
-        self.command_buffer.push(frame_command);
-    }
-    
-    fn get_commands(&self) -> &[FrameCommand] {
-        &self.command_buffer
-    }
-    
-    fn clear_commands(&mut self) {
-        self.command_buffer.clear();
-    }
-    
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         Some(self.clear_color)
     }
 }
 
 impl MutableFrame for TempFrame {
-    fn push_command(&mut self,frame_command: FrameCommand) {
-        self.command_buffer.push(frame_command);
-    }
-    
-    fn get_commands(&self) -> &[FrameCommand] {
-        &self.command_buffer
-    }
-    
-    fn clear_commands(&mut self) {
-        self.command_buffer.clear();
-    }
-    
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         Some(self.clear_color)
     }
 }
 
 impl MutableFrame for LongLifeFrame {
-    fn push_command(&mut self,frame_command: FrameCommand) {
-        self.command_buffer.push(frame_command);
-    }
-    
-    fn get_commands(&self) -> &[FrameCommand] {
-        &self.command_buffer
-    }
-    
-    fn clear_commands(&mut self) {
-        self.command_buffer.clear();
-    }
-    
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         None
     }
@@ -273,13 +149,11 @@ impl FrameFactory {
     pub fn create_output(
         size: (u32,u32),
         cache_reference: FrameCacheReference,
-        command_buffer: Vec<FrameCommand>,
         clear_color: wgpu::Color,
     ) -> OutputFrame {
         OutputFrame {
             size,
             cache_reference,
-            command_buffer,
             clear_color,
         }
     }
@@ -297,48 +171,22 @@ impl FrameFactory {
     pub fn create_long_life(
         size: RestrictedSize,
         cache_reference: FrameCacheReference,
-        command_buffer: Vec<FrameCommand>
     ) -> LongLifeFrame {
         LongLifeFrame {
             size,
             cache_reference,
-            command_buffer,
         }
     }
 
     pub fn create_temp_frame(
         size: CacheSize,
         cache_reference: FrameCacheReference,
-        command_buffer: Vec<FrameCommand>,
         clear_color: wgpu::Color,
     ) -> TempFrame {
         TempFrame {
             size,
             cache_reference,
-            command_buffer,
             clear_color
         }
-    }
-}
-
-pub trait ReclaimCommandBuffer {
-    fn take_command_buffer(self) -> Vec<FrameCommand>;
-}
-
-impl ReclaimCommandBuffer for OutputFrame {
-    fn take_command_buffer(self) -> Vec<FrameCommand> {
-        self.command_buffer
-    }
-}
-
-impl ReclaimCommandBuffer for TempFrame {
-    fn take_command_buffer(self) -> Vec<FrameCommand> {
-        self.command_buffer
-    }
-}
-
-impl ReclaimCommandBuffer for LongLifeFrame {
-    fn take_command_buffer(self) -> Vec<FrameCommand> {
-        self.command_buffer
     }
 }

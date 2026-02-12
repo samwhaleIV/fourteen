@@ -1,20 +1,14 @@
 mod runtime_textures;
-mod command_processor;
 mod pipelines;
 pub use pipelines::*;
-use command_processor::*;
 use runtime_textures::*;
 
-use crate::collections::{
-    VecPool,
-    cache_arena::CacheArenaError
-};
+use crate::collections::cache_arena::CacheArenaError;
 
 use super::prelude::*;
 
 struct OutputBuilder {
     encoder: CommandEncoder,
-    output_frame_reference: FrameCacheReference,
     output_frame_surface: SurfaceTexture,
 }
 
@@ -24,12 +18,29 @@ pub struct GraphicsContext {
     frame_cache: FrameCache,
     model_cache: ModelCache,
     output_builder: Option<OutputBuilder>,
-    command_buffer_pool: VecPool<FrameCommand,DEFAULT_COMMAND_BUFFER_SIZE>,
     runtime_textures: RuntimeTextures
+}
+
+pub trait FrameRenderPass<TFrame: MutableFrame> {
+    fn create(frame: TFrame,render_pass_view: &mut RenderPassView) -> Self;
+
+    fn get_frame(&self) -> &TFrame;
+    fn get_frame_mut(&mut self) -> &mut TFrame;
+
+    fn begin_render_pass(
+        self,
+        render_pass: &mut RenderPass,
+        render_pass_view: &mut RenderPassView
+    ) -> TFrame;
+
+    fn size(&self) -> (u32,u32) {
+        self.get_frame().get_input_size()
+    }
 }
 
 pub struct RenderPassView<'a> {
     model_cache: &'a ModelCache,
+    frame_cache: &'a FrameCache,
     render_pipelines: &'a mut RenderPipelines,
     runtime_textures: &'a RuntimeTextures
 }
@@ -60,8 +71,8 @@ pub trait GraphicsContextConfig {
 
 #[derive(Debug)]
 pub enum GraphicsContextError {
-    PipelineAlreadyActive,
-    PipelineNotActive,
+    OutputBuilderAlreadyActive,
+    OutputBuilderNotActive,
     CantCreateOutputSurface(SurfaceError),
     FrameCacheError(CacheArenaError<u32,FrameCacheReference>),
 }
@@ -96,7 +107,6 @@ impl GraphicsContext {
             pipelines,
             model_cache,
             frame_cache,
-            command_buffer_pool: VecPool::new(),
             output_builder: None,
             runtime_textures
         };
@@ -132,15 +142,12 @@ impl GraphicsContext {
         return FrameFactory::create_temp_frame(
             cache_size,
             cache_reference,
-            self.command_buffer_pool.take_item(),
             clear_color
         );
     }
-    
+
     pub fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),GraphicsContextError> {
         let cache_reference = frame.get_cache_reference();
-
-        self.command_buffer_pool.return_item(frame.take_command_buffer());
 
         if let Err(error) = self.frame_cache.end_lease(cache_reference) {
             return Err(GraphicsContextError::FrameCacheError(error));
@@ -161,14 +168,11 @@ impl GraphicsContext {
                 &self.pipelines.get_shared().get_texture_layout(),
                 output
             )),
-            Vec::with_capacity(DEFAULT_COMMAND_BUFFER_SIZE)
         );
     }
 
     pub fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),GraphicsContextError> {
         let cache_reference = frame.get_cache_reference();
-
-        self.command_buffer_pool.return_item(frame.take_command_buffer());
 
         if let Err(error) = self.frame_cache.remove(cache_reference) {
             return Err(GraphicsContextError::FrameCacheError(error));
@@ -199,24 +203,33 @@ impl GraphicsContext {
             (size,size)
         ));
     }
-    
+
+    pub fn create_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,frame: TFrame) -> Result<TRenderPass,GraphicsContextError> {
+        if self.output_builder.is_none() {
+            return Err(GraphicsContextError::OutputBuilderNotActive);
+        }
+        let render_pass_view = &mut RenderPassView {
+            model_cache: &self.model_cache,
+            frame_cache: &self.frame_cache,
+            render_pipelines: &mut self.pipelines,
+            runtime_textures: &self.runtime_textures
+        };
+        return Ok(TRenderPass::create(frame,render_pass_view));
+    }
+
     pub fn finish_frame_pass<TFrame: MutableFrame,TRenderPass: FrameRenderPass<TFrame>>(&mut self,mut frame_render_pass: TRenderPass) -> Result<TFrame,GraphicsContextError> {
         let frame = frame_render_pass.get_frame_mut();
 
         let Some(frame_builder) = &mut self.output_builder else {
-            frame.clear_commands();
-            return Err(GraphicsContextError::PipelineNotActive);
+            return Err(GraphicsContextError::OutputBuilderNotActive);
         };
 
         let texture_view = match self.frame_cache.get(frame.get_cache_reference()) {
             Ok(value) => value.get_view(),
-            Err(error) => {
-                frame.clear_commands();
-                return Err(GraphicsContextError::FrameCacheError(error));
-            }
+            Err(error) => return Err(GraphicsContextError::FrameCacheError(error))
         };
 
-        let mut render_pass = frame_builder.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = frame_builder.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: texture_view,
@@ -237,23 +250,16 @@ impl GraphicsContext {
 
         let render_pass_view = &mut RenderPassView {
             model_cache: &self.model_cache,
+            frame_cache: &self.frame_cache,
             render_pipelines: &mut self.pipelines,
             runtime_textures: &self.runtime_textures
         };
 
-        let mut frame = frame_render_pass.begin_render_pass(
+        let frame = frame_render_pass.begin_render_pass(
             &mut render_pass,
             render_pass_view
         );
 
-        process_frame_commands(
-            frame.get_commands(),
-            &mut render_pass,
-            render_pass_view,
-            &self.frame_cache
-        );
-
-        frame.clear_commands();
         return Ok(frame);
     }
 
@@ -275,7 +281,7 @@ pub mod swap_chain_control {
     impl GraphicsContext {
         pub fn create_output_frame(&mut self,clear_color: wgpu::Color) -> Result<OutputFrame,GraphicsContextError> {
             if self.output_builder.is_some() {
-                return Err(GraphicsContextError::PipelineAlreadyActive);
+                return Err(GraphicsContextError::OutputBuilderAlreadyActive);
             }
 
             let surface = match self.graphics_provider.get_output_surface() {
@@ -289,7 +295,6 @@ pub mod swap_chain_control {
             let cache_reference = self.frame_cache.insert_keyless(texture_container);
 
             self.output_builder = Some(OutputBuilder {
-                output_frame_reference: cache_reference,
                 output_frame_surface: surface,
                 encoder: self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
                     label: Some("Render Encoder")
@@ -299,14 +304,13 @@ pub mod swap_chain_control {
             return Ok(FrameFactory::create_output(
                 size,
                 cache_reference,
-                self.command_buffer_pool.take_item(),
                 clear_color
             ));
         }
 
         pub fn present_output_frame(&mut self,frame: OutputFrame) -> Result<(),GraphicsContextError> {
             let Some(output_builder) = self.output_builder.take() else { //see if there's ANY way to avoid .take() here
-                return Err(GraphicsContextError::PipelineNotActive);
+                return Err(GraphicsContextError::OutputBuilderNotActive);
             };
 
             let queue = self.graphics_provider.get_queue();
@@ -314,15 +318,12 @@ pub mod swap_chain_control {
             self.pipelines.write_pipeline_buffers(queue);
 
             queue.submit(std::iter::once(output_builder.encoder.finish()));
-            if let Err(error) = self.frame_cache.remove(output_builder.output_frame_reference) {
+            if let Err(error) = self.frame_cache.remove(frame.get_cache_reference()) {
                 log::warn!("Output frame was not present in the frame cache: {:?}",error);
             };
-    
-            output_builder.output_frame_surface.present();
-            
-            self.pipelines.reset_pipeline_states();
 
-            self.command_buffer_pool.return_item(frame.take_command_buffer());
+            output_builder.output_frame_surface.present();
+            self.pipelines.reset_pipeline_states();
             return Ok(());
         }
     }

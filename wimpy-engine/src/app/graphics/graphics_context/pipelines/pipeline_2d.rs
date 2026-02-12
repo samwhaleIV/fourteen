@@ -1,3 +1,8 @@
+mod creation;
+mod shader_definitions;
+pub use shader_definitions::*;
+
+use crate::collections::VecPool;
 use super::*;
 
 pub struct Pipeline2D {
@@ -5,6 +10,30 @@ pub struct Pipeline2D {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<QuadInstance>,
+    command_buffer_pool: VecPool<PipelineCommand,DEFAULT_COMMAND_BUFFER_SIZE>
+}
+
+pub struct FrameRenderPass2D<TFrame> {
+    frame: TFrame,
+    command_buffer: Vec<PipelineCommand>
+}
+
+pub struct DrawData2D {
+    pub destination: WimpyArea,
+    pub source: WimpyArea,
+    pub color: WimpyColor,
+    pub rotation: f32
+}
+
+impl Default for DrawData2D {
+    fn default() -> Self {
+        Self {
+            destination: WimpyArea::default(),
+            source: WimpyArea::default(),
+            color: WimpyColor::WHITE,
+            rotation: 0.0
+        }
+    }
 }
 
 impl Pipeline2D {
@@ -12,131 +41,12 @@ impl Pipeline2D {
     pub const INSTANCE_BUFFER_INDEX: u32 = 1;
     pub const INDEX_BUFFER_SIZE: u32 = 6;
 
-    pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        shared_pipeline: &SharedPipeline
-    ) -> Self
-    where 
-        TConfig: GraphicsContextConfig
-    {
-        let device = graphics_provider.get_device();
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Pipeline 2D Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pipeline2D.wgsl").into())
-        });
-
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Pipeline 2D Render Layout"),
-            bind_group_layouts: &[
-                // This is where the 'texture bind group' is set to bind group index '0'
-                &shared_pipeline.get_texture_layout(),
-                // This is where the 'uniform bind group' is set to bind group index '1'
-                &shared_pipeline.get_uniform_layout(),
-            ],
-            push_constant_ranges: &[]
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Pipeline 2D"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[
-                    // Once again, even though it's stupid, this is where 'VERTEX_BUFFER_INDEX' is defined ... implicitly
-                    QuadVertex::get_buffer_layout(),
-                    QuadInstance::get_buffer_layout()
-                ]
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: graphics_provider.get_output_format(),
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })]
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false
-            },
-            // TODO: enable depth stencil
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None
-        });
-
-/*
-        Triangle list should generate 0-1-2 2-1-3 in CCW
-
-                        0---2
-                        |  /|
-                        | / |
-                        |/  |
-                        1---3
-*/
-        let vertices = [  
-            QuadVertex { position: [-0.5,-0.5] }, // Top Left     0
-            QuadVertex { position: [-0.5, 0.5] }, // Bottom Left  1
-            QuadVertex { position: [0.5,-0.5] },  // Top Right    2
-            QuadVertex { position: [0.5, 0.5] }   // Bottom Right 3
-        ];
-
-        let indices: [u32;Self::INDEX_BUFFER_SIZE as usize] = [
-            0,1,2,
-            2,1,3
-        ];
-
-        let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX
-        });
-
-        // Investigate if vertex buffer can be put at the start of the instance buffer
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX
-        });
-
-        let instance_buffer = DoubleBuffer::new(
-            device.create_buffer(&BufferDescriptor{
-                label: Some("Instance Buffer"),
-                size: TConfig::INSTANCE_BUFFER_SIZE_2D as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            })
-        );
-
-        return Self {
-            render_pipeline: pipeline,
-            vertex_buffer,
-            index_buffer,
-            instance_buffer
-        }
-    }
-
-    pub fn write_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData2D) {
+    pub fn draw_quad(&mut self,render_pass: &mut RenderPass,draw_data: &DrawData2D) {
         let range = self.instance_buffer.push_convert(draw_data.into());
         render_pass.draw_indexed(0..Self::INDEX_BUFFER_SIZE,0,downcast_range(range));
     }
 
-    pub fn write_quad_set(&mut self,render_pass: &mut RenderPass,draw_data: &[DrawData2D]) {
+    pub fn draw_quad_set(&mut self,render_pass: &mut RenderPass,draw_data: &[DrawData2D]) {
         let range = self.instance_buffer.push_convert_all(draw_data);
         render_pass.draw_indexed(0..Self::INDEX_BUFFER_SIZE,0,downcast_range(range));
     }
@@ -146,71 +56,181 @@ impl PipelineController for Pipeline2D {
     fn write_dynamic_buffers(&mut self,queue: &Queue) {
         self.instance_buffer.write_out(queue);
     }
-    
     fn reset_pipeline_state(&mut self) {
         self.instance_buffer.reset();
     }
 }
 
-#[repr(C)]
-#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct QuadVertex {
-    pub position: [f32;2],
-}
-
-#[repr(C)]
-#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct QuadInstance {
-    pub position: [f32;2],
-    pub size: [f32;2],
-    pub uv_position: [f32;2],
-    pub uv_size: [f32;2],
-    pub color: [u8;4],
-    pub rotation: f32,
-}
-
-#[non_exhaustive]
-struct ATTR;
-
-impl ATTR {
-    pub const VERTEX_POSITION: u32 = 0;
-    pub const INSTANCE_POSITION: u32 = 1;
-    pub const SIZE: u32 = 2;
-    pub const UV_POS: u32 = 3;
-    pub const UV_SIZE: u32 = 4;
-    pub const COLOR: u32 = 5;
-    pub const ROTATION: u32 = 6;
-}
-
-impl QuadVertex {
-    const ATTRS: [wgpu::VertexAttribute;1] = wgpu::vertex_attr_array![
-        ATTR::VERTEX_POSITION => Float32x2,
-    ];
-
-    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        return wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRS,
+impl<TFrame> FrameRenderPass<TFrame> for FrameRenderPass2D<TFrame>
+where 
+    TFrame: MutableFrame
+{
+    fn create(frame: TFrame,render_pass_view: &mut RenderPassView) -> Self {
+        let command_buffer = render_pass_view.get_2d_pipeline_mut().command_buffer_pool.take_item();
+        return Self {
+            frame,
+            command_buffer,
         }
+    }
+
+    fn begin_render_pass(self,render_pass: &mut RenderPass,render_pass_view: &mut RenderPassView) -> TFrame {
+        let pipeline_2d = render_pass_view.get_2d_pipeline();
+
+        render_pass.set_pipeline(&pipeline_2d.render_pipeline); 
+
+        render_pass.set_index_buffer(
+            pipeline_2d.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint32
+        ); // Index Buffer
+
+        render_pass.set_vertex_buffer(
+            Pipeline2D::VERTEX_BUFFER_INDEX,
+            pipeline_2d.vertex_buffer.slice(..)
+        ); // Vertex Buffer
+
+        render_pass.set_vertex_buffer(
+            Pipeline2D::INSTANCE_BUFFER_INDEX,
+            pipeline_2d.instance_buffer.get_output_buffer().slice(..)
+        ); // Instance Buffer
+
+
+        let shared_pipeline = render_pass_view.get_shared_pipeline_mut();
+
+        let transform = MatrixTransformUniform::create_ortho(self.size());
+        let uniform_buffer_range = shared_pipeline.get_uniform_buffer().push(transform);
+        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
+
+        render_pass.set_bind_group(
+            UNIFORM_BIND_GROUP_INDEX,
+            shared_pipeline.get_uniform_bind_group(),
+            &[dynamic_offset as u32]
+        );
+
+        let command_processor = CommandProcessor {
+            needs_sampler_update: true,
+            filter_mode: FilterMode::Nearest,
+            address_mode: AddressMode::ClampToEdge,
+            current_sampling_frame: Default::default(),
+            render_pass_view
+        };
+        command_processor.execute(&self.command_buffer,render_pass);
+
+        self.frame
+    }
+    
+    fn get_frame(&self) -> &TFrame {
+        return &self.frame;
+    }
+    
+    fn get_frame_mut(&mut self) -> &mut TFrame {
+        return &mut self.frame;
     }
 }
 
-impl QuadInstance {
-    const ATTRS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
-        ATTR::INSTANCE_POSITION => Float32x2,
-        ATTR::SIZE => Float32x2,
-        ATTR::UV_POS => Float32x2,
-        ATTR::UV_SIZE => Float32x2,
-        ATTR::COLOR => Unorm8x4,
-        ATTR::ROTATION => Float32,
-    ];
+impl<TFrame> FrameRenderPass2D<TFrame>
+where 
+    TFrame: MutableFrame
+{
+    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: DrawData2D) {
+        self.command_buffer.push(
+            PipelineCommand::Draw {
+                reference: frame_reference.get_cache_reference(),
+                draw_data: DrawData2D {
+                    destination: draw_data.destination,
+                    source: draw_data.source.multiply_2d(frame_reference.get_output_uv_size()),
+                    color: draw_data.color,
+                    rotation: draw_data.rotation
+                }
+            }
+        );
+    }
+}
 
-    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        return wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRS,
+pub struct CommandProcessor<'a,'render_pass> {
+    needs_sampler_update: bool,
+    filter_mode: FilterMode,
+    address_mode: AddressMode,
+    current_sampling_frame: FrameCacheReference,
+    render_pass_view: &'a mut RenderPassView<'render_pass>
+}
+
+enum CommandReturnFlow<'command> {
+    Skip,
+    Proceed(SamplerStatus<'command>)
+}
+
+enum SamplerStatus<'command> {
+    Unchanged,
+    UpdateNeeded(&'command BindGroup)
+}
+
+enum PipelineCommand {
+    Draw {
+        reference: FrameCacheReference,
+        draw_data: DrawData2D
+    },
+    SetTextureFilter(FilterMode),
+    SetTextureAddressing(AddressMode),
+}
+
+impl CommandProcessor<'_,'_> {
+    fn update_sampler(&mut self,reference: FrameCacheReference) -> CommandReturnFlow<'_> {
+        if !self.needs_sampler_update && self.current_sampling_frame == reference {
+            return CommandReturnFlow::Proceed(SamplerStatus::Unchanged);
+        }
+
+        let sampler_bind_group = match self.render_pass_view.frame_cache.get(reference) {
+            Ok(texture_container) => match texture_container.get_bind_group(self.filter_mode,self.address_mode) {
+                Some(value) => value,
+                None => {
+                    log::warn!("Unable to get sampler ({:?},{:?}) from texture container.",self.filter_mode,self.address_mode);
+                    return CommandReturnFlow::Skip;
+                }
+            },
+            Err(error) => {
+                log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
+                return CommandReturnFlow::Skip;
+            }
+        };
+        self.needs_sampler_update = false;
+        self.current_sampling_frame = reference;
+        return CommandReturnFlow::Proceed(SamplerStatus::UpdateNeeded(sampler_bind_group));
+    }
+
+    fn execute(
+        mut self,
+        commands: &[PipelineCommand],
+        render_pass: &mut RenderPass,
+    ) {
+        for command in commands {
+            match command {
+                PipelineCommand::Draw {
+                    reference,
+                    draw_data
+                } => match self.update_sampler(*reference) {
+                    CommandReturnFlow::Proceed(sampler_status) => {
+                        if let SamplerStatus::UpdateNeeded(bind_group) = sampler_status {
+                            render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
+                        }
+                        self.render_pass_view.get_2d_pipeline_mut().draw_quad(render_pass,draw_data);
+                    },
+                    CommandReturnFlow::Skip => continue,
+                },
+                PipelineCommand::SetTextureFilter(value) => {
+                    let value = *value;
+                    if self.filter_mode != value {
+                        self.filter_mode = value;
+                        self.needs_sampler_update = true;
+                    }
+                },
+                PipelineCommand::SetTextureAddressing(value) => {
+                    let value = *value;
+                    if self.address_mode != value {
+                        self.address_mode = value;
+                        self.needs_sampler_update = true;
+                    }
+                }
+            }
         }
     }
 }
@@ -244,75 +264,5 @@ impl<'a> From<&'a DrawData2D> for QuadInstance {
 impl From<DrawData2D> for QuadInstance {
     fn from(value: DrawData2D) -> Self {
         QuadInstance::from(&value)
-    }
-}
-
-pub struct FrameRenderPass2D<TFrame> {
-    frame: TFrame,
-}
-
-impl<TFrame> FrameRenderPass<TFrame> for FrameRenderPass2D<TFrame>
-where 
-    TFrame: MutableFrame
-{
-    fn get_frame(&self) -> &TFrame {
-        return &self.frame;
-    }
-    fn get_frame_mut(&mut self) -> &mut TFrame {
-        return &mut self.frame;
-    }
-   
-    fn begin_render_pass(self,render_pass: &mut RenderPass,pipeline_view: &mut RenderPassView) -> TFrame {
-        let pipeline_2d = pipeline_view.get_2d_pipeline();
-
-        render_pass.set_pipeline(&pipeline_2d.render_pipeline); 
-
-        render_pass.set_index_buffer(
-            pipeline_2d.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint32
-        ); // Index Buffer
-
-        render_pass.set_vertex_buffer(
-            Pipeline2D::VERTEX_BUFFER_INDEX,
-            pipeline_2d.vertex_buffer.slice(..)
-        ); // Vertex Buffer
-
-        render_pass.set_vertex_buffer(
-            Pipeline2D::INSTANCE_BUFFER_INDEX,
-            pipeline_2d.instance_buffer.get_output_buffer().slice(..)
-        ); // Instance Buffer
-
-
-        let shared_pipeline = pipeline_view.get_shared_pipeline_mut();
-
-        let transform = MatrixTransformUniform::create_ortho(self.size());
-        let uniform_buffer_range = shared_pipeline.get_uniform_buffer().push(transform);
-        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-
-        render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
-            shared_pipeline.get_uniform_bind_group(),
-            &[dynamic_offset as u32]
-        );
-        self.frame
-    }
-}
-
-impl<TFrame> FrameRenderPass2D<TFrame>
-where 
-    TFrame: MutableFrame
-{
-    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: DrawData2D) {
-        self.get_frame_mut().push_command(
-            FrameCommand::Draw2D {
-                reference: frame_reference.get_cache_reference(),
-                draw_data: DrawData2D {
-                    destination: draw_data.destination,
-                    source: draw_data.source.multiply_2d(frame_reference.get_output_uv_size()),
-                    color: draw_data.color,
-                    rotation: draw_data.rotation
-                }
-            }
-        );
     }
 }

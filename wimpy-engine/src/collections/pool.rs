@@ -2,7 +2,7 @@ pub struct VecPool<T,const DEFAULT_CAPACITY: usize> {
     values: Vec<Vec<T>>
 }
 
-impl<T,const DEFAULT_CAPACITY: usize> VecPool<T,DEFAULT_CAPACITY> {
+impl<T,const INNER_CAPACITY: usize> VecPool<T,INNER_CAPACITY> {
     pub fn new() -> Self {
         Self {
             values: Default::default(),
@@ -18,7 +18,7 @@ impl<T,const DEFAULT_CAPACITY: usize> VecPool<T,DEFAULT_CAPACITY> {
     pub fn take_item(&mut self) -> Vec<T> {
         match self.values.pop() {
             Some(value) => value,
-            None => Vec::with_capacity(DEFAULT_CAPACITY),
+            None => Vec::with_capacity(INNER_CAPACITY),
         }
     }
 
