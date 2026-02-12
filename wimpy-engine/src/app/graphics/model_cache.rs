@@ -112,6 +112,15 @@ pub struct ModelCache {
     pub collision_shapes: SecondaryMap<ModelCacheReference,CollisionShape>,
 }
 
+impl ModelCache {
+    pub fn get_index_buffer_slice(&self) -> BufferSlice<'_> {
+        return self.render_buffer.index_buffer.get_buffer().slice(..);
+    }
+    pub fn get_vertex_buffer_slice(&self) -> BufferSlice<'_> {
+        return self.render_buffer.vertex_buffer.get_buffer().slice(..);
+    }
+}
+
 #[derive(Debug,Clone)]
 pub struct RenderBufferReference {
     pub index_range: Range<u32>,

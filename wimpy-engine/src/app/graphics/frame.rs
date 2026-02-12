@@ -123,8 +123,6 @@ pub trait FrameReference {
 }
 
 pub trait FrameRenderPass<TFrame: MutableFrame> {
-    fn create(frame: TFrame) -> Self;
-
     fn get_frame(&self) -> &TFrame;
     fn get_frame_mut(&mut self) -> &mut TFrame;
 

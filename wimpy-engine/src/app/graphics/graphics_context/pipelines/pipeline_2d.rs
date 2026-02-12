@@ -45,7 +45,8 @@ impl Pipeline2D {
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[
-                    QuadVertex::get_buffer_layout(), // Once again, even though it's stupid, this is where 'VERTEX_BUFFER_INDEX' is defined ... implicitly
+                    // Once again, even though it's stupid, this is where 'VERTEX_BUFFER_INDEX' is defined ... implicitly
+                    QuadVertex::get_buffer_layout(),
                     QuadInstance::get_buffer_layout()
                 ]
             },
@@ -247,19 +248,13 @@ impl From<DrawData2D> for QuadInstance {
 }
 
 pub struct FrameRenderPass2D<TFrame> {
-    frame: TFrame
+    frame: TFrame,
 }
 
 impl<TFrame> FrameRenderPass<TFrame> for FrameRenderPass2D<TFrame>
 where 
     TFrame: MutableFrame
 {
-    fn create(frame: TFrame) -> Self {
-        return Self {
-            frame
-        }
-    }
-    
     fn get_frame(&self) -> &TFrame {
         return &self.frame;
     }
@@ -292,7 +287,6 @@ where
 
         let transform = MatrixTransformUniform::create_ortho(self.size());
         let uniform_buffer_range = shared_pipeline.get_uniform_buffer().push(transform);
-
         let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
 
         render_pass.set_bind_group(
