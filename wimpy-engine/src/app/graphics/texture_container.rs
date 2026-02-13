@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 
 use super::prelude::*;
 
+#[derive(Copy,Clone,PartialEq,Eq,Hash)]
 pub enum TextureContainerIdentity {
     Anonymous,
     Known(NonZeroU32)
@@ -111,6 +112,10 @@ impl TextureContainer {
 
     pub fn get_view(&self) -> &TextureView {
         return &self.view;
+    }
+
+    pub fn get_identity(&self) -> TextureContainerIdentity {
+        return self.identity;
     }
 
     pub fn create_mutable(

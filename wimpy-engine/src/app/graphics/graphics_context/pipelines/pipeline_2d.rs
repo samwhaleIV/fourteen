@@ -97,8 +97,7 @@ where
             render_pass,
             frame,
             needs_sampler_update: true,
-            filter_mode: FilterMode::Linear,
-            address_mode: AddressMode::Repeat,
+            sampler_mode: SamplerMode::NearestWrap,
             current_sampling_frame: current_sampling_frame
         }
     }
@@ -111,32 +110,36 @@ where
 }
 
 impl<TFrame> FrameRenderPass2D<'_,TFrame> {
-    fn update_sampler_if_needed(&mut self,reference: FrameCacheReference) {
-        if !self.needs_sampler_update && self.current_sampling_frame == reference {
-            return;
+    fn update_sampler_if_needed(&mut self,reference: FrameCacheReference) -> Result<(),()> {
+        if !(self.needs_sampler_update || self.current_sampling_frame != reference) {
+            return Err(());
         }
 
         self.current_sampling_frame = reference;
         self.needs_sampler_update = false;
 
-        match self.context.frame_cache.get(reference) {
-            Ok(texture_container) => match texture_container.get_bind_group(self.filter_mode,self.address_mode) {
-                Some(bind_group) => {
-                    self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
-                },
-                None => {
-                    log::warn!("Unable to get sampler ({:?},{:?}) from texture container.",self.filter_mode,self.address_mode);
-                }
+        return match self.context.frame_cache.get(reference) {
+            Ok(texture_container) => {
+                self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::SingleChannel {
+                    ch_0: BindGroupChannelConfig {
+                        mode: self.sampler_mode,
+                        texture: texture_container,
+                    }
+                });
+                Ok(())
             },
             Err(error) => {
                 log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
+                Err(())
             }
         };
     }
 
     pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: &[DrawData2D]) {
         let reference = frame_reference.get_cache_reference();
-        self.update_sampler_if_needed(reference);
+        if let Err(()) = self.update_sampler_if_needed(reference) {
+            return;
+        }
 
         let output_size = frame_reference.get_output_uv_size();
 

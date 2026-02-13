@@ -118,6 +118,7 @@ where
             .push(transform);
 
         let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
+
         self.render_pass.set_bind_group(
             UNIFORM_BIND_GROUP_INDEX,
             self.context.get_shared().get_uniform_bind_group(),
@@ -156,13 +157,13 @@ where
 
     fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) -> Result<(),()> {
 
-        let m = &self.context.textures.missing;
-        let w = &self.context.textures.opaque_white;
+        let m = self.context.textures.missing;
+        let w = self.context.textures.opaque_white;
 
-        let (Some(diffuse),Some(lightmap)) = self.resolve_texture_frames(match (
-            &texture_data.diffuse,
-            &texture_data.lightmap,
-            &texture_data.strategy
+        let (diffuse,lightmap) = match (
+            texture_data.diffuse,
+            texture_data.lightmap,
+            texture_data.strategy
         ) {
             (None, None, _) =>                                          (m, w),
 
@@ -175,47 +176,31 @@ where
 
             (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
             (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
-        }) else {
-            return Err(());
         };
 
-        let Some(bind_group) = self.context.bind_groups.get(BindGroupCacheIdentity::DualChannel {
-            ch_0: BindGroupCacheChannel {
+        self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::DualChannel {
+            ch_0: BindGroupChannelConfig {
                 mode: texture_data.diffuse_sampler,
-                texture: diffuse,
+                texture: match self.context.frame_cache.get(diffuse.get_cache_reference()) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        log::error!("Could not resolve diffuse texture frame to a texture view: {:?}",error);
+                        return Err(())
+                    },
+                },
             },
-            ch_1: BindGroupCacheChannel {
+            ch_1: BindGroupChannelConfig {
                 mode: SamplerMode::LinearClamp,
-                texture: lightmap
+                texture: match self.context.frame_cache.get(lightmap.get_cache_reference()) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        log::error!("Could not resolve lightmap texture frame to a texture view: {:?}",error);
+                        return Err(())
+                    },
+                }
             }
-        }) else {
-            log::error!("Could not create the requested bind group. Did you use an anonymous texture container such as the output surface?");
-            return Err(());
-        };
-
-        self.render_pass.set_bind_group(
-            TEXTURE_BIND_GROUP_INDEX,
-            bind_group,
-            &[]
-        );
+        });
 
         return Ok(())
-    }
-
-    fn resolve_texture_frame(&self,texture_frame: &TextureFrame) -> Option<&TextureContainer> {
-        return match self.context.frame_cache.get(texture_frame.get_cache_reference()) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                log::error!("Could not resolve texture frame to a texture view: {:?}",error);
-                None
-            },
-        };
-    }
-
-    fn resolve_texture_frames(&self,texture_frames: (&TextureFrame,&TextureFrame)) -> (Option<&TextureContainer>,Option<&TextureContainer>) {
-        return (
-            self.resolve_texture_frame(texture_frames.0),
-            self.resolve_texture_frame(texture_frames.1),
-        );
     }
 }

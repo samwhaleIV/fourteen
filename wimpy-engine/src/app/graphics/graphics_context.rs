@@ -2,7 +2,6 @@ mod runtime_textures;
 mod pipelines;
 mod bind_group_cache;
 
-use bytemuck::Contiguous;
 pub use pipelines::*;
 pub use bind_group_cache::*;
 pub use runtime_textures::*;
@@ -31,7 +30,8 @@ pub struct RenderPassContext<'gc> {
     frame_cache: &'gc FrameCache,
     pipelines: &'gc mut RenderPipelines,
     textures: &'gc RuntimeTextures,
-    bind_groups: &'gc BindGroupCache
+    bind_groups: &'gc mut BindGroupCache,
+    graphics_provider: &'gc GraphicsProvider
 }
 
 pub enum AvailableControls {
@@ -263,7 +263,8 @@ impl<'gc> OutputBuilder<'gc> {
             frame_cache: &self.graphics_context.frame_cache,
             pipelines: &mut self.graphics_context.pipelines,
             textures: &self.graphics_context.runtime_textures,
-            bind_groups: &self.graphics_context.bind_group_cache
+            bind_groups: &mut self.graphics_context.bind_group_cache,
+            graphics_provider: &self.graphics_context.graphics_provider
         };
 
         let frame_render_pass = TRenderPass::create(
