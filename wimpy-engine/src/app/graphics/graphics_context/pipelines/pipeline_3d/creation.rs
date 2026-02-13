@@ -3,7 +3,8 @@ pub use super::*;
 impl Pipeline3D {
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        shared_pipeline: &SharedPipeline
+        texture_layout: &BindGroupLayout,
+        uniform_layout: &BindGroupLayout
     ) -> Self
     where
         TConfig: GraphicsContextConfig
@@ -18,8 +19,8 @@ impl Pipeline3D {
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 3D Render Layout"),
             bind_group_layouts: &[
-                &shared_pipeline.get_texture_layout(),
-                &shared_pipeline.get_uniform_layout(),
+                texture_layout,
+                uniform_layout,
             ],
             push_constant_ranges: &[]
         });

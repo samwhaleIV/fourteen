@@ -3,9 +3,10 @@ use super::*;
 impl Pipeline2D {
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        shared_pipeline: &SharedPipeline
+        texture_layout: &BindGroupLayout,
+        uniform_layout: &BindGroupLayout
     ) -> Self
-    where 
+    where
         TConfig: GraphicsContextConfig
     {
         let device = graphics_provider.get_device();
@@ -19,9 +20,9 @@ impl Pipeline2D {
             label: Some("Pipeline 2D Render Layout"),
             bind_group_layouts: &[
                 // This is where the 'texture bind group' is set to bind group index '0'
-                &shared_pipeline.get_texture_layout(),
+                texture_layout,
                 // This is where the 'uniform bind group' is set to bind group index '1'
-                &shared_pipeline.get_uniform_layout(),
+                uniform_layout,
             ],
             push_constant_ranges: &[]
         });

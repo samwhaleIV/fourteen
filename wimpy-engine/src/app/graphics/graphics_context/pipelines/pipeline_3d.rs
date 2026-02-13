@@ -16,7 +16,7 @@ pub struct Pipeline3D {
 struct TextureDrawData {
     diffuse: Option<TextureFrame>,
     lightmap: Option<TextureFrame>,
-    diffuse_filter: FilterMode,
+    diffuse_sampler: SamplerMode,
     strategy: TextureStrategy,
 }
 
@@ -128,7 +128,7 @@ where
     pub fn draw(
         &mut self,
         model_data: &ModelData,
-        diffuse_filter: FilterMode,
+        diffuse_sampler: SamplerMode,
         texture_strategy: TextureStrategy,
         draw_data: &[DrawData3D]
     ) {
@@ -142,25 +142,24 @@ where
             self.set_transform(TransformUniform::default());
         }
 
-        self.set_mesh_textures(&TextureDrawData {
+        if let Err(()) = self.set_mesh_textures(&TextureDrawData {
             diffuse: model_data.diffuse,
             lightmap: model_data.lightmap,
-            diffuse_filter,
+            diffuse_sampler,
             strategy: texture_strategy
-        });
+        }) {
+            return;
+        }
         todo!();
 
     }
 
-    fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) {
+    fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) -> Result<(),()> {
 
         let m = &self.context.textures.missing;
         let w = &self.context.textures.opaque_white;
 
-        let Some((diffuse,lightmap)) = self.get_samplers((
-            texture_data.diffuse_filter,
-            FilterMode::Linear
-        ),match (
+        let (Some(diffuse),Some(lightmap)) = self.resolve_texture_frames(match (
             &texture_data.diffuse,
             &texture_data.lightmap,
             &texture_data.strategy
@@ -177,32 +176,46 @@ where
             (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
             (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
         }) else {
-            return;
+            return Err(());
         };
-        
-        // self.render_pass.set_bind_group(
-        //     TEXTURE_BIND_GROUP_INDEX,
-        //     diffuse
-        //     , offsets);
-    }
 
-    fn get_sampler(&self,texture: &TextureFrame,filter_mode: FilterMode) -> Option<&BindGroup> {
-        let Ok(texture_container) = self.context.frame_cache.get(texture.get_cache_reference()) else {
-            return None;
-        };
-        return texture_container.get_bind_group(filter_mode,AddressMode::ClampToEdge);
-    }
-
-    fn get_samplers(&self,filter_modes: (FilterMode,FilterMode),textures: (&TextureFrame,&TextureFrame)) -> Option<(&BindGroup,&BindGroup)> {
-        return match (
-            self.get_sampler(textures.0,filter_modes.0),
-            self.get_sampler(textures.1,filter_modes.1)
-        ) {
-            (Some(s1), Some(s2)) => Some((s1,s2)),
-            _ => {
-                log::error!("Could not locate a texture sampler bind group; skipping this draw command.");
-                None
+        let Some(bind_group) = self.context.bind_groups.get(BindGroupCacheIdentity::DualChannel {
+            ch_0: BindGroupCacheChannel {
+                mode: texture_data.diffuse_sampler,
+                texture: diffuse,
+            },
+            ch_1: BindGroupCacheChannel {
+                mode: SamplerMode::LinearClamp,
+                texture: lightmap
             }
+        }) else {
+            log::error!("Could not create the requested bind group. Did you use an anonymous texture container such as the output surface?");
+            return Err(());
         };
+
+        self.render_pass.set_bind_group(
+            TEXTURE_BIND_GROUP_INDEX,
+            bind_group,
+            &[]
+        );
+
+        return Ok(())
+    }
+
+    fn resolve_texture_frame(&self,texture_frame: &TextureFrame) -> Option<&TextureContainer> {
+        return match self.context.frame_cache.get(texture_frame.get_cache_reference()) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                log::error!("Could not resolve texture frame to a texture view: {:?}",error);
+                None
+            },
+        };
+    }
+
+    fn resolve_texture_frames(&self,texture_frames: (&TextureFrame,&TextureFrame)) -> (Option<&TextureContainer>,Option<&TextureContainer>) {
+        return (
+            self.resolve_texture_frame(texture_frames.0),
+            self.resolve_texture_frame(texture_frames.1),
+        );
     }
 }

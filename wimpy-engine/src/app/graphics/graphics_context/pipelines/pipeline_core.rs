@@ -16,19 +16,28 @@ pub trait PipelineController {
 }
 
 impl RenderPipelines {
-    pub fn create<TConfig>(graphics_provider: &GraphicsProvider) -> Self
+    pub fn create<TConfig>(
+        graphics_provider: &GraphicsProvider,
+        texture_bind_group_layout: &BindGroupLayout
+    ) -> Self
     where
         TConfig: GraphicsContextConfig
     {
         let pipeline_shared = SharedPipeline::create::<TConfig>(graphics_provider);
+        let uniform_bind_group_layout = pipeline_shared.get_uniform_layout();
+
         let pipeline_2d = Pipeline2D::create::<TConfig>(
             graphics_provider,
-            &pipeline_shared
+            texture_bind_group_layout,
+            uniform_bind_group_layout
         );
+
         let pipeline_3d = Pipeline3D::create::<TConfig>(
             graphics_provider,
-            &pipeline_shared
+            texture_bind_group_layout,
+            uniform_bind_group_layout
         );
+
         return Self {
             pipelines_unique: UniquePipelines {
                 pipeline_2d,

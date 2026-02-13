@@ -1,7 +1,6 @@
 use super::*;
 
 pub struct SharedPipeline {
-    texture_layout: BindGroupLayout,
     uniform_layout: BindGroupLayout,
     uniform_bind_group: BindGroup,
     uniform_buffer: DoubleBuffer<TransformUniform>
@@ -17,48 +16,6 @@ impl SharedPipeline {
     {
 
         let device = graphics_provider.get_device();
-
-        let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("Texture Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false, /* Must remain false to use STORAGE_BINDING texture usage */
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: true
-                        },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: LIGHTMAP_TEXTURE_BIND_GROUP_ENTRY_INDEX,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: true
-                        },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: LIGHTMAP_SAMPLER_BIND_GROUP_ENTRY_INDEX,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ]
-        });
 
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -94,7 +51,6 @@ impl SharedPipeline {
         });
 
         return Self {
-            texture_layout,
             uniform_layout,
             uniform_bind_group,
             uniform_buffer,
@@ -111,10 +67,6 @@ impl SharedPipeline {
 
     pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {
         return &mut self.uniform_buffer;
-    }
-
-    pub fn get_texture_layout(&self) -> &BindGroupLayout {
-        return &self.texture_layout;
     }
 
     pub fn get_uniform_layout(&self) -> &BindGroupLayout {

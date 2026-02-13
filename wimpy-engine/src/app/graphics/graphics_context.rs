@@ -1,7 +1,10 @@
 mod runtime_textures;
 mod pipelines;
+mod bind_group_cache;
 
+use bytemuck::Contiguous;
 pub use pipelines::*;
+pub use bind_group_cache::*;
 pub use runtime_textures::*;
 
 use super::prelude::*;
@@ -27,7 +30,8 @@ pub struct RenderPassContext<'gc> {
     model_cache: &'gc ModelCache,
     frame_cache: &'gc FrameCache,
     pipelines: &'gc mut RenderPipelines,
-    textures: &'gc RuntimeTextures
+    textures: &'gc RuntimeTextures,
+    bind_groups: &'gc BindGroupCache
 }
 
 pub enum AvailableControls {
@@ -40,8 +44,9 @@ pub struct GraphicsContext {
     pipelines: RenderPipelines,
     frame_cache: FrameCache,
     runtime_textures: RuntimeTextures,
-    samplers: Samplers,
     model_cache: ModelCache,
+    bind_group_cache: BindGroupCache,
+    texture_id_generator: TextureIdentityGenerator
 }
 
 pub trait GraphicsContextConfig {
@@ -62,7 +67,14 @@ impl GraphicsContext {
     }
     pub fn create<TConfig: GraphicsContextConfig>(graphics_provider: GraphicsProvider) -> Self {
 
-        let pipelines = RenderPipelines::create::<TConfig>(&graphics_provider);
+        let mut texture_id_generator = TextureIdentityGenerator::default();
+
+        let bind_group_cache = BindGroupCache::create(&graphics_provider);
+
+        let pipelines = RenderPipelines::create::<TConfig>(
+            &graphics_provider,
+            bind_group_cache.get_texture_layout()
+        );
 
         let model_cache = ModelCache::create(
             graphics_provider.get_device(),
@@ -72,32 +84,30 @@ impl GraphicsContext {
 
         let mut frame_cache = FrameCache::default();
 
-        let samplers = Samplers::create(graphics_provider.get_device());
-
         let runtime_textures = RuntimeTextures::create(
             &graphics_provider,
-            &samplers,
-            pipelines.get_shared().get_texture_layout(),
+            &mut texture_id_generator,
             &mut frame_cache,
         );
 
         return Self {
             graphics_provider,
+            texture_id_generator,
             pipelines,
             model_cache,
             frame_cache,
             runtime_textures,
-            samplers
+            bind_group_cache
         };
     }
 }
 
 impl GraphicsContext {
     pub fn create_texture_frame(&mut self,texture_data: &impl TextureData) -> Result<TextureFrame,TextureError> {
+        let texture_id = self.texture_id_generator.next();
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,
-            &self.samplers,
-            &self.pipelines.get_shared().get_texture_layout(),
+            texture_id,
             texture_data
         )?;
         return Ok(FrameFactory::create_texture(
@@ -112,10 +122,10 @@ impl GraphicsContext {
             Ok(value) => value, 
             Err(error) => {
                 log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
+                let texture_id = self.texture_id_generator.next();
                 self.frame_cache.insert_with_lease(size,TextureContainer::create_mutable(
                     &self.graphics_provider,
-                    &self.samplers,
-                    &self.pipelines.get_shared().get_texture_layout(),
+                    texture_id,
                     (size,size)
                 ))
             },
@@ -135,6 +145,7 @@ impl GraphicsContext {
 
     pub fn get_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
         let output = self.graphics_provider.get_safe_texture_size(size);
+        let texture_id = self.texture_id_generator.next();
         return FrameFactory::create_long_life(
             RestrictedSize {
                 input: size,
@@ -142,8 +153,7 @@ impl GraphicsContext {
             },
             self.frame_cache.insert_keyless(TextureContainer::create_mutable(
                 &self.graphics_provider,
-                &self.samplers,
-                &self.pipelines.get_shared().get_texture_layout(),
+                texture_id,
                 output
             )),
         );
@@ -171,10 +181,10 @@ impl GraphicsContext {
         if self.frame_cache.has_available_items(size) {
             return;
         }
+        let texture_id = self.texture_id_generator.next();
         self.frame_cache.insert(size,TextureContainer::create_mutable(
             &self.graphics_provider,
-            &self.samplers,
-            &self.pipelines.get_shared().get_texture_layout(),
+            texture_id,
             (size,size)
         ));
     }
@@ -253,6 +263,7 @@ impl<'gc> OutputBuilder<'gc> {
             frame_cache: &self.graphics_context.frame_cache,
             pipelines: &mut self.graphics_context.pipelines,
             textures: &self.graphics_context.runtime_textures,
+            bind_groups: &self.graphics_context.bind_group_cache
         };
 
         let frame_render_pass = TRenderPass::create(

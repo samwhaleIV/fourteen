@@ -16,8 +16,7 @@ pub struct FrameRenderPass2D<'a,TFrame> {
     render_pass: RenderPass<'a>,
     frame: TFrame,
     needs_sampler_update: bool,
-    filter_mode: FilterMode,
-    address_mode: AddressMode,
+    sampler_mode: SamplerMode,
     current_sampling_frame: FrameCacheReference,
 }
 
@@ -157,16 +156,9 @@ impl<TFrame> FrameRenderPass2D<'_,TFrame> {
         self.render_pass.draw_indexed(0..Pipeline2D::INDEX_BUFFER_SIZE,0,downcast_range(range));
     }
 
-    pub fn set_texture_filter(&mut self,filter_mode: FilterMode) {
-        if self.filter_mode != filter_mode {
-            self.filter_mode = filter_mode;
-            self.needs_sampler_update = true;
-        }
-    }
-
-    pub fn set_texture_addressing(&mut self,address_mode: AddressMode) {
-        if self.address_mode != address_mode {
-            self.address_mode = address_mode;
+    pub fn set_sampler_mode(&mut self,sampler_mode: SamplerMode) {
+        if self.sampler_mode != sampler_mode {
+            self.sampler_mode = self.sampler_mode;
             self.needs_sampler_update = true;
         }
     }

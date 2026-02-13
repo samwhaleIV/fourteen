@@ -16,17 +16,15 @@ pub struct RuntimeTextures {
 
 struct TextureFrameBuilder<'a> {
     graphics_provider: &'a GraphicsProvider,
-    samplers: &'a Samplers,
-    texture_layout: &'a BindGroupLayout,
     frame_cache: &'a mut FrameCache,
+    id_generator: &'a mut TextureIdentityGenerator
 }
 
 impl TextureFrameBuilder<'_> {
     fn create(&mut self,data: &impl TextureData) -> TextureFrame {
         let texture_container = TextureContainer::from_image_unchecked(
             self.graphics_provider,
-            self.samplers,
-            self.texture_layout,
+            self.id_generator.next(),
             data
         );
         return FrameFactory::create_texture(
@@ -39,15 +37,13 @@ impl TextureFrameBuilder<'_> {
 impl RuntimeTextures {
     pub fn create(
         graphics_provider: &GraphicsProvider,
-        samplers: &Samplers,
-        texture_layout: &BindGroupLayout,
+        id_generator: &mut TextureIdentityGenerator,
         frame_cache: &mut FrameCache,
     ) -> Self {
 
         let mut builder = TextureFrameBuilder {
             graphics_provider,
-            samplers,
-            texture_layout,
+            id_generator,
             frame_cache,
         };
 

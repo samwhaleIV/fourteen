@@ -1,81 +1,49 @@
+use std::num::NonZeroU32;
+
 use super::prelude::*;
 
+pub enum TextureContainerIdentity {
+    Anonymous,
+    Known(NonZeroU32)
+}
+
 pub struct TextureContainer {
+    identity: TextureContainerIdentity,
     size: Extent3d,
     view: TextureView,
-    bind_groups: Vec<BindGroup>
 }
 
-const SAMPLER_COUNT: usize = 6;
+pub struct TextureIdentityGenerator {
+    counter: NonZero<u32>
+}
 
-const BIND_GROUP_SETS: [(FilterMode,AddressMode);SAMPLER_COUNT] = [
-    (FilterMode::Nearest,AddressMode::ClampToEdge),
-    (FilterMode::Nearest,AddressMode::Repeat),
-    (FilterMode::Nearest,AddressMode::MirrorRepeat),
-    (FilterMode::Linear,AddressMode::ClampToEdge),
-    (FilterMode::Linear,AddressMode::Repeat),
-    (FilterMode::Linear,AddressMode::MirrorRepeat),
-];
-
-const fn get_bind_group_index(filter_mode: FilterMode,address_mode: AddressMode) -> usize {
-    match (filter_mode,address_mode) {
-        (FilterMode::Nearest, AddressMode::ClampToEdge) => 0,
-        (FilterMode::Nearest, AddressMode::Repeat) => 1,
-        (FilterMode::Nearest, AddressMode::MirrorRepeat) => 2,
-
-        (FilterMode::Linear, AddressMode::ClampToEdge) => 3,
-        (FilterMode::Linear, AddressMode::Repeat) => 4,
-        (FilterMode::Linear, AddressMode::MirrorRepeat) => 5,
-
-        (FilterMode::Nearest, AddressMode::ClampToBorder) => 0, // Mask to ClampToEdge
-        (FilterMode::Linear, AddressMode::ClampToBorder) => 3, // Mask to ClampToEdge
+impl Default for TextureIdentityGenerator {
+    fn default() -> Self {
+        Self {
+            counter: NonZero::<u32>::MIN
+        }
     }
 }
 
-pub struct Samplers {
-    value: [Sampler;SAMPLER_COUNT]
-}
-
-impl Samplers {
-    pub fn create(device: &Device) -> Self {
-        let samplers: [Sampler;SAMPLER_COUNT] = std::array::from_fn(|i|{
-            let (filter,address) = BIND_GROUP_SETS[i];
-            device.create_sampler(&SamplerDescriptor {
-                address_mode_u: address,
-                address_mode_v: address,
-                address_mode_w: address,
-                mag_filter: filter,
-                min_filter: filter,
-                mipmap_filter: filter,
-                ..Default::default()
-            })
-        });
-        return Self {
-            value: samplers
-        };
-    }
-}
-
-fn create_bind_groups(texture_view: &TextureView,samplers: &Samplers,device: &Device,bind_group_layout: &BindGroupLayout) -> [BindGroup;SAMPLER_COUNT] {
-    let bind_groups: [BindGroup;SAMPLER_COUNT] = std::array::from_fn(|i| device.create_bind_group(&BindGroupDescriptor {
-        label: Some("Texture Bind Group"),
-        layout: bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
+impl TextureIdentityGenerator {
+    pub fn next(&mut self) -> TextureContainerIdentity {
+        let current_id = self.counter;
+        match self.counter.checked_add(1) {
+            Some(next_id) => {
+                self.counter = next_id;
             },
-            wgpu::BindGroupEntry {
-                binding: DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
-                resource: wgpu::BindingResource::Sampler(&samplers.value[i]),
-            }
-        ],
-    }));
-    return bind_groups;
+            None => {
+                log::warn!("Texture ID counter overflow. How do you have the RAM to make millions of textures? Wrapping the counter...");
+                self.counter = NonZero::<u32>::MIN;
+            },
+        };
+        return TextureContainerIdentity::Known(current_id);
+    }
 }
 
 struct TextureCreationParameters {
     size: (u32,u32),
+    identity: TextureContainerIdentity,
     mutable: bool,
     with_data: bool
 }
@@ -98,9 +66,7 @@ impl TextureContainer {
 
     fn create(
         graphics_provider: &GraphicsProvider,
-        samplers: &Samplers,
-        bind_group_layout: &BindGroupLayout,
-        parameters: TextureCreationParameters,
+        parameters: TextureCreationParameters
     ) -> Self {
 
         let size = wgpu::Extent3d {
@@ -136,12 +102,10 @@ impl TextureContainer {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let bind_groups = create_bind_groups(&view,samplers,&device,bind_group_layout);
-
         return TextureContainer {
             size,
             view,
-            bind_groups: Vec::from(bind_groups)
+            identity: parameters.identity
         };
     }
 
@@ -151,12 +115,12 @@ impl TextureContainer {
 
     pub fn create_mutable(
         graphics_provider: &GraphicsProvider,
-        samplers: &Samplers,
-        bind_group_layout: &BindGroupLayout,
+        identity: TextureContainerIdentity,
         size: (u32,u32) // Externally validated (in graphics context)
     ) -> TextureContainer {
-        Self::create(graphics_provider,samplers,bind_group_layout,TextureCreationParameters {
+        Self::create(graphics_provider,TextureCreationParameters {
             size,
+            identity,
             with_data: false,
             mutable: true
         })
@@ -164,14 +128,14 @@ impl TextureContainer {
 
     pub fn from_image_unchecked(
         graphics_provider: &GraphicsProvider,
-        samplers: &Samplers,
-        bind_group_layout: &BindGroupLayout,
+        identity: TextureContainerIdentity,
         texture_data: &impl TextureData
     ) -> TextureContainer {
         let size = texture_data.size();
 
-        let texture_container = Self::create(graphics_provider,samplers,bind_group_layout,TextureCreationParameters {
+        let texture_container = Self::create(graphics_provider,TextureCreationParameters {
             size,
+            identity,
             with_data: true,
             mutable: false
         });
@@ -190,13 +154,12 @@ impl TextureContainer {
 
     pub fn from_image(
         graphics_provider: &GraphicsProvider,
-        samplers: &Samplers,
-        bind_group_layout: &BindGroupLayout,
+        identity: TextureContainerIdentity,
         texture_data: &impl TextureData
     ) -> Result<TextureContainer,TextureError> {
         graphics_provider.test_size(texture_data.size())?;
 
-        return Ok(Self::from_image_unchecked(graphics_provider,samplers,bind_group_layout,texture_data));
+        return Ok(Self::from_image_unchecked(graphics_provider,identity,texture_data));
     }
 
     pub fn create_output(
@@ -207,21 +170,17 @@ impl TextureContainer {
             &wgpu::TextureViewDescriptor::default()
         );
         return TextureContainer {
+            identity: TextureContainerIdentity::Anonymous,
             size: Extent3d {
                 width: size.0,
                 height: size.1,
                 depth_or_array_layers: 1,
             },
-            view,
-            bind_groups: Vec::with_capacity(0)
+            view
         };
     }
 
     pub fn size(&self) -> (u32,u32) {
         (self.size.width,self.size.height)
-    }
-
-    pub fn get_bind_group(&self,filter_mode: FilterMode,address_mode: AddressMode) -> Option<&BindGroup> {
-        self.bind_groups.get(get_bind_group_index(filter_mode,address_mode))
     }
 }
