@@ -6,7 +6,9 @@ pub struct TextureContainer {
     bind_groups: Vec<BindGroup>
 }
 
-const BIND_GROUP_SETS: [(FilterMode,AddressMode);6] = [
+const SAMPLER_COUNT: usize = 6;
+
+const BIND_GROUP_SETS: [(FilterMode,AddressMode);SAMPLER_COUNT] = [
     (FilterMode::Nearest,AddressMode::ClampToEdge),
     (FilterMode::Nearest,AddressMode::Repeat),
     (FilterMode::Nearest,AddressMode::MirrorRepeat),
@@ -30,33 +32,45 @@ const fn get_bind_group_index(filter_mode: FilterMode,address_mode: AddressMode)
     }
 }
 
-fn get_bind_groups(texture_view: &TextureView,device: &Device,bind_group_layout: &BindGroupLayout) -> Vec<BindGroup> {
-    let bind_groups = BIND_GROUP_SETS.iter().copied().map(|(filter,address)| {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: address,
-            address_mode_v: address,
-            address_mode_w: address,
-            mag_filter: filter,
-            min_filter: filter,
-            mipmap_filter: filter,
-            ..Default::default()
-        });
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                }
-            ],
-            label: Some("Texture Bind Group"),
-        })
-    }).collect();
+pub struct Samplers {
+    value: [Sampler;SAMPLER_COUNT]
+}
 
+impl Samplers {
+    pub fn create(device: &Device) -> Self {
+        let samplers: [Sampler;SAMPLER_COUNT] = std::array::from_fn(|i|{
+            let (filter,address) = BIND_GROUP_SETS[i];
+            device.create_sampler(&SamplerDescriptor {
+                address_mode_u: address,
+                address_mode_v: address,
+                address_mode_w: address,
+                mag_filter: filter,
+                min_filter: filter,
+                mipmap_filter: filter,
+                ..Default::default()
+            })
+        });
+        return Self {
+            value: samplers
+        };
+    }
+}
+
+fn create_bind_groups(texture_view: &TextureView,samplers: &Samplers,device: &Device,bind_group_layout: &BindGroupLayout) -> [BindGroup;SAMPLER_COUNT] {
+    let bind_groups: [BindGroup;SAMPLER_COUNT] = std::array::from_fn(|i| device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Texture Bind Group"),
+        layout: bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX,
+                resource: wgpu::BindingResource::TextureView(&texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX,
+                resource: wgpu::BindingResource::Sampler(&samplers.value[i]),
+            }
+        ],
+    }));
     return bind_groups;
 }
 
@@ -84,6 +98,7 @@ impl TextureContainer {
 
     fn create(
         graphics_provider: &GraphicsProvider,
+        samplers: &Samplers,
         bind_group_layout: &BindGroupLayout,
         parameters: TextureCreationParameters,
     ) -> Self {
@@ -121,12 +136,12 @@ impl TextureContainer {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let bind_groups = get_bind_groups(&view,&device,bind_group_layout);
+        let bind_groups = create_bind_groups(&view,samplers,&device,bind_group_layout);
 
         return TextureContainer {
             size,
             view,
-            bind_groups
+            bind_groups: Vec::from(bind_groups)
         };
     }
 
@@ -136,10 +151,11 @@ impl TextureContainer {
 
     pub fn create_mutable(
         graphics_provider: &GraphicsProvider,
+        samplers: &Samplers,
         bind_group_layout: &BindGroupLayout,
-        size: (u32,u32) // Externally validated
+        size: (u32,u32) // Externally validated (in graphics context)
     ) -> TextureContainer {
-        Self::create(graphics_provider,bind_group_layout,TextureCreationParameters {
+        Self::create(graphics_provider,samplers,bind_group_layout,TextureCreationParameters {
             size,
             with_data: false,
             mutable: true
@@ -148,12 +164,13 @@ impl TextureContainer {
 
     pub fn from_image_unchecked(
         graphics_provider: &GraphicsProvider,
+        samplers: &Samplers,
         bind_group_layout: &BindGroupLayout,
         texture_data: &impl TextureData
     ) -> TextureContainer {
         let size = texture_data.size();
 
-        let texture_container = Self::create(graphics_provider,bind_group_layout,TextureCreationParameters {
+        let texture_container = Self::create(graphics_provider,samplers,bind_group_layout,TextureCreationParameters {
             size,
             with_data: true,
             mutable: false
@@ -173,17 +190,18 @@ impl TextureContainer {
 
     pub fn from_image(
         graphics_provider: &GraphicsProvider,
+        samplers: &Samplers,
         bind_group_layout: &BindGroupLayout,
         texture_data: &impl TextureData
     ) -> Result<TextureContainer,TextureError> {
         graphics_provider.test_size(texture_data.size())?;
 
-        return Ok(Self::from_image_unchecked(graphics_provider,bind_group_layout,texture_data));
+        return Ok(Self::from_image_unchecked(graphics_provider,samplers,bind_group_layout,texture_data));
     }
 
     pub fn create_output(
         surface: &SurfaceTexture,
-        size: (u32,u32) // Externally validated
+        size: (u32,u32) // Externally validated (in graphics provider)
     ) -> TextureContainer {
         let view = surface.texture.create_view(
             &wgpu::TextureViewDescriptor::default()

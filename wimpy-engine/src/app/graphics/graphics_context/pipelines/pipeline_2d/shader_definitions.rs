@@ -63,34 +63,3 @@ impl QuadInstance {
     }
 }
 
-impl<'a> From<&'a DrawData2D> for QuadInstance {
-    fn from(value: &'a DrawData2D) -> Self {
-        let area = value.destination.to_center_encoded();
-        return QuadInstance {
-            position: [
-                area.x,
-                area.y,
-            ],
-            size: [
-                area.width,
-                area.height,
-            ],
-            uv_position: [
-                value.source.x,
-                value.source.y,
-            ],
-            uv_size: [
-                value.source.width,
-                value.source.height,
-            ],
-            color: value.color.decompose(),
-            rotation: value.rotation
-        }
-    }
-}
-
-impl From<DrawData2D> for QuadInstance {
-    fn from(value: DrawData2D) -> Self {
-        QuadInstance::from(&value)
-    }
-}

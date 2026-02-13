@@ -6,6 +6,7 @@ mod graphics_context;
 mod frame;
 mod frame_cache;
 mod model_cache;
+mod util;
 
 mod prelude {
     pub use std::marker::PhantomData;
@@ -28,6 +29,7 @@ mod prelude {
     pub use frame_cache::*;
     pub use model_cache::*;
     pub use texture_container::*;
+    pub use super::util::*;
 }
 
 pub use texture_container::{

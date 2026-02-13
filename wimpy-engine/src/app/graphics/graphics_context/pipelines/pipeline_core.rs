@@ -72,16 +72,24 @@ impl RenderPipelines {
 
 #[repr(C)]
 #[derive(Debug,Copy,Clone,Pod,Zeroable)]
-pub struct MatrixTransformUniform {
-    pub view_projection: [[f32;4];4]
+pub struct TransformUniform {
+    pub value: [[f32;4];4]
 }
 
-impl MatrixTransformUniform {
-    pub fn placeholder() -> Self {
-        return Self {
-            view_projection: Default::default()
+impl Default for TransformUniform {
+    fn default() -> Self {
+        Self {
+            value: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
         }
     }
+}
+
+impl TransformUniform {
     pub fn create_ortho(size: (u32,u32)) -> Self {
         let (width,height) = size;
 
@@ -95,7 +103,7 @@ impl MatrixTransformUniform {
         ).into();
 
         return Self {
-            view_projection
+            value: view_projection
         };
     }
 }

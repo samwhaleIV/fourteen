@@ -1,17 +1,10 @@
 pub const UNIFORM_BUFFER_ALIGNMENT: usize = 256;
 pub const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 pub const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
-
 pub const DIFFUSE_TEXTURE_BIND_GROUP_ENTRY_INDEX: u32 = 0; //Group 0, index 0
 pub const DIFFUSE_SAMPLER_BIND_GROUP_ENTRY_INDEX: u32 = 1; //Group 0, index 1
-
 pub const LIGHTMAP_TEXTURE_BIND_GROUP_ENTRY_INDEX: u32 = 2; //Group 0, index 2
 pub const LIGHTMAP_SAMPLER_BIND_GROUP_ENTRY_INDEX: u32 = 3; //Group 0, index 2
-
 pub const CAMERA_UNIFORM_BIND_GROUP_ENTRY_INDEX: u32 =  0; //Group 1, index 0
 
-pub const DEFAULT_COMMAND_BUFFER_SIZE: usize = 32;
-pub const DEFAULT_DRAW_DATA_SET_BUFFER_SIZE: usize = 32;
-pub const CONCURRENT_DRAW_BUFFER_CAPACITY: usize = 32;
-
-pub const CONCURRENT_COMMAND_BUFFERS_PER_PIPELINE: usize = 4;
+pub const DEFAULT_DOUBLE_BUFFER_SIZE: usize = 1024;

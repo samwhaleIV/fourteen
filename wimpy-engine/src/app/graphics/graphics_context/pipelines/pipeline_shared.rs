@@ -4,7 +4,7 @@ pub struct SharedPipeline {
     texture_layout: BindGroupLayout,
     uniform_layout: BindGroupLayout,
     uniform_bind_group: BindGroup,
-    uniform_buffer: DoubleBuffer<MatrixTransformUniform>
+    uniform_buffer: DoubleBuffer<TransformUniform>
 }
 
 // Not really a render pipeline. What're you going to do about it? Cry?
@@ -109,7 +109,7 @@ impl SharedPipeline {
         self.uniform_buffer.reset();
     }
 
-    pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<MatrixTransformUniform> {
+    pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {
         return &mut self.uniform_buffer;
     }
 

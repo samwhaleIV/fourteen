@@ -22,7 +22,8 @@ impl<T,const INNER_CAPACITY: usize> VecPool<T,INNER_CAPACITY> {
         }
     }
 
-    pub fn return_item(&mut self,item: Vec<T>) {
+    pub fn return_item(&mut self,mut item: Vec<T>) {
+        item.clear();
         self.values.push(item);
     }
 }
