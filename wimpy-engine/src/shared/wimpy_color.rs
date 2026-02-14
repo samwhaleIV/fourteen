@@ -94,3 +94,14 @@ impl WimpyColor {
         a: u8::MAX,
     };
 }
+
+impl From<WimpyColor> for wgpu::Color {
+    fn from(value: WimpyColor) -> Self {
+        return Self {
+            r: value.r as f64 / u8::MAX as f64,
+            g: value.g as f64 / u8::MAX as f64,
+            b: value.b as f64 / u8::MAX as f64,
+            a: value.a as f64 / u8::MAX as f64
+        }
+    }
+}

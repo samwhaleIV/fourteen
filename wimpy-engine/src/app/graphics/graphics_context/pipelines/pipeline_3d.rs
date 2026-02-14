@@ -34,19 +34,16 @@ impl PipelineController for Pipeline3D {
     }
 }
 
-pub struct FrameRenderPass3D<'gc,TFrame> {
+pub struct FrameRenderPass3D<'gc> {
     context: RenderPassContext<'gc>,
     render_pass: RenderPass<'gc>,
-    frame: TFrame,
-    has_transform_bind: bool
+    has_transform_bind: bool,
+    frame_size: (u32,u32)
 }
 
-impl<'gc,TFrame> FrameRenderPass<'gc,TFrame> for FrameRenderPass3D<'gc,TFrame>
-where 
-    TFrame: MutableFrame
-{
+impl<'gc> FrameRenderPass<'gc> for FrameRenderPass3D<'gc> {
     fn create(
-        frame: TFrame,
+        frame_size: (u32,u32),
         mut render_pass: RenderPass<'gc>,
         context: RenderPassContext<'gc>
     ) -> Self {
@@ -69,17 +66,11 @@ where
         );
 
         return Self {
+            frame_size,
             context,
             render_pass,
-            frame,
             has_transform_bind: false,
         }
-    }
-
-    fn finish(
-        self
-    ) -> TFrame {
-        return self.frame;
     }
 }
 
@@ -107,10 +98,7 @@ pub enum TextureStrategy {
     LightmapToDiffuse,
 }
 
-impl<TFrame> FrameRenderPass3D<'_,TFrame>
-where 
-    TFrame: MutableFrame
-{
+impl FrameRenderPass3D<'_> {
     pub fn set_transform(&mut self,transform: TransformUniform) {
         let uniform_buffer_range = self.context.pipelines
             .get_shared_mut()

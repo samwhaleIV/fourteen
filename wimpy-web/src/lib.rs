@@ -16,12 +16,9 @@ fn main() {
     spawn_local(async {
         use std::path::Path;
 
-
-        let wimpy_app = PlaceholderApp {};
-
         let manifest_path = Path::new(MANIFEST_PATH);
 
-        let _ = match web_app::WebApp::<PlaceholderApp>::run::<PlaceholderConfig>(wimpy_app,Some(manifest_path),web_app::ResizeConfig::FitWindow).await {
+        let _ = match web_app::WebApp::<PlaceholderApp>::run::<PlaceholderConfig>(Some(manifest_path),web_app::ResizeConfig::FitWindow).await {
             Ok(app) => app,
             Err(error) => {
                 log::error!("Could not create wimpy web app: {:?}",error);

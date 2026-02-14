@@ -10,7 +10,11 @@ impl AssetManager {
         self.get_virtual_asset::<ImageAssetReference>(&Rc::from(name))
     }
 
-    pub fn get_cached_image(
+    pub fn get_image_slice_reference(&self,name: &str) -> Result<VirtualImageSliceAsset,AssetManagerError> {
+        self.get_virtual_asset::<VirtualImageSliceAsset>(&Rc::from(name))
+    }
+
+    pub(super) fn get_cached_image(
         &self,
         key: HardAssetKey,
         name: &Rc<str>,
@@ -65,10 +69,6 @@ impl AssetManager {
     ) -> Result<TextureFrame,AssetManagerError> {
         let texture = self.get_cached_image(reference.key,&reference.name)?;
         return Ok(texture);
-    }
-
-    pub fn get_image_slice_reference(&self,name: &str) -> Result<VirtualImageSliceAsset,AssetManagerError> {
-        self.get_virtual_asset::<VirtualImageSliceAsset>(&Rc::from(name))
     }
 
     pub async fn load_image_slice<IO: WimpyIO>(

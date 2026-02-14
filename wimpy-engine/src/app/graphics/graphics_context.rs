@@ -11,18 +11,20 @@ use super::prelude::*;
 pub struct OutputBuilder<'gc> {
     graphics_context: &'gc mut GraphicsContext,
     encoder: CommandEncoder,
-    output_frame: OutputFrame,
-    output_frame_surface: SurfaceTexture,
+    output_surface: SurfaceTexture,
 }
 
-pub trait FrameRenderPass<'rp,TFrame: MutableFrame> {
+pub struct OutputBuilderContext<'gc> {
+    pub builder: OutputBuilder<'gc>,
+    pub frame: OutputFrame,
+}
+
+pub trait FrameRenderPass<'rp> {
     fn create(
-        frame: TFrame,
+        frame_size: (u32,u32),
         render_pass: RenderPass<'rp>,
         context: RenderPassContext<'rp>
     ) -> Self;
-
-    fn finish(self) -> TFrame;
 }
 
 pub struct RenderPassContext<'gc> {
@@ -200,10 +202,14 @@ impl GraphicsContext {
     pub fn get_collision_mesh<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Option<&'a CollisionShape> {
         self.model_cache.collision_shapes.get(model_cache_reference)
     }
+
+    pub fn get_missing_texture(&self) -> TextureFrame {
+        return self.runtime_textures.missing.clone();
+    }
 }
 
 impl GraphicsContext {
-    pub fn create_output_frame<'gc>(&'gc mut self,clear_color: wgpu::Color) -> Result<OutputBuilder<'gc>,SurfaceError> {
+    pub fn create_output_builder<'gc>(&'gc mut self,clear_color: WimpyColor) -> Result<OutputBuilderContext<'gc>,SurfaceError> {
         let surface = self.graphics_provider.get_output_surface()?;
 
         // Note: size is already validated by the graphics provider
@@ -215,16 +221,20 @@ impl GraphicsContext {
         let output_frame = FrameFactory::create_output(
             size,
             cache_reference,
-            clear_color
+            clear_color.into()
         );
 
-        let output_builder = OutputBuilder {
-            output_frame_surface: surface,
-            encoder: self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("Render Encoder")
-            }),
-            graphics_context: self,
-            output_frame,
+        let encoder = self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("Render Encoder")
+        });
+
+        let output_builder = OutputBuilderContext {
+            frame: output_frame,
+            builder: OutputBuilder {
+                output_surface: surface,
+                graphics_context: self,
+                encoder
+            },
         };
 
         return Ok(output_builder);
@@ -232,14 +242,19 @@ impl GraphicsContext {
 }
 
 impl<'gc> OutputBuilder<'gc> {
-    pub fn create_render_pass<'rp,TFrame,TRenderPass>(&'rp mut self,frame: TFrame) -> Result<TRenderPass,FrameCacheError>
+
+    fn start_pass<'rp,TRenderPass,TFrame>(
+        graphics_context: &'rp mut GraphicsContext,
+        encoder: &'rp mut CommandEncoder,
+        frame: &'rp TFrame
+    ) -> Result<TRenderPass,FrameCacheError>
     where
         TFrame: MutableFrame,
-        TRenderPass: FrameRenderPass<'rp,TFrame>
+        TRenderPass: FrameRenderPass<'rp>
     {
-        let view = self.graphics_context.frame_cache.get(frame.get_cache_reference())?.get_view();
+        let view = graphics_context.frame_cache.get(frame.get_cache_reference())?.get_view();
 
-        let render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
+        let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
@@ -259,33 +274,49 @@ impl<'gc> OutputBuilder<'gc> {
         });
 
         let render_pass_context = RenderPassContext {
-            model_cache: &self.graphics_context.model_cache,
-            frame_cache: &self.graphics_context.frame_cache,
-            pipelines: &mut self.graphics_context.pipelines,
-            textures: &self.graphics_context.runtime_textures,
-            bind_groups: &mut self.graphics_context.bind_group_cache,
-            graphics_provider: &self.graphics_context.graphics_provider
+            model_cache: &graphics_context.model_cache,
+            frame_cache: &graphics_context.frame_cache,
+            pipelines: &mut graphics_context.pipelines,
+            textures: &graphics_context.runtime_textures,
+            bind_groups: &mut graphics_context.bind_group_cache,
+            graphics_provider: &graphics_context.graphics_provider
         };
 
         let frame_render_pass = TRenderPass::create(
-            frame,
+            frame.get_input_size(),
             render_pass,
             render_pass_context
         );
         return Ok(frame_render_pass);
     }
 
-    pub fn present(self) {
-        let graphics_context = self.graphics_context;
+    pub fn start_pass_2d<'rp,TFrame>(&'rp mut self,frame: &'rp TFrame) -> Result<FrameRenderPass2D<'rp>,FrameCacheError>
+    where
+        TFrame: MutableFrame
+    {
+        return Self::start_pass(self.graphics_context,&mut self.encoder,frame);
+    }
+
+    pub fn start_pass_3d<'rp,TFrame>(&'rp mut self,frame: &'rp TFrame) -> Result<FrameRenderPass3D<'rp>,FrameCacheError>
+    where
+        TFrame: MutableFrame
+    {
+        return Self::start_pass(self.graphics_context,&mut self.encoder,frame);
+    }
+}
+
+impl OutputBuilderContext<'_> {
+    pub fn present_output_surface(self) {
+        let graphics_context = self.builder.graphics_context;
 
         let queue = graphics_context.graphics_provider.get_queue();
         graphics_context.pipelines.write_pipeline_buffers(queue);
-        queue.submit(std::iter::once(self.encoder.finish()));
+        queue.submit(std::iter::once(self.builder.encoder.finish()));
 
-        if let Err(error) = graphics_context.frame_cache.remove(self.output_frame.get_cache_reference()) {
+        if let Err(error) = graphics_context.frame_cache.remove(self.frame.get_cache_reference()) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
-        self.output_frame_surface.present();
+        self.builder.output_surface.present();
 
         graphics_context.pipelines.reset_pipeline_states();
     }

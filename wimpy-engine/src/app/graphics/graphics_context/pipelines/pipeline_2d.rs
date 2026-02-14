@@ -11,10 +11,9 @@ pub struct Pipeline2D {
     instance_buffer: DoubleBuffer<QuadInstance>,
 }
 
-pub struct FrameRenderPass2D<'a,TFrame> {
-    context: RenderPassContext<'a>,
-    render_pass: RenderPass<'a>,
-    frame: TFrame,
+pub struct FrameRenderPass2D<'gc> {
+    context: RenderPassContext<'gc>,
+    render_pass: RenderPass<'gc>,
     needs_sampler_update: bool,
     sampler_mode: SamplerMode,
     current_sampling_frame: FrameCacheReference,
@@ -53,14 +52,11 @@ impl PipelineController for Pipeline2D {
     }
 }
 
-impl<'a,TFrame> FrameRenderPass<'a,TFrame> for FrameRenderPass2D<'a,TFrame>
-where 
-    TFrame: MutableFrame
-{
+impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
     fn create(
-        frame: TFrame,
-        mut render_pass: RenderPass<'a>,
-        mut context: RenderPassContext<'a>
+        frame_size: (u32,u32),
+        mut render_pass: RenderPass<'gc>,
+        mut context: RenderPassContext<'gc>
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
         render_pass.set_pipeline(&pipeline_2d.render_pipeline); 
@@ -80,7 +76,7 @@ where
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
 
-        let transform = TransformUniform::create_ortho(frame.get_input_size());
+        let transform = TransformUniform::create_ortho(frame_size);
         let uniform_buffer_range = context.get_shared_mut().get_uniform_buffer().push(transform);
         let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
 
@@ -95,21 +91,14 @@ where
         return Self {
             context,
             render_pass,
-            frame,
             needs_sampler_update: true,
             sampler_mode: SamplerMode::NearestWrap,
             current_sampling_frame: current_sampling_frame
         }
     }
-
-    fn finish(
-        self
-    ) -> TFrame {
-        return self.frame;
-    }
 }
 
-impl<TFrame> FrameRenderPass2D<'_,TFrame> {
+impl FrameRenderPass2D<'_> {
     fn update_sampler_if_needed(&mut self,reference: FrameCacheReference) -> Result<(),()> {
         if !(self.needs_sampler_update || self.current_sampling_frame != reference) {
             return Err(());

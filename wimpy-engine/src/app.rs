@@ -18,6 +18,8 @@ use input::{
 
 use wam::*;
 
+use crate::app::graphics::TextureFrame;
+
 #[derive(Debug)]
 pub enum FileError {
     Access,
@@ -46,15 +48,29 @@ pub struct WimpyContext<'a> {
     pub assets: &'a mut AssetManager
 }
 
-#[derive(Debug)]
-pub enum WimpyAppLoadError {
-    ImageError(FileError)
+impl WimpyContext<'_> {
+    pub async fn load_image_or_default<IO: WimpyIO>(&mut self,name: &str) -> TextureFrame {
+        let reference = match self.assets.get_image_reference(name) {
+            Ok(value) => value,
+            Err(error) => {
+                log::error!("Could not load image: {:?}",error);
+                return self.graphics.get_missing_texture();
+            },
+        };
+        return match self.assets.load_image::<IO>(&reference,self.graphics).await {
+            Ok(value) => value,
+            Err(error) => {
+                log::error!("Could not load image: {:?}",error);
+                return self.graphics.get_missing_texture();
+            },
+        };
+    }
 }
 
 pub trait WimpyApp<IO>
 where
     IO: WimpyIO
 {
-    fn load(&mut self,context: &WimpyContext) -> impl Future<Output = Result<(),WimpyAppLoadError>>;
-    fn update(&mut self,context: &WimpyContext);
+    fn load(context: &mut WimpyContext) -> impl Future<Output = Self>;
+    fn update(&mut self,context: &mut WimpyContext);
 }

@@ -91,7 +91,9 @@ pub enum Alignment {
 pub enum SizeMode {
     Absolute,
     RelativeWidth,
-    RelativeHeight
+    RelativeHeight,
+    RelativeSmallest,
+    RelativeLargest
 }
 
 #[derive(Copy,Clone)]
@@ -139,6 +141,15 @@ impl Default for Size {
     }
 }
 
+impl From<u32> for Size {
+    fn from(value: u32) -> Self {
+        return Self {
+            value: value as Unit,
+            mode: SizeMode::Absolute,
+        }
+    }
+}
+
 impl Size {
     pub fn of_parent_height(value: Unit) -> Self {
         return Self {
@@ -150,6 +161,18 @@ impl Size {
         return Self {
             value,
             mode: SizeMode::RelativeWidth,
+        }
+    }
+    pub fn of_parent_smallest(value: Unit) -> Self {
+        return Self {
+            value,
+            mode: SizeMode::RelativeSmallest,
+        }
+    }
+    pub fn of_parent_largest(value: Unit) -> Self {
+        return Self {
+            value,
+            mode: SizeMode::RelativeLargest,
         }
     }
 }
@@ -230,9 +253,21 @@ fn dimension(
     child: Size
 ) -> Unit {
     return match child.mode {
-        SizeMode::Absolute => child.value,
-        SizeMode::RelativeWidth => parent_value.0 * child.value,
-        SizeMode::RelativeHeight => parent_value.1 * child.value,
+        SizeMode::Absolute => {
+            child.value
+        },
+        SizeMode::RelativeWidth => {
+            parent_value.0 * child.value
+        },
+        SizeMode::RelativeHeight => {
+            parent_value.1 * child.value
+        },
+        SizeMode::RelativeSmallest => {
+            parent_value.0.min(parent_value.1) * child.value
+        },
+        SizeMode::RelativeLargest => {
+            parent_value.0.max(parent_value.1) * child.value
+        },
     }
 }
 

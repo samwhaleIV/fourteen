@@ -52,7 +52,6 @@ struct InnerApp<TWimpyApp> {
 }
 
 async fn async_load<TWimpyApp,TConfig>(
-    mut wimpy_app: TWimpyApp,
     manifest_path: Option<&Path>,
 ) -> Option<InnerApp<TWimpyApp>>
 where
@@ -116,15 +115,12 @@ where
         // Reminder: Set input type ahead of time on specific platforms.
     );
 
-    if let Err(error) = wimpy_app.load(&WimpyContext {
+    let wimpy_app = TWimpyApp::load(&mut WimpyContext {
         graphics: &mut graphics_context,
         storage: &mut kvs_store,
         input: &mut input_manager,
         assets: &mut asset_manager
-    }).await {
-        log::error!("Failure to load wimpy app: {:?}",error);
-        return None;
-    }
+    }).await;
 
     Some(InnerApp {
         sdl_context,
@@ -140,12 +136,12 @@ where
     })
 }
 
-pub fn run_desktop_app<TWimpyApp,TConfig>(wimpy_app: TWimpyApp,wam_manifest_path: Option<&Path>)
+pub fn run_desktop_app<TWimpyApp,TConfig>(wam_manifest_path: Option<&Path>)
 where
     TWimpyApp: WimpyApp<DekstopAppIO>,
     TConfig: GraphicsContextConfig
 {
-    if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(wimpy_app,wam_manifest_path)) {
+    if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(wam_manifest_path)) {
         inner_app.start_loop();
     }
 }
@@ -176,7 +172,7 @@ where
 
         self.input_manager.update(gamepad_state);
 
-        self.wimpy_app.update(&WimpyContext {
+        self.wimpy_app.update(&mut WimpyContext {
             graphics: &mut self.graphics_context,
             storage: &mut self.kvs_store,
             input: &mut self.input_manager,

@@ -68,14 +68,11 @@ pub enum WebAppError {
     DocumentNotFound,
     CanvasNotFound,
     InvalidCanvasElement,
-    #[allow(unused)]
-    WGPUInitFailure(GraphicsProviderError),
+    WGPUInitFailure,
     SurfaceCreationFailure,
     MouseEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
-    #[allow(unused)]
-    WimpyAppLoadFailure(WimpyAppLoadError)
 }
 
 pub struct WebApp<TWimpyApp> {
@@ -175,7 +172,7 @@ impl<TWimpyApp> WebApp<TWimpyApp>
 where
     TWimpyApp: WimpyApp<WebAppIO> + 'static,
 {
-    pub async fn create_app<TConfig>(mut wimpy_app: TWimpyApp,manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
+    pub async fn create_app<TConfig>(manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
         TConfig: GraphicsContextConfig
     {
@@ -197,7 +194,10 @@ where
             surface,
         }).await {
             Ok(value) => Ok(value),
-            Err(error) => Err(WebAppError::WGPUInitFailure(error)),
+            Err(error) => {
+                log::error!("Graphics provider error: {:?}",error);
+                return Err(WebAppError::WGPUInitFailure);
+            },
         }?;
 
         let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
@@ -208,14 +208,12 @@ where
 
         let mut asset_manager = AssetManager::load_or_default::<WebAppIO>(manifest_path).await;
 
-        if let Err(error) = wimpy_app.load(&WimpyContext {
+        let wimpy_app = TWimpyApp::load(&mut WimpyContext {
             graphics: &mut graphics_context,
             storage: &mut kvs_store,
             input: &mut input_manager,
             assets: &mut asset_manager
-        }).await {
-            return Err(WebAppError::WimpyAppLoadFailure(error));
-        }
+        }).await;
 
         return Ok(Rc::new(RefCell::new(Self {
             gamepad_manager,
@@ -240,11 +238,11 @@ where
         return Ok(());
     }
 
-    pub async fn run<TConfig>(wimpy_app: TWimpyApp,manifest_path: Option<&Path>,resize_config: ResizeConfig) -> Result<(),WebAppError>
+    pub async fn run<TConfig>(manifest_path: Option<&Path>,resize_config: ResizeConfig) -> Result<(),WebAppError>
     where
         TConfig: GraphicsContextConfig
     {
-        let app = Self::create_app::<TConfig>(wimpy_app,manifest_path).await?;
+        let app = Self::create_app::<TConfig>(manifest_path).await?;
         app.borrow_mut().update_size();
         Self::setup_events(&app,resize_config)?;
         Self::start_render_loop(app.clone())?;
@@ -274,7 +272,7 @@ where
     fn render_frame(&mut self) {
         self.update_input();
 
-        self.wimpy_app.update(&WimpyContext {
+        self.wimpy_app.update(&mut WimpyContext {
             graphics: &mut self.graphics_context,
             storage: &mut self.kvs_store,
             input: &mut self.input_manager,

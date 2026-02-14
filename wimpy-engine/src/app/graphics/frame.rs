@@ -47,7 +47,7 @@ pub struct LongLifeFrame {
 pub trait FrameReference {
     fn get_cache_reference(&self) -> FrameCacheReference;
 
-    /// The size of the frame as requested by the user.
+    /// The size of the frame as requested by the user. In the case of an imported texture frame, this is its original size.
     fn get_input_size(&self) -> (u32,u32);
 
     /// The size of the real texture this frame renders to.
@@ -61,6 +61,28 @@ pub trait FrameReference {
             input.0 as f32 / output.0 as f32,
             input.1 as f32 / output.1 as f32,
         )
+    }
+
+    fn width(&self) -> u32 {
+        return self.get_input_size().0;
+    }
+
+    fn height(&self) -> u32 {
+        return self.get_input_size().1;
+    }
+
+    fn size(&self) -> (u32,u32) {
+        return self.get_input_size();
+    }
+
+    fn area(&self) -> WimpyArea {
+        let size = self.get_input_size();
+        return WimpyArea {
+            x: 0.0,
+            y: 0.0,
+            width: size.0 as f32,
+            height: size.1 as f32
+        }
     }
 }
 

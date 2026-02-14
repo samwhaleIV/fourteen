@@ -30,7 +30,5 @@ pub fn main() {
     builder.target(Target::Stdout);
     builder.init();
 
-    let wimpy_app = PlaceholderApp::default();
-
-    desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(wimpy_app,Some(manifest_path));
+    desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(Some(manifest_path));
 }
