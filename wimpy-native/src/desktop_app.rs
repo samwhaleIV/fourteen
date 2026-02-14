@@ -7,21 +7,17 @@ use std::{
 };
 
 use sdl2::{
-    EventPump,
-    GameControllerSubsystem,
-    Sdl,
-    controller::{
+    EventPump, GameControllerSubsystem, Sdl, VideoSubsystem, controller::{
         Axis,
         Button,
         GameController
-    },
-    event::{
+    }, event::{
         Event,
         WindowEvent
-    },
+    }
 };
 
-use wgpu::Limits;
+use wgpu::{Instance, Limits, Surface};
 
 use wimpy_engine::app::*;
 use wimpy_engine::app::wam::*;
@@ -39,29 +35,87 @@ enum EventLoopOperation {
 }
 
 struct InnerApp<TWimpyApp> {
+    sdl: SDLSystems,
     wimpy_app: TWimpyApp,
     active_gamepad: Option<GameController>,
     unused_gamepads: HashMap<u32,GameController>,
     graphics_context: GraphicsContext,
-    game_controller_subsystem: Option<GameControllerSubsystem>,
     input_manager: InputManager,
     asset_manager: AssetManager,
     window_id: u32,
-    kvs_store: KeyValueStore,
-    sdl_context: Sdl,
+    key_value_store: KeyValueStore,
+}
+
+struct SDLSystems {
+    main: Sdl,
+    video: VideoSubsystem,
+    game_controller: Option<GameControllerSubsystem>,
 }
 
 async fn async_load<TWimpyApp,TConfig>(
     manifest_path: Option<&Path>,
+    instance: Instance,
+    surface: Surface<'static>,
+    window_id: u32,
+    window_size: (u32,u32),
+    sdl_systems: SDLSystems
 ) -> Option<InnerApp<TWimpyApp>>
 where
     TConfig: GraphicsContextConfig,
     TWimpyApp: WimpyApp<DekstopAppIO>
 {
-    let sdl_context = sdl2::init().expect("sdl context creation");
-    let video_subsystem = sdl_context.video().expect("sdl video subsystem creation");
+    let mut graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
+        instance,
+        surface,
+        limits: Limits::defaults(),
+    }).await {
+        Ok(device) => device,
+        Err(error) => {
+            log::error!("Failure to initialize wgpu: {:?}",error);
+            return None;
+        }
+    };
+    graphics_provider.set_size(window_size.0,window_size.1);
 
-    let game_controller_subsystem = match sdl_context.game_controller() {
+    let mut asset_manager = AssetManager::load_or_default::<DekstopAppIO>(manifest_path).await;
+
+    let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
+    let mut key_value_store = KeyValueStore::default();
+
+    let mut input_manager = InputManager::with_input_type_hint(
+        InputType::Unknown
+        // Reminder: Set input type ahead of time on specific platforms.
+    );
+
+    let wimpy_app = TWimpyApp::load(&mut WimpyContext {
+        graphics: &mut graphics_context,
+        storage: &mut key_value_store,
+        input: &mut input_manager,
+        assets: &mut asset_manager
+    }).await;
+
+    return Some(InnerApp {
+        sdl: sdl_systems,
+        wimpy_app,
+        active_gamepad: None,
+        unused_gamepads: Default::default(),
+        graphics_context,
+        input_manager,
+        asset_manager,
+        window_id,
+        key_value_store,
+    });
+}
+
+pub fn run_desktop_app<TWimpyApp,TConfig>(manifest: Option<&Path>)
+where
+    TWimpyApp: WimpyApp<DekstopAppIO>,
+    TConfig: GraphicsContextConfig
+{
+    let sdl = sdl2::init().expect("sdl context creation");
+    let video_subsystem = sdl.video().expect("sdl video subsystem creation");
+
+    let game_controller_subsystem = match sdl.game_controller() {
         Ok(value) => Some(value),
         Err(error) => {
             log::error!("Could not initialize game controller subsystem: {}",error);
@@ -69,7 +123,13 @@ where
         },
     };
 
-    let window = video_subsystem
+    let sdl_systems = SDLSystems {
+        game_controller: game_controller_subsystem,
+        video: video_subsystem,
+        main: sdl
+    };
+
+    let window = sdl_systems.video
         .window(
             WINDOW_TITLE,
             MINIMUM_WINDOW_SIZE.0,
@@ -90,58 +150,13 @@ where
         instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::from_window(&window).unwrap()).expect("sdl window surface creation")
     };
 
-    let mut graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
+    if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(
+        manifest,
         instance,
-        surface,
-        limits: Limits::defaults(),
-    }).await {
-        Ok(device) => device,
-        Err(error) => {
-            log::error!("Failure to initialize wgpu: {:?}",error);
-            return None;
-        }
-    };
-
-    let window_size = window.size();
-    graphics_provider.set_size(window_size.0,window_size.1);
-
-    let mut asset_manager = AssetManager::load_or_default::<DekstopAppIO>(manifest_path).await;
-
-    let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
-    let mut kvs_store = KeyValueStore::default();
-
-    let mut input_manager = InputManager::with_input_type_hint(
-        InputType::Unknown
-        // Reminder: Set input type ahead of time on specific platforms.
-    );
-
-    let wimpy_app = TWimpyApp::load(&mut WimpyContext {
-        graphics: &mut graphics_context,
-        storage: &mut kvs_store,
-        input: &mut input_manager,
-        assets: &mut asset_manager
-    }).await;
-
-    Some(InnerApp {
-        sdl_context,
-        active_gamepad: None,
-        wimpy_app,
-        asset_manager,
-        unused_gamepads: Default::default(),
-        graphics_context,
-        game_controller_subsystem,
-        window_id: window.id(),
-        input_manager,
-        kvs_store
-    })
-}
-
-pub fn run_desktop_app<TWimpyApp,TConfig>(wam_manifest_path: Option<&Path>)
-where
-    TWimpyApp: WimpyApp<DekstopAppIO>,
-    TConfig: GraphicsContextConfig
-{
-    if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(wam_manifest_path)) {
+        surface,window.id(),
+        window.size(),
+        sdl_systems
+    )) {
         inner_app.start_loop();
     }
 }
@@ -151,7 +166,7 @@ where
     TWimpyApp: WimpyApp<DekstopAppIO>
 {
     fn start_loop(&mut self) {
-        let mut event_pump = self.sdl_context.event_pump().expect("sdl event pump creation");
+        let mut event_pump = self.sdl.main.event_pump().expect("sdl event pump creation");
         'event_loop: loop {
             match self.poll_events(&mut event_pump) {
                 EventLoopOperation::Continue => {
@@ -174,7 +189,7 @@ where
 
         self.wimpy_app.update(&mut WimpyContext {
             graphics: &mut self.graphics_context,
-            storage: &mut self.kvs_store,
+            storage: &mut self.key_value_store,
             input: &mut self.input_manager,
             assets: &mut self.asset_manager
         });
@@ -215,7 +230,7 @@ where
                     return EventLoopOperation::Terminate;
                 },
                 Event::ControllerDeviceAdded { which, .. } => {
-                    if let Some(gamepad_system) = &self.game_controller_subsystem {
+                    if let Some(gamepad_system) = &self.sdl.game_controller {
                         match gamepad_system.open(which) {
                             Ok(gamepad) => {
                                 log::info!(

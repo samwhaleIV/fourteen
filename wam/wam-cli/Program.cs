@@ -229,7 +229,7 @@ namespace WAM.CLI {
             var settings = new WamManifestSettings(
                 Source: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets",
                 Destination: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets\debug-output",
-                TargetNamespace: "alias"
+                TargetNamespace: "test-namespace"
             );
             CreateManifestPackage(settings);
         }

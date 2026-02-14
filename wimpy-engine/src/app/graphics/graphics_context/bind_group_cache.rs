@@ -106,6 +106,14 @@ fn create_single_channel_bind_group(
             BindGroupEntry {
                 binding: BG0_CH0_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel.sampler),
+            },
+            BindGroupEntry {
+                binding: BG0_CH1_TEXTURE_INDEX,
+                resource: BindingResource::TextureView(channel.texture),
+            },
+            BindGroupEntry {
+                binding: BG0_CH1_SAMPLER_INDEX,
+                resource: BindingResource::Sampler(channel.sampler),
             }
         ],
     });
