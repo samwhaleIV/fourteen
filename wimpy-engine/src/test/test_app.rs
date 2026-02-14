@@ -1,4 +1,8 @@
-pub struct PlaceholderApp {}
+use crate::app::*;
+use crate::app::graphics::GraphicsContextConfig;
+
+#[derive(Default)]
+pub struct PlaceholderApp;
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
 where

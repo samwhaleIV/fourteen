@@ -10,6 +10,7 @@ mod prelude {
     pub use crate::impl_hard_asset_resolver;
     pub use crate::impl_asset_reference_resolver;
     pub use std::path::PathBuf;
+    pub use std::path::Path;
     pub use serde::Deserialize;
     pub use std::rc::Rc;
     pub use super::*;
@@ -29,3 +30,4 @@ mod prelude {
 }
 
 pub use asset_manager::*;
+pub use wam_manifest::*;

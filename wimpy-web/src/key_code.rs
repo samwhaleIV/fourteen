@@ -1,5 +1,5 @@
 use phf::phf_map;
-use wimpy_engine::input::KeyCode as WK;
+use wimpy_engine::app::input::KeyCode as WK;
 
 pub static KEY_CODES: phf::Map<&'static str,WK> = phf_map! {
     // Letters

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use std::{
     cell::RefCell,
     rc::Rc
@@ -24,7 +26,6 @@ use web_sys::{
 };
 
 use wgpu::{
-    Color,
     CopyExternalImageDestInfo,
     CopyExternalImageSourceInfo,
     ExternalImageSource,
@@ -34,20 +35,10 @@ use wgpu::{
     SurfaceTarget
 };
 
-use wimpy_engine::{
-    WimpyApp,
-    WimpyAppLoadError,
-    WimpyContext,
-    WimpyFileError,
-    WimpyIO,
-    input::*,
-    kvs::KeyValueStore,
-    wam::{
-        AssetManager,
-        WamManifest
-    },
-    wgpu::*
-};
+use wimpy_engine::app::*;
+use wimpy_engine::app::graphics::*;
+use wimpy_engine::app::input::*;
+use wimpy_engine::app::wam::*;
 
 const CANVAS_ID: &'static str = "main-canvas";
 
@@ -113,8 +104,8 @@ impl TextureData for ExternalImageSourceWrapper {
     fn size(&self) -> (u32,u32) {
         return (self.value.width(),self.value.height());
     }
-    
-    fn write_to_queue(self,parameters: &wimpy_engine::wgpu::TextureDataWriteParameters) {
+
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
         parameters.queue.copy_external_image_to_texture(
             &CopyExternalImageSourceInfo {
                 source: self.value,
@@ -135,42 +126,45 @@ impl TextureData for ExternalImageSourceWrapper {
 }
 
 impl WimpyIO for WebAppIO {
-    async fn load_image_file(path: &str) -> Result<impl TextureData,WimpyFileError> {
+    async fn save_file(path: &Path,data: &[u8])-> Result<(),FileError> {
+        todo!()
+    }
+
+    async fn load_binary_file(path: &Path) -> Result<Vec<u8>,FileError> {
+        todo!()
+    }
+
+    async fn load_text_file(path: &Path) -> Result<String,FileError> {
+        todo!()
+    }
+
+    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
+        let path_str: &str = match path.to_str() {
+            Some(value) => value,
+            None => return Err(FileError::InvalidPath),
+        };
         let window = get_window().expect("window exists");
 
         let image_element = HtmlImageElement::new().expect("html image element creation");
-        image_element.set_src(path);
+        image_element.set_src(path_str);
 
         let Ok(bitmap) = get_image_bitmap(&window,&image_element).await else {
-            log::error!("Could not create ImageBitmap for '{}'.",path);
-            return Err(WimpyFileError::Unknown); 
+            log::error!("Could not create ImageBitmap for '{}'.",path_str);
+            return Err(FileError::Unknown); 
         };
 
         return Ok(ExternalImageSourceWrapper {
             value: ExternalImageSource::ImageBitmap(bitmap),
         });
     }
-    
-    async fn save_file(path: &str,data: &[u8])-> Result<(),WimpyFileError> {
-        todo!()
-    }
-    
-    async fn load_binary_file(path: &str) -> Result<Vec<u8>,WimpyFileError> {
-        todo!()
-    }
-    
-    async fn load_text_file(path: &str) -> Result<String,WimpyFileError> {
-        todo!()
-    }
-    
-    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),WimpyFileError> {
-        todo!()
-    }
-    
-    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),WimpyFileError> {
+
+    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),FileError> {
         todo!()
     }
 
+    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),FileError> {
+        todo!()
+    }
 }
 
 async fn get_image_bitmap(window: &Window,image_element: &HtmlImageElement) -> Result<ImageBitmap,JsValue> {
@@ -181,7 +175,7 @@ impl<TWimpyApp> WebApp<TWimpyApp>
 where
     TWimpyApp: WimpyApp<WebAppIO> + 'static,
 {
-    pub async fn create_app<TConfig>(mut wimpy_app: TWimpyApp,manifest_path: Option<&str>) -> Result<Rc<RefCell<Self>>,WebAppError>
+    pub async fn create_app<TConfig>(mut wimpy_app: TWimpyApp,manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
         TConfig: GraphicsContextConfig
     {
@@ -212,22 +206,7 @@ where
 
         let gamepad_manager = GamepadManager::new();
 
-        let mut asset_manager = AssetManager::create(match manifest_path {
-            Some(path) => match WebAppIO::load_text_file(path).await {
-                Ok(json_text) => match WamManifest::create(&json_text) {
-                    Ok(manifest) => manifest,
-                    Err(error) => {
-                        log::error!("Could not load manifest '{}': {:?}",path,error);
-                        Default::default()
-                    },
-                },
-                Err(error) => {
-                    log::error!("Could not load manifest '{}': {:?}",path,error);
-                    Default::default()
-                },
-            },
-            None => Default::default(),
-        });
+        let mut asset_manager = AssetManager::load_or_default::<WebAppIO>(manifest_path).await;
 
         if let Err(error) = wimpy_app.load(&WimpyContext {
             graphics: &mut graphics_context,
@@ -261,7 +240,7 @@ where
         return Ok(());
     }
 
-    pub async fn run<TConfig>(wimpy_app: TWimpyApp,manifest_path: Option<&str>,resize_config: ResizeConfig) -> Result<(),WebAppError>
+    pub async fn run<TConfig>(wimpy_app: TWimpyApp,manifest_path: Option<&Path>,resize_config: ResizeConfig) -> Result<(),WebAppError>
     where
         TConfig: GraphicsContextConfig
     {

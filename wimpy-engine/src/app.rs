@@ -1,10 +1,12 @@
 pub mod graphics;
 pub mod wam;
 pub mod input;
-pub mod kvs;
+mod kvs;
+
+pub use kvs::*;
 
 use std::path::Path;
-use kvs::*;
+
 use graphics::{
     TextureData,
     GraphicsContext
@@ -22,6 +24,7 @@ pub enum FileError {
     Decode,
     UnsupportedFormat,
     Unknown,
+    InvalidPath
 }
 
 pub trait WimpyIO {

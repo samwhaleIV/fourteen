@@ -51,7 +51,7 @@ impl MissingTexture {
 }
 
 impl TextureData for MissingTexture {
-    fn write_to_queue(&self,parameters: &TextureDataWriteParameters) {
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
         parameters.queue.write_texture(
             TexelCopyTextureInfo {
                 texture: parameters.texture,

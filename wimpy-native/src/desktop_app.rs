@@ -1,7 +1,10 @@
 const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    path::Path
+};
 
 use sdl2::{
     EventPump,
@@ -20,9 +23,10 @@ use sdl2::{
 
 use wgpu::Limits;
 
-use wimpy_engine::{
-    WimpyApp, WimpyContext, WimpyIO, input::*, kvs::KeyValueStore, wam::{self, AssetManager, AssetManagerCreationData, WamManifest}, wgpu::*
-};
+use wimpy_engine::app::*;
+use wimpy_engine::app::wam::*;
+use wimpy_engine::app::input::*;
+use wimpy_engine::app::graphics::*;
 
 use crate::{
     desktop_io::DekstopAppIO,
@@ -102,30 +106,7 @@ where
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let mut asset_manager: AssetManager = match manifest_path {
-        Some(path) => match DekstopAppIO::load_text_file(path).await {
-            Ok(json_text) => match WamManifest::create(&json_text) {
-                Ok(manifest) => {
-                    let mut path_buffer = PathBuf::from(path);
-                    path_buffer.pop();
-                    AssetManager::create::<TConfig>(AssetManagerCreationData {
-                        graphics_provider: &graphics_provider,
-                        content_root: Some(path_buffer),
-                        manifest
-                    })
-                },
-                Err(error) => {
-                    log::error!("Could not parse manifest data '{:?}': {:?}",path,error);
-                    AssetManager::create_without_manifest::<TConfig>(&graphics_provider)
-                },
-            },
-            Err(error) => {
-                log::error!("Could not load manifest file '{:?}': {:?}",path,error);
-                AssetManager::create_without_manifest::<TConfig>(&graphics_provider)
-            },
-        },
-        None => AssetManager::create_without_manifest::<TConfig>(&graphics_provider),
-    };
+    let mut asset_manager = AssetManager::load_or_default::<DekstopAppIO>(manifest_path).await;
 
     let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
     let mut kvs_store = KeyValueStore::default();

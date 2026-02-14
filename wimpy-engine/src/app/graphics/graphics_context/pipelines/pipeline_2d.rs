@@ -161,7 +161,7 @@ impl<TFrame> FrameRenderPass2D<'_,TFrame> {
 
     pub fn set_sampler_mode(&mut self,sampler_mode: SamplerMode) {
         if self.sampler_mode != sampler_mode {
-            self.sampler_mode = self.sampler_mode;
+            self.sampler_mode = sampler_mode;
             self.needs_sampler_update = true;
         }
     }

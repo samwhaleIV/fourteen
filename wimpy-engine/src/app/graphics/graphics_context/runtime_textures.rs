@@ -21,7 +21,7 @@ struct TextureFrameBuilder<'a> {
 }
 
 impl TextureFrameBuilder<'_> {
-    fn create(&mut self,data: &impl TextureData) -> TextureFrame {
+    fn create(&mut self,data: impl TextureData) -> TextureFrame {
         let texture_container = TextureContainer::from_image_unchecked(
             self.graphics_provider,
             self.id_generator.next(),
@@ -50,11 +50,11 @@ impl RuntimeTextures {
         let missing_texture = MissingTexture::create();
 
         return Self {
-            missing: builder.create(&missing_texture),
-            opaque_white: builder.create(&OpaqueWhite),
-            opaque_black: builder.create(&OpaqueBlack),
-            transparent_white: builder.create(&TransparentWhite),
-            transparent_black: builder.create(&TransparentBlack),
+            missing: builder.create(missing_texture),
+            opaque_white: builder.create(OpaqueWhite),
+            opaque_black: builder.create(OpaqueBlack),
+            transparent_white: builder.create(TransparentWhite),
+            transparent_black: builder.create(TransparentBlack),
         }
     }
 }

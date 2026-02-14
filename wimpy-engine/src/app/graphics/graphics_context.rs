@@ -103,7 +103,7 @@ impl GraphicsContext {
 }
 
 impl GraphicsContext {
-    pub fn create_texture_frame(&mut self,texture_data: &impl TextureData) -> Result<TextureFrame,TextureError> {
+    pub fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,TextureError> {
         let texture_id = self.texture_id_generator.next();
         let texture_container = TextureContainer::from_image(
             &self.graphics_provider,

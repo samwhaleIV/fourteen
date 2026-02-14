@@ -39,7 +39,7 @@ impl AssetManager {
                     Err(error) => return Err(AssetManagerError::FileError(error)),
                 };
                 self.path_buffer.pop();
-                let texture_frame = match graphics_context.create_texture_frame(&image_data) {
+                let texture_frame = match graphics_context.create_texture_frame(image_data) {
                     Ok(value) => value,
                     Err(error) => return Err(AssetManagerError::TextureImportError(error)),
                 };

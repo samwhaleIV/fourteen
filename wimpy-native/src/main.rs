@@ -1,32 +1,36 @@
-// // use std::{env, path::Path};
+mod key_code;
+mod desktop_io;
+mod desktop_app;
 
-// use wimpy_engine::{
-//     PlaceholderApp,
-//     PlaceholderConfig
-// };
+use std::{
+    env,
+    path::Path
+};
 
-// // use env_logger::{
-// //     Builder,
-// //     Target
-// // };
+use wimpy_engine::{
+    test::*
+};
 
-// pub fn main() {
-//     let log_variable = "RUST_LOG";
+use env_logger::{
+    Builder,
+    Target
+};
 
-//     match env::var(log_variable) {
-//         Ok(value) => println!("{}: {:?}",log_variable,value),
-//         Err(error) => println!("Error {}: {}",log_variable,error),
-//     }
+pub fn main() {
+    let log_variable = "RUST_LOG";
 
-//     let manifest_path = Path::new(include_str!("../manifest-path.txt"));
+    match env::var(log_variable) {
+        Ok(value) => println!("{}: {:?}",log_variable,value),
+        Err(error) => println!("Error {}: {}",log_variable,error),
+    }
 
-//     let mut builder = Builder::from_default_env();
-//     builder.target(Target::Stdout);
-//     builder.init();
+    let manifest_path = Path::new(include_str!("../manifest-path.txt"));
 
-//     let wimpy_app = PlaceholderApp {};
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+    builder.init();
 
-//     crate::desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(wimpy_app,Some(manifest_path));
-// }
+    let wimpy_app = PlaceholderApp::default();
 
-pub fn main() {}
+    desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(wimpy_app,Some(manifest_path));
+}

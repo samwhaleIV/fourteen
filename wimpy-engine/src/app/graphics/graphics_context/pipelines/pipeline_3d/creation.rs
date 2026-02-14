@@ -77,7 +77,7 @@ impl Pipeline3D {
 
         return Self {
             pipeline,
-            vertex_instance_buffer: instance_buffer
+            instance_buffer
         }
     }
 }

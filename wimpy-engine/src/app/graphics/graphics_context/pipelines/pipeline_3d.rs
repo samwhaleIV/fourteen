@@ -10,7 +10,7 @@ use super::*;
 
 pub struct Pipeline3D {
     pipeline: RenderPipeline,
-    vertex_instance_buffer: DoubleBuffer<ModelInstance>,
+    instance_buffer: DoubleBuffer<ModelInstance>,
 }
 
 struct TextureDrawData {
@@ -27,10 +27,10 @@ impl Pipeline3D {
 
 impl PipelineController for Pipeline3D {
     fn write_dynamic_buffers(&mut self,queue: &Queue) {
-        self.vertex_instance_buffer.write_out(queue);
+        self.instance_buffer.write_out(queue);
     }
     fn reset_pipeline_state(&mut self) {
-        self.vertex_instance_buffer.reset();
+        self.instance_buffer.reset();
     }
 }
 
@@ -65,7 +65,7 @@ where
 
         render_pass.set_vertex_buffer(
             Pipeline3D::INSTANCE_BUFFER_INDEX,
-            pipeline_3d.vertex_instance_buffer.get_output_buffer().slice(..)
+            pipeline_3d.instance_buffer.get_output_buffer().slice(..)
         );
 
         return Self {
@@ -151,8 +151,12 @@ where
         }) {
             return;
         }
-        todo!();
-
+        let indices = Range {
+            start: mesh_reference.index_start,
+            end: mesh_reference.index_end
+        };
+        let instances = self.context.get_3d_pipeline_mut().instance_buffer.push_set(draw_data.iter().map(Into::into));
+        self.render_pass.draw_indexed(indices,mesh_reference.base_vertex,downcast_range(instances));
     }
 
     fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) -> Result<(),()> {

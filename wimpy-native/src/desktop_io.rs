@@ -6,14 +6,10 @@ use image::{
     ImageReader
 };
 
-use wimpy_engine::{
-    WimpyFileError,
-    WimpyIO,
-    kvs::KeyValueStore,
-    wgpu::{
-        TextureData,
-        TextureDataWriteParameters
-    }
+use wimpy_engine::app::*;
+use wimpy_engine::app::graphics::{
+    TextureData,
+    TextureDataWriteParameters
 };
 
 pub struct DekstopAppIO;
@@ -28,7 +24,7 @@ impl TextureData for DynamicImageWrapper {
         (self.value.width(),self.value.height())
     }
     
-    fn write_to_queue(&self,parameters: &TextureDataWriteParameters) {
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
         parameters.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: parameters.texture,
@@ -49,46 +45,46 @@ impl TextureData for DynamicImageWrapper {
 }
 
 impl WimpyIO for DekstopAppIO {
-    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,WimpyFileError> {
+    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => Ok(DynamicImageWrapper { value }),
                 Err(image_error) => Err(match image_error {
                     ImageError::Decoding(decoding_error) => {
                         log::error!("Image decode error: {:?}",decoding_error);
-                        WimpyFileError::Decode
+                        FileError::Decode
                     },
                     ImageError::Unsupported(unsupported_error) => {
                         log::error!("Image unsupported error: {:?}",unsupported_error);
-                        WimpyFileError::UnsupportedFormat
+                        FileError::UnsupportedFormat
                     },
                     ImageError::IoError(error) => {
                         log::error!("Image IO error: {:?}",error);
-                        WimpyFileError::Access
+                        FileError::Access
                     },
-                    _ => WimpyFileError::Unknown
+                    _ => FileError::Unknown
                 }),
             },
             Err(error) => Err({
                 log::error!("IO error: {:?}",error);
-                WimpyFileError::Access
+                FileError::Access
             }),
         }
     }
     
-    async fn save_file(path: &Path,data: &[u8])-> Result<(),WimpyFileError> {
+    async fn save_file(path: &Path,data: &[u8])-> Result<(),FileError> {
         if let Err(error) = (|| -> std::io::Result<()> {
             fs::create_dir_all(path)?;
             fs::write(path,data)?;
             Ok(())
         })() {
             log::error!("Save binary file error ({:?}): {:?}",path,error);
-            return Err(WimpyFileError::Access);
+            return Err(FileError::Access);
         }
         Ok(())
     }
     
-    async fn load_binary_file(path: &Path) -> Result<Vec<u8>,WimpyFileError> {
+    async fn load_binary_file(path: &Path) -> Result<Vec<u8>,FileError> {
         let data = match (|| -> std::io::Result<Vec<u8>> {
             std::fs::create_dir_all(path)?;
             Ok(std::fs::read(path)?)
@@ -96,13 +92,13 @@ impl WimpyIO for DekstopAppIO {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Load binary file error ({:?}): {:?}",path,error);
-                return Err(WimpyFileError::Access);
+                return Err(FileError::Access);
             }
         };
         return Ok(data);
     }
 
-    async fn load_text_file(path: &Path) -> Result<String,WimpyFileError> {
+    async fn load_text_file(path: &Path) -> Result<String,FileError> {
         let data = match (|| -> std::io::Result<String> {
             std::fs::create_dir_all(path)?;
             Ok(std::fs::read_to_string(path)?)
@@ -110,17 +106,17 @@ impl WimpyIO for DekstopAppIO {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Load text file error ({:?}): {:?}",path,error);
-                return Err(WimpyFileError::Access);
+                return Err(FileError::Access);
             }
         };
         return Ok(data);
     }
-    
-    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),WimpyFileError> {
+
+    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),FileError> {
         todo!()
     }
     
-    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),WimpyFileError> {
+    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),FileError> {
         todo!()
     }
 }

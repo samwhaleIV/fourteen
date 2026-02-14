@@ -59,7 +59,7 @@ pub struct TextureDataWriteParameters<'a> {
 }
 
 pub trait TextureData {
-    fn write_to_queue(&self,parameters: &TextureDataWriteParameters);
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters);
     fn size(&self) -> (u32,u32);
 }
 
@@ -134,7 +134,7 @@ impl TextureContainer {
     pub fn from_image_unchecked(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
-        texture_data: &impl TextureData
+        texture_data: impl TextureData
     ) -> TextureContainer {
         let size = texture_data.size();
 
@@ -160,7 +160,7 @@ impl TextureContainer {
     pub fn from_image(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
-        texture_data: &impl TextureData
+        texture_data: impl TextureData
     ) -> Result<TextureContainer,TextureError> {
         graphics_provider.test_size(texture_data.size())?;
 

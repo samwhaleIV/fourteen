@@ -1,4 +1,4 @@
-use wimpy_engine::input::KeyCode as WK;
+use wimpy_engine::app::input::KeyCode as WK;
 use sdl2::keyboard::Keycode as SK;
 
 pub fn translate_key_code(key_code: SK) -> Option<WK> {
