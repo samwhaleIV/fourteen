@@ -1,4 +1,4 @@
-const WINDOW_TITLE: &'static str = "Fourteen Engine - Hello, World!";
+const WINDOW_TITLE: &'static str = "Wimpy Engine";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
 use std::{

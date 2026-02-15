@@ -1,3 +1,5 @@
+use crate::app::WimpyIO;
+
 #[derive(Default)]
 pub struct KeyValueStore {
     //todo... dictionary structure
@@ -46,11 +48,11 @@ impl KeyValueStore {
         todo!()
     }
 
-    // fn save() {
+    pub async fn import<IO: WimpyIO>(&mut self) {
+        todo!();
+    }
 
-    // }
-
-    // fn load() -> Result<{
-
-    // }
+    pub async fn export<IO: WimpyIO>(&self) {
+        todo!();
+    }
 }

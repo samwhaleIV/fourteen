@@ -35,15 +35,17 @@ where
 
             let texture = self.test_texture;
 
+            let size: Size = 400.into();
+
             let layout = WimpyLayout {
                 x: LayoutDimension {
                     position: Position::center_of_parent(),
-                    size: 200.into(),
+                    size,
                     size_offset: 0.into(),
                 },
                 y: LayoutDimension {
                     position: Position::center_of_parent(),
-                    size: 200.into(),
+                    size,
                     size_offset: 0.into(),
                 },
             };

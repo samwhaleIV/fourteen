@@ -5,4 +5,5 @@
 /wam/*/bin
 /wam/*/obj
 /wam/.vs
-/assets/debug-output/
+/assets/debug-output
+/wimpy-web/html/assets

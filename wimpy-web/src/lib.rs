@@ -1,12 +1,19 @@
 mod web_app;
 mod key_code;
+mod wimpy_web_io;
+mod gamepad_manager;
+
+pub use web_app::*;
+pub use key_code::*;
+pub use wimpy_web_io::*;
+pub use gamepad_manager::*;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use wimpy_engine::test::*;
 
-const MANIFEST_PATH: &'static str = "wam.json";
+const MANIFEST_PATH: &'static str = "assets/wam.json";
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]

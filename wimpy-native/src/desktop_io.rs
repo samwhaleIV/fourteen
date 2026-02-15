@@ -1,9 +1,8 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
+use image::metadata::Cicp;
 use image::{
-    DynamicImage,
-    ImageError,
-    ImageReader
+    ConvertColorOptions, DynamicImage, EncodableLayout, ImageError, ImageReader
 };
 
 use wimpy_engine::app::*;
@@ -24,7 +23,14 @@ impl TextureData for DynamicImageWrapper {
         (self.value.width(),self.value.height())
     }
     
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
+    fn write_to_queue(mut self,parameters: &TextureDataWriteParameters) {
+        if let Err(error) = self.value.convert_color_space(
+            Cicp::SRGB_LINEAR,
+            ConvertColorOptions::default(),
+            image::ColorType::Rgb8
+        ) {
+            log::warn!("Color space conversion error: {:?}",error);
+        }
         parameters.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: parameters.texture,
@@ -32,7 +38,7 @@ impl TextureData for DynamicImageWrapper {
                 origin: parameters.origin,
                 aspect: parameters.aspect,
             },
-            self.value.as_bytes(),
+            self.value.to_rgba8().as_bytes(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
@@ -44,79 +50,73 @@ impl TextureData for DynamicImageWrapper {
     }
 }
 
+fn map_std_io_error(error: std::io::ErrorKind) -> FileError {
+    use std::io::ErrorKind::*;
+    return match error {
+        NotFound => FileError::NotFound,
+        PermissionDenied => FileError::NoPermission,
+        ConnectionRefused => FileError::NoPermission,
+        AddrNotAvailable => FileError::NotFound,
+        InvalidFilename => FileError::InvalidPath,
+        _ => FileError::Other,
+    }
+}
+
 impl WimpyIO for DekstopAppIO {
     async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
-                Ok(value) => Ok(DynamicImageWrapper { value }),
+                Ok(value) => {
+                    Ok(DynamicImageWrapper { value })
+                },
                 Err(image_error) => Err(match image_error {
                     ImageError::Decoding(decoding_error) => {
                         log::error!("Image decode error: {:?}",decoding_error);
-                        FileError::Decode
+                        FileError::DecodeFailure
                     },
                     ImageError::Unsupported(unsupported_error) => {
                         log::error!("Image unsupported error: {:?}",unsupported_error);
-                        FileError::UnsupportedFormat
+                        FileError::DecodeFailure
                     },
                     ImageError::IoError(error) => {
                         log::error!("Image IO error: {:?}",error);
-                        FileError::Access
+                        map_std_io_error(error.kind())
                     },
                     _ => FileError::Unknown
                 }),
             },
             Err(error) => Err({
-                log::error!("IO error: {:?}",error);
-                FileError::Access
+                log::error!("Image IO error: {:?}",error);
+                map_std_io_error(error.kind())
             }),
         }
     }
-    
-    async fn save_file(path: &Path,data: &[u8])-> Result<(),FileError> {
-        if let Err(error) = (|| -> std::io::Result<()> {
-            fs::create_dir_all(path)?;
-            fs::write(path,data)?;
-            Ok(())
-        })() {
-            log::error!("Save binary file error ({:?}): {:?}",path,error);
-            return Err(FileError::Access);
-        }
-        Ok(())
-    }
-    
+
     async fn load_binary_file(path: &Path) -> Result<Vec<u8>,FileError> {
-        let data = match (|| -> std::io::Result<Vec<u8>> {
-            std::fs::create_dir_all(path)?;
-            Ok(std::fs::read(path)?)
-        })() {
-            Ok(value) => value,
+        match std::fs::read(path) {
+            Ok(value) => Ok(value),
             Err(error) => {
                 log::error!("Load binary file error ({:?}): {:?}",path,error);
-                return Err(FileError::Access);
+                Err(map_std_io_error(error.kind()))
             }
-        };
-        return Ok(data);
+        }
     }
 
     async fn load_text_file(path: &Path) -> Result<String,FileError> {
-        let data = match (|| -> std::io::Result<String> {
-            std::fs::create_dir_all(path)?;
-            Ok(std::fs::read_to_string(path)?)
-        })() {
-            Ok(value) => value,
+        match std::fs::read_to_string(path) {
+            Ok(value) => Ok(value),
             Err(error) => {
                 log::error!("Load text file error ({:?}): {:?}",path,error);
-                return Err(FileError::Access);
+                Err(map_std_io_error(error.kind()))
             }
-        };
-        return Ok(data);
+        }
     }
 
-    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),FileError> {
+    async fn save_key_value_store(data: &[u8]) -> Result<(),FileError> {
         todo!()
     }
-    
-    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),FileError> {
+
+    async fn load_key_value_store() -> Result<Vec<u8>,FileError> {
         todo!()
     }
 }

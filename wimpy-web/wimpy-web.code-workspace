@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../wimpy-engine"
+		},
+		{
+			"path": "../assets"
 		}
 	],
 	"settings": {

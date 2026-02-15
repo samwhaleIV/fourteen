@@ -1,39 +1,10 @@
+use super::*;
 use std::path::Path;
 
-use std::{
-    cell::RefCell,
-    rc::Rc
-};
-
-use wasm_bindgen::{
-    JsCast,
-    JsValue,
-    prelude::Closure
-};
-
-use wasm_bindgen_futures::JsFuture;
-
-use web_sys::{
-    Document,
-    Event,
-    HtmlCanvasElement,
-    HtmlImageElement,
-    ImageBitmap,
-    KeyboardEvent,
-    MouseEvent,
-    Window,
-    js_sys::Float32Array
-};
-
-use wgpu::{
-    CopyExternalImageDestInfo,
-    CopyExternalImageSourceInfo,
-    ExternalImageSource,
-    InstanceDescriptor,
-    Limits,
-    Origin2d,
-    SurfaceTarget
-};
+use std::{cell::RefCell,rc::Rc};
+use wasm_bindgen::{JsCast,JsValue,prelude::Closure};
+use web_sys::{Document,Event,HtmlCanvasElement,KeyboardEvent,MouseEvent,Window};
+use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 
 use wimpy_engine::app::*;
 use wimpy_engine::app::graphics::*;
@@ -41,26 +12,6 @@ use wimpy_engine::app::input::*;
 use wimpy_engine::app::wam::*;
 
 const CANVAS_ID: &'static str = "main-canvas";
-
-const BUTTON_PRESS_THRESHOLD: f32 = 0.05;
-
-use crate::key_code::KEY_CODES;
-
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen(module = "/html/gamepad-manager.js")]
-extern "C" {
-    type GamepadManager;
-
-    #[wasm_bindgen(constructor)]
-    fn new() -> GamepadManager;
-
-    #[wasm_bindgen(method,getter)]
-    fn buffer(this: &GamepadManager) -> Float32Array;
-
-    #[wasm_bindgen(method)]
-    fn update(this: &GamepadManager);
-}
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -91,86 +42,9 @@ pub enum ResizeConfig {
     FitWindow,
 }
 
-pub struct WebAppIO;
-
-struct ExternalImageSourceWrapper {
-    value: ExternalImageSource
-}
-
-impl TextureData for ExternalImageSourceWrapper {
-    fn size(&self) -> (u32,u32) {
-        return (self.value.width(),self.value.height());
-    }
-
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.copy_external_image_to_texture(
-            &CopyExternalImageSourceInfo {
-                source: self.value,
-                origin: Origin2d::ZERO,
-                flip_y: false,
-            },
-            CopyExternalImageDestInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-                color_space: wgpu::PredefinedColorSpace::Srgb,
-                premultiplied_alpha: false,
-            },
-            parameters.texture_size
-        );
-    }
-}
-
-impl WimpyIO for WebAppIO {
-    async fn save_file(path: &Path,data: &[u8])-> Result<(),FileError> {
-        todo!()
-    }
-
-    async fn load_binary_file(path: &Path) -> Result<Vec<u8>,FileError> {
-        todo!()
-    }
-
-    async fn load_text_file(path: &Path) -> Result<String,FileError> {
-        todo!()
-    }
-
-    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
-        let path_str: &str = match path.to_str() {
-            Some(value) => value,
-            None => return Err(FileError::InvalidPath),
-        };
-        let window = get_window().expect("window exists");
-
-        let image_element = HtmlImageElement::new().expect("html image element creation");
-        image_element.set_src(path_str);
-
-        let Ok(bitmap) = get_image_bitmap(&window,&image_element).await else {
-            log::error!("Could not create ImageBitmap for '{}'.",path_str);
-            return Err(FileError::Unknown); 
-        };
-
-        return Ok(ExternalImageSourceWrapper {
-            value: ExternalImageSource::ImageBitmap(bitmap),
-        });
-    }
-
-    async fn save_key_value_store(kvs: &KeyValueStore) -> Result<(),FileError> {
-        todo!()
-    }
-
-    async fn load_key_value_store(kvs: &mut KeyValueStore) -> Result<(),FileError> {
-        todo!()
-    }
-}
-
-async fn get_image_bitmap(window: &Window,image_element: &HtmlImageElement) -> Result<ImageBitmap,JsValue> {
-    Ok(JsFuture::from(window.create_image_bitmap_with_html_image_element(image_element)?).await?.dyn_into::<ImageBitmap>()?)
-}
-
 impl<TWimpyApp> WebApp<TWimpyApp>
 where
-    TWimpyApp: WimpyApp<WebAppIO> + 'static,
+    TWimpyApp: WimpyApp<WimpyWebIO> + 'static,
 {
     pub async fn create_app<TConfig>(manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
@@ -206,7 +80,7 @@ where
 
         let gamepad_manager = GamepadManager::new();
 
-        let mut asset_manager = AssetManager::load_or_default::<WebAppIO>(manifest_path).await;
+        let mut asset_manager = AssetManager::load_or_default::<WimpyWebIO>(manifest_path).await;
 
         let wimpy_app = TWimpyApp::load(&mut WimpyContext {
             graphics: &mut graphics_context,
@@ -317,7 +191,7 @@ where
         canvas.set_width(width);
         canvas.set_height(height);
 
-        log::trace!("Web app: Update Size - ({},{})",width,height);
+        //log::trace!("Web app: Update Size - ({},{})",width,height);
     }
 
     fn setup_events(app: &Rc<RefCell<Self>>,resize_config: ResizeConfig) -> Result<(),WebAppError> {
@@ -413,52 +287,4 @@ fn get_canvas() -> Result<HtmlCanvasElement,WebAppError> {
 
 fn translate_html_size(value: Result<::wasm_bindgen::JsValue,JsValue>) -> u32 {
     value.unwrap_or(JsValue::from_f64(0.0)).as_f64().unwrap_or(0.0) as u32
-}
-
-fn to_bool(value: f32) -> bool {
-    value > BUTTON_PRESS_THRESHOLD
-}
-
-fn axis_clamp(value: f32) -> f32 {
-    value.min(1.0).max(-1.0)
-}
-
-fn trigger_clamp(value: f32) -> f32 {
-    value.min(1.0).max(0.0)
-}
-
-fn create_gamepad_state(src: Float32Array) -> GamepadInput {
-    GamepadInput {
-        buttons: GamepadButtons::from_set(GamepadButtonSet {
-            dpad_up:      to_bool(src.get_index(0)),
-            dpad_down:    to_bool(src.get_index(1)),
-            dpad_left:    to_bool(src.get_index(2)),
-            dpad_right:   to_bool(src.get_index(3)),
-
-            select:       to_bool(src.get_index(4)),
-            start:        to_bool(src.get_index(5)),
-            guide:        to_bool(src.get_index(6)),
-
-            a:            to_bool(src.get_index(7)),
-            b:            to_bool(src.get_index(8)),
-            x:            to_bool(src.get_index(9)),
-            y:            to_bool(src.get_index(10)),
-
-            left_bumper:  to_bool(src.get_index(11)),
-            right_bumper: to_bool(src.get_index(12)),
-
-            left_stick:   to_bool(src.get_index(13)),
-            right_stick:  to_bool(src.get_index(14)),
-        }),
-        left_stick: GamepadJoystick {
-            x: axis_clamp(src.get_index(15)),
-            y: axis_clamp(src.get_index(16)),
-        },
-        right_stick: GamepadJoystick {
-            x: axis_clamp(src.get_index(17)),
-            y: axis_clamp(src.get_index(18)),
-        },
-        left_trigger: trigger_clamp(src.get_index(19)),
-        right_trigger: trigger_clamp(src.get_index(20)),
-    }
 }

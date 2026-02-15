@@ -93,7 +93,6 @@ impl TextureContainer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
 
-            //TODO: Support other formats
             format: wgpu::TextureFormat::Rgba8Unorm,
 
             usage: usage_flags,
