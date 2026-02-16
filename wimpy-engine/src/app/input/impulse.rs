@@ -149,16 +149,16 @@ impl ImpulseSet {
     }
 
     pub fn get_axes(&self) -> InterpretiveAxes {
-        return InterpretiveAxes {
-            x: InterpretiveAxis::from_impulse_state(
+        return InterpretiveAxes::create(
+            InterpretiveAxis::from_impulse_state(
                 self.get(Impulse::Left),
                 self.get(Impulse::Right)
             ),
-            y: InterpretiveAxis::from_impulse_state(
+            InterpretiveAxis::from_impulse_state(
                 self.get(Impulse::Up),
                 self.get(Impulse::Down)
             ),
-        };
+        )
     }
 
     pub fn iter_delta(&self,new: &ImpulseSet) -> impl Iterator<Item = ImpulseEvent> {

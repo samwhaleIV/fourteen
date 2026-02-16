@@ -21,6 +21,7 @@ web-sys = { version = "0.3", features = [
     "MouseEvent",
     "Window",
     "ImageBitmap",
+    "Performance"
 ]}
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"

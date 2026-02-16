@@ -8,6 +8,7 @@ pub struct GamepadCache {
 }
 
 const THUMBSTICK_IMPULSE_THRESHOLD: f32 = 0.5;
+const TRIGGER_PRESSED_THREHOLD: f32 = 0.5;
 
 /* Try and match parity with 'html/gamepad-manager.js' */
 const AXIS_INEQUALITY_DISTANCE: f32 = 1.0 / 4.0;
@@ -93,24 +94,34 @@ impl GamepadButtons {
     }
 }
 
-struct GamepadOutput {
-    interpretive_axes: InterpretiveAxes,
-    impulse_set: ImpulseSet
+#[derive(Default,Copy,Clone)]
+pub struct InterpetiveTrigger {
+    value: f32,
+    is_pressed: bool,
 }
 
-impl Default for GamepadOutput {
-    fn default() -> Self {
-        Self {
-            interpretive_axes: Default::default(),
-            impulse_set: Default::default()
+impl InterpetiveTrigger {
+    fn create(value: f32) -> Self {
+        return Self {
+            value,
+            is_pressed: value >= TRIGGER_PRESSED_THREHOLD
         }
+    }
+    pub fn is_pressed(&self) -> bool {
+        return self.is_pressed;
+    }
+    pub fn value(&self) -> f32 {
+        return self.value;
     }
 }
 
-#[derive(PartialEq,Eq)]
-pub enum UserActivity {
-    None,
-    Some
+#[derive(Default)]
+struct GamepadOutput {
+    left_interpretive_axes: InterpretiveAxes,
+    right_interpretive_axes: InterpretiveAxes,
+    left_trigger: InterpetiveTrigger,
+    right_trigger: InterpetiveTrigger,
+    impulse_set: ImpulseSet,
 }
 
 impl Default for GamepadButtons {
@@ -136,10 +147,10 @@ pub struct GamepadJoystick {
 
 impl GamepadJoystick {
     fn get_interpretive_axes(&self) -> InterpretiveAxes {
-        InterpretiveAxes {
-            x: InterpretiveAxis::from_f32(self.x),
-            y: InterpretiveAxis::from_f32(self.y),
-        }
+        InterpretiveAxes::create(
+            InterpretiveAxis::from_f32(self.x),
+            InterpretiveAxis::from_f32(self.y),
+        )
     }
 }
 
@@ -155,7 +166,7 @@ pub struct GamepadInput {
 }
 
 impl GamepadInput {
-    fn get_interpretive_axes(&self) -> InterpretiveAxes {
+    fn get_left_interpretive_axes(&self) -> InterpretiveAxes {
         let axes = self.get_dpad_interpretive_axes();
 
         match axes.is_zero() {
@@ -164,17 +175,21 @@ impl GamepadInput {
         }
     }
 
+    fn get_right_interpretive_axes(&self) -> InterpretiveAxes {
+        self.right_stick.get_interpretive_axes()
+    }
+
     fn get_dpad_interpretive_axes(&self) -> InterpretiveAxes {
-        return InterpretiveAxes {
-            x: InterpretiveAxis::from_bool(
+        return InterpretiveAxes::create(
+            InterpretiveAxis::from_bool(
                 self.buttons.bool(GamepadButtons::DPAD_LEFT),
                 self.buttons.bool(GamepadButtons::DPAD_RIGHT),
             ),
-            y: InterpretiveAxis::from_bool(
+            InterpretiveAxis::from_bool(
                 self.buttons.bool(GamepadButtons::DPAD_UP),
                 self.buttons.bool(GamepadButtons::DPAD_DOWN),
             ),
-        }
+        )
     }
 
     fn get_impulse_set(&self,axes: &InterpretiveAxes) -> ImpulseSet {
@@ -199,11 +214,19 @@ impl GamepadInput {
     }
 
     fn get_output(&self) -> GamepadOutput {
-        let interpretive_axes = self.get_interpretive_axes();
-        let impulse_set = self.get_impulse_set(&interpretive_axes);
+        let left_interpretive_axes = self.get_left_interpretive_axes();
+        let right_interpretive_axes = self.get_right_interpretive_axes();
+
+        let impulse_set = self.get_impulse_set(&left_interpretive_axes);
+
+        let left_trigger = InterpetiveTrigger::create(self.left_trigger);
+        let right_trigger = InterpetiveTrigger::create(self.right_trigger);
 
         return GamepadOutput {
-            interpretive_axes,
+            left_interpretive_axes,
+            right_interpretive_axes,
+            left_trigger,
+            right_trigger,
             impulse_set
         };
     }
@@ -261,11 +284,23 @@ impl GamepadCache {
         return user_activity;
     }
 
-    pub fn get_axes(&self) -> InterpretiveAxes {
-        return self.output.interpretive_axes;
+    pub fn left_axes(&self) -> InterpretiveAxes {
+        return self.output.left_interpretive_axes;
     }
 
-    pub fn get_impulse_set(&self) -> &ImpulseSet {
+    pub fn right_axes(&self) -> InterpretiveAxes {
+        return self.output.right_interpretive_axes;
+    }
+
+    pub fn impulse_set(&self) -> &ImpulseSet {
         return &self.output.impulse_set;
+    }
+
+    pub fn left_trigger(&self) -> InterpetiveTrigger {
+        return self.output.left_trigger;
+    }
+
+    pub fn right_trigger(&self) -> InterpetiveTrigger {
+        return self.output.right_trigger;
     }
 }

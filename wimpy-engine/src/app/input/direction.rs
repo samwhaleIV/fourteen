@@ -129,13 +129,36 @@ impl InterpretiveAxis {
 
 #[derive(Default,Copy,Clone,Debug)]
 pub struct InterpretiveAxes {
-    pub x: InterpretiveAxis,
-    pub y: InterpretiveAxis
+    x: InterpretiveAxis,
+    y: InterpretiveAxis
 }
 
 impl InterpretiveAxes {
+    pub fn create(x: InterpretiveAxis,y: InterpretiveAxis) ->  Self{
+        return Self {
+            x,
+            y,
+        }
+    }
+
     pub fn get_f32(&self) -> (f32,f32) {
         return (self.x.get_f32(),self.y.get_f32());
+    }
+
+    pub fn get_x_f32(&self) -> f32 {
+        return self.x.get_f32();
+    }
+
+    pub fn get_y_f32(&self) -> f32 {
+        return self.y.get_f32();
+    }
+
+    pub fn get_x_i32(&self) -> i32 {
+        return self.x.get_i32();
+    }
+
+    pub fn get_y_i32(&self) -> i32 {
+        return self.y.get_i32();
     }
 
     pub fn get_i32(&self) -> (i32,i32) {

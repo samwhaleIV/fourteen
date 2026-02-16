@@ -3,15 +3,18 @@ use std::path::Path;
 
 use std::{cell::RefCell,rc::Rc};
 use wasm_bindgen::{JsCast,JsValue,prelude::Closure};
-use web_sys::{Document,Event,HtmlCanvasElement,KeyboardEvent,MouseEvent,Window};
+use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, Performance, Window};
 use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 
 use wimpy_engine::app::*;
 use wimpy_engine::app::graphics::*;
 use wimpy_engine::app::input::*;
 use wimpy_engine::app::wam::*;
+use wimpy_engine::shared::WimpyArea;
 
 const CANVAS_ID: &'static str = "main-canvas";
+const LEFT_MOUSE_BUTTON: i16 = 0;
+const RIGHT_MOUSE_BUTTON: i16 = 2;
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -24,6 +27,7 @@ pub enum WebAppError {
     MouseEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
+    PerformanceDoesNotExist
 }
 
 pub struct WebApp<TWimpyApp> {
@@ -32,7 +36,11 @@ pub struct WebApp<TWimpyApp> {
     wimpy_app: TWimpyApp,
     asset_manager: AssetManager,
     gamepad_manager: GamepadManager,
-    kvs_store: KeyValueStore
+    kvs_store: KeyValueStore,
+    mouse_state: MouseState,
+    last_frame_time: f64,
+    current_frame_time: f64,
+    size: (u32,u32)
 }
 
 #[allow(unused)]
@@ -40,6 +48,45 @@ pub struct WebApp<TWimpyApp> {
 pub enum ResizeConfig {
     Static,
     FitWindow,
+}
+
+struct MouseState {
+    last_x: i32,
+    last_y: i32,
+    x: i32,
+    y: i32,
+    left_pressed: bool,
+    right_pressed: bool
+}
+
+impl MouseState {
+    pub fn to_wimpy_mouse_state(&self) -> MouseInput {
+        return MouseInput {
+            position:  MousePosition {
+                x: self.x as f32,
+                y: self.y as f32
+            },
+            delta: MouseDelta {
+                x: (self.last_x - self.x) as f32,
+                y: (self.last_y - self.y) as f32
+            },
+            left_pressed: self.left_pressed,
+            right_pressed: self.right_pressed
+        }
+    }
+}
+
+impl Default for MouseState {
+    fn default() -> Self {
+        Self {
+            last_x: 0,
+            last_y: 0,
+            x: 0,
+            y: 0,
+            left_pressed: false,
+            right_pressed: false
+        }
+    }
 }
 
 impl<TWimpyApp> WebApp<TWimpyApp>
@@ -90,11 +137,15 @@ where
         }).await;
 
         return Ok(Rc::new(RefCell::new(Self {
+            last_frame_time: 0.0,
+            current_frame_time: 0.0,
+            size: (0,0),
             gamepad_manager,
             graphics_context,
             input_manager,
             asset_manager,
             wimpy_app,
+            mouse_state: Default::default(),
             kvs_store: Default::default(),
         })));
     }
@@ -103,7 +154,11 @@ where
         let f = Rc::new(RefCell::new(None));
         let g = f.clone();
         *g.borrow_mut() = Some(Closure::new(move || {
-            app.borrow_mut().render_frame();
+            let mut app_ref = app.borrow_mut();
+            let now = get_performance_now_time();
+            app_ref.last_frame_time = app_ref.current_frame_time;
+            app_ref.current_frame_time = now;
+            app_ref.render_frame();
             if let Err(error) = request_animation_frame(f.borrow().as_ref().unwrap()) {
                 log::error!("{:?}",error);
             }
@@ -123,24 +178,31 @@ where
         return Ok(());
     }
 
-    fn mouse_down(&mut self,x: i32,y: i32) {
-        //TODO
-    }
-
-    fn mouse_up(&mut self,x: i32,y: i32) {
-        //TODO
-    }
-
-    fn mouse_move(&mut self,x: i32,y: i32) {
-        //TODO
-    }
-
     fn update_input(&mut self) {
         self.gamepad_manager.update();
         let gamepad_state = create_gamepad_state(
             self.gamepad_manager.buffer()
         );
-        self.input_manager.update(gamepad_state);
+
+        let mouse_input = self.mouse_state.to_wimpy_mouse_state();
+
+        self.mouse_state.last_x = self.mouse_state.x;
+        self.mouse_state.last_y = self.mouse_state.y;
+
+        let delta_time = ((self.current_frame_time - self.last_frame_time) * 0.001) as f32;
+
+        let mouse_shell_state = self.input_manager.update(
+            mouse_input,
+            gamepad_state,
+            delta_time,
+            WimpyArea {
+                x: 0.0,
+                y: 0.0,
+                width: self.size.0 as f32,
+                height: self.size.1 as f32
+            }
+        );
+        //log::trace!("Virtual Mouse Position: {:?}",self.input_manager.get_virtual_mouse().get_position());
     }
 
     fn render_frame(&mut self) {
@@ -181,9 +243,12 @@ where
 
         let graphics_provider = self.graphics_context.get_graphics_provider_mut();
 
+        let inner_width = translate_html_size(window.inner_width());
+        let inner_height = translate_html_size(window.inner_height());
+
         graphics_provider.set_size(
-            translate_html_size(window.inner_width()),
-            translate_html_size(window.inner_height())
+            inner_width,
+            inner_height
         );
 
         let (width,height) = graphics_provider.get_size();
@@ -191,6 +256,7 @@ where
         canvas.set_width(width);
         canvas.set_height(height);
 
+        self.size = (inner_width,inner_height);
         //log::trace!("Web app: Update Size - ({},{})",width,height);
     }
 
@@ -198,10 +264,21 @@ where
         {
             let app = app.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move|event: MouseEvent| {
-                if event.button() != 0 {
-                    return;
+                match event.button() {
+                    LEFT_MOUSE_BUTTON => {
+                        let mouse_state = &mut app.borrow_mut().mouse_state;
+                        mouse_state.left_pressed = true;
+                        mouse_state.x = event.client_x();
+                        mouse_state.y = event.client_y();
+                    },
+                    RIGHT_MOUSE_BUTTON => {
+                        let mouse_state = &mut app.borrow_mut().mouse_state;
+                        mouse_state.right_pressed = true;
+                        mouse_state.x = event.client_x();
+                        mouse_state.y = event.client_y();
+                    },
+                    _ => {}
                 }
-                app.borrow_mut().mouse_down(event.offset_x(),event.offset_y());
             });
             get_document()?.add_event_listener_with_callback("mousedown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
             closure.forget();
@@ -212,7 +289,21 @@ where
                 if event.button() != 0 {
                     return;
                 }
-                app.borrow_mut().mouse_up(event.offset_x(),event.offset_y());
+                match event.button() {
+                    LEFT_MOUSE_BUTTON => {
+                        let mouse_state = &mut app.borrow_mut().mouse_state;
+                        mouse_state.left_pressed = false;
+                        mouse_state.x = event.client_x();
+                        mouse_state.y = event.client_y();
+                    },
+                    RIGHT_MOUSE_BUTTON => {
+                        let mouse_state = &mut app.borrow_mut().mouse_state;
+                        mouse_state.right_pressed = false;
+                        mouse_state.x = event.client_x();
+                        mouse_state.y = event.client_y();
+                    },
+                    _ => {}
+                }
             });
             get_document()?.add_event_listener_with_callback("mouseup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
             closure.forget();
@@ -220,7 +311,9 @@ where
         {
             let app = app.clone();
             let closure = Closure::<dyn FnMut(_)>::new(move|event: MouseEvent| {
-                app.borrow_mut().mouse_move(event.offset_x(),event.offset_y());
+                let mouse_state = &mut app.borrow_mut().mouse_state;
+                mouse_state.x = event.client_x();
+                mouse_state.y = event.client_y();
             });
             get_document()?.add_event_listener_with_callback("mousemove",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
             closure.forget();
@@ -272,6 +365,20 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) -> Result<(),WebAppError> {
     match get_window()?.request_animation_frame(f.as_ref().unchecked_ref()) {
         Ok(_) => Ok(()),
         Err(_) => Err(WebAppError::RequestAnimationFrameFailure)
+    }
+}
+
+fn get_performance_now_time() -> f64 {
+    let Ok(window) = get_window() else {
+        log::warn!("Window not found! Cannot get performance.now() time! The world has stopped!");
+        return 0.0;
+    };
+    match window.performance() {
+        Some(value) => value.now(),
+        None => {
+            log::warn!("Cannot get time from performance.now()! Did someone in JavaScript land break it?");
+            return 0.0;
+        }
     }
 }
 

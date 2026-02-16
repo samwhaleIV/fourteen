@@ -27,6 +27,40 @@ impl WimpyArea {
         height: 1.0
     };
 
+    pub fn top(&self) -> Unit {
+        return self.y;
+    }
+
+    pub fn bottom(&self) -> Unit {
+        return self.y + self.height;
+    }
+
+    pub fn left(&self) -> Unit {
+        return self.x;
+    }
+
+    pub fn right(&self) -> Unit {
+        return self.x + self.width;
+    }
+
+    pub fn center(&self) -> (Unit,Unit) {
+        return (self.x + self.width * 0.5,self.y + self.height * 0.5);
+    }
+
+    pub fn clip(&self,mut x: Unit,mut y: Unit) -> (Unit,Unit) {
+        if x < self.left() {
+            x = self.left();
+        } else if x > self.right() {
+            x = self.right();
+        }
+        if y < self.top() {
+            y = self.top();
+        } else if y > self.bottom() {
+            y = self.bottom();
+        }
+        return (x,y);
+    }
+
     pub fn to_center_encoded(&self) -> Self {
         return Self {
             x: self.x + (self.width * 0.5),
