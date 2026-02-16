@@ -138,7 +138,7 @@ pub struct InterpretiveAxes {
 }
 
 impl InterpretiveAxes {
-    pub fn create(x: InterpretiveAxis,y: InterpretiveAxis) ->  Self{
+    pub fn create(x: InterpretiveAxis,y: InterpretiveAxis) -> Self {
         return Self {
             x,
             y,

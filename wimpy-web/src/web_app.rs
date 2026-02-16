@@ -66,11 +66,11 @@ struct MouseState {
 impl MouseState {
     pub fn to_wimpy_mouse_state(&self) -> MouseInput {
         return MouseInput {
-            position:  MousePosition {
+            position:  Position {
                 x: self.x as f32,
                 y: self.y as f32
             },
-            delta: MouseDelta {
+            delta: Delta {
                 x: (self.last_x - self.x) as f32,
                 y: (self.last_y - self.y) as f32
             },

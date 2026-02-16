@@ -11,11 +11,12 @@ pub enum UserActivity {
     Some
 }
 
+// Do not use for input control flow! Only for UI hints
 #[derive(Default,Copy,Clone)]
 pub enum InputType {
     #[default]
     Unknown,
-    KeyboardAndMouse,
+    Keyboard,
     Gamepad
 }
 
@@ -25,19 +26,19 @@ pub struct InputManager {
     gamepad_cache: GamepadCache,
     keyboard_state: KeyboardState,
     keyboard_translator: KeyboardTranslator,
-    recent_input_method: InputType,
     impulse_state: ImpulseSet,
     last_directions: MoveToFrontStack<Direction,4>,
     recent_impulses: SmallVec<[ImpulseEvent;RECENT_IMPULSE_BUFFER_SIZE]>,
     captured_key_code: Option<KeyCode>,
     virtual_mouse: VirtualMouse,
-    delta_seconds: f32
+    delta_seconds: f32,
+    input_hint: InputType
 }
 
 impl InputManager {
-    pub fn with_input_type_hint(input_type: InputType) -> Self {
+    pub fn with_input_type_hint(input_hint: InputType) -> Self {
         return Self {
-            recent_input_method: input_type,
+            input_hint,
             ..Default::default()
         }
     }
@@ -65,14 +66,12 @@ impl InputManager {
     }
 
     pub fn get_axes(&self) -> InterpretiveAxes {
-        match self.recent_input_method {
-            InputType::Unknown | InputType::KeyboardAndMouse => {
-                self.impulse_state.get_axes()
-            },
-            InputType::Gamepad => {
-                self.gamepad_cache.left_axes()
-            },
-        }
+        let keyboard_axes = self.impulse_state.get_axes();
+
+        return match keyboard_axes.is_zero() {
+            false => keyboard_axes,
+            true => self.gamepad_cache.left_axes(),
+        };
     }
 
     pub fn get_virtual_mouse(&self) -> &VirtualMouse {
@@ -85,10 +84,6 @@ impl InputManager {
 
     pub fn get_strict_direction(&self) -> Direction {
         self.last_directions.peek()
-    }
-
-    pub fn get_active_input_type(&self) -> InputType {
-        self.recent_input_method
     }
 
     pub fn get_delta_seconds(&self) -> f32 {
@@ -136,7 +131,7 @@ pub mod app_shell_controller {
     impl InputManager {
         pub fn set_key_code_pressed(&mut self,key_code: KeyCode) {
             self.keyboard_state.set_pressed(key_code);
-            self.recent_input_method = InputType::KeyboardAndMouse;
+            self.input_hint = InputType::Keyboard;
             if self.captured_key_code.is_none() {
                 self.captured_key_code = Some(key_code);
             }
@@ -145,7 +140,7 @@ pub mod app_shell_controller {
 
         pub fn set_key_code_released(&mut self,key_code: KeyCode) {
             self.keyboard_state.set_released(key_code);
-            self.recent_input_method = InputType::KeyboardAndMouse;
+            self.input_hint = InputType::Keyboard;
             log::trace!("Key code released: {:?}",key_code);
         }
 
@@ -159,7 +154,7 @@ pub mod app_shell_controller {
             let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);
 
             if self.gamepad_cache.update(gamepad_input) == UserActivity::Some {
-                self.recent_input_method = InputType::Gamepad;
+                self.input_hint = InputType::Gamepad;
             }
 
             let old_mouse_input = &self.recent_mouse_input;
@@ -168,7 +163,7 @@ pub mod app_shell_controller {
                 old_mouse_input.right_pressed != mouse_input.right_pressed ||
                 old_mouse_input.position != mouse_input.position
             {
-                self.recent_input_method = InputType::KeyboardAndMouse;
+                self.input_hint = InputType::Keyboard;
             }
             self.recent_mouse_input = mouse_input;
 
@@ -193,9 +188,8 @@ pub mod app_shell_controller {
             self.impulse_state = new_state;
 
             let virtual_mouse_shell_state = self.virtual_mouse.update(
-                &self.recent_mouse_input,
+                self.recent_mouse_input,
                 &self.gamepad_cache,
-                self.recent_input_method,
                 delta_seconds,
                 mouse_emulation_bounds,
             );
