@@ -12,3 +12,6 @@ pub const CAMERA_UNIFORM_BIND_GROUP_ENTRY_INDEX: u32 =  0; //Group 1, index 0
 
 pub const DEFAULT_DOUBLE_BUFFER_SIZE: usize = 1024;
 pub const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
+
+// Used for intermediate frames
+pub const INTERNAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm; //experiment without srgb

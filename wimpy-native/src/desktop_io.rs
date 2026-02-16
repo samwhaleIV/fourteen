@@ -23,14 +23,7 @@ impl TextureData for DynamicImageWrapper {
         (self.value.width(),self.value.height())
     }
     
-    fn write_to_queue(mut self,parameters: &TextureDataWriteParameters) {
-        if let Err(error) = self.value.convert_color_space(
-            Cicp::SRGB_LINEAR,
-            ConvertColorOptions::default(),
-            image::ColorType::Rgb8
-        ) {
-            log::warn!("Color space conversion error: {:?}",error);
-        }
+    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
         parameters.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: parameters.texture,
@@ -47,6 +40,10 @@ impl TextureData for DynamicImageWrapper {
             },
             parameters.texture_size,
         );
+    }
+    
+    fn get_format(&self) -> wgpu::TextureFormat {
+        return wgpu::TextureFormat::Rgba8UnormSrgb;
     }
 }
 

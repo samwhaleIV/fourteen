@@ -13,6 +13,13 @@ namespace WAM.CLI {
         static bool FirstTime = true;
         static bool FromCommandLine = false;
 
+        private enum BuildingCommandParameter {
+            Source,
+            Destination,
+            TargetNamespace,
+            ManifestName,
+        }
+
         static readonly Dictionary<string,Command> Commands = new() {
             {
                 "argstest", new Command {
@@ -35,10 +42,10 @@ namespace WAM.CLI {
                 }
             },
             {
-                "debug", new Command {
-                    Action = Debug,
-                    Description = string.Empty,
-                    Hidden = true
+                "build-manifest", new Command {
+                    Action = CreateManifestPackage,
+                    Description = "create a wam manifest: -i <src> -o <dest> -n <target namespace> (-m <manifest file name>) (-guid)",
+                    Hidden = false
                 }
             },
             {
@@ -70,6 +77,13 @@ namespace WAM.CLI {
             Main([]);
         }
 
+        static string[] FilterArgs(string[] args) {
+            for(var i = 0;i<args.Length;i++) {
+                args[i] = args[i].Trim(' ','"','\'');
+            }
+            return args;
+        }
+
         static void Main(string[] args) {
             if(FromCommandLine) {
                 return;
@@ -82,7 +96,7 @@ namespace WAM.CLI {
 
             if(args.Length > 0) {
                 FromCommandLine = true;
-                Execute(args);
+                Execute(FilterArgs(args));
                 return;
             }
 
@@ -94,7 +108,7 @@ namespace WAM.CLI {
 
             Console.Write("enter command (or 'help' for a list of commands): ");
             var input = Console.ReadLine()?.Split(' ') ?? [];
-            Execute(input);
+            Execute(FilterArgs(input));
         }
 
         static void InvertColors(IEnumerable<string> args) {
@@ -143,6 +157,9 @@ namespace WAM.CLI {
         }
 
         static bool ShouldProceed(string prompt) {
+            if(FromCommandLine) {
+                return true;
+            }
             Console.WriteLine(prompt);
             Console.Write("are you sure you want to proceed? write 'yes' to proceed: ");
             var result = Console.ReadLine();
@@ -181,7 +198,110 @@ namespace WAM.CLI {
             Directory.CreateDirectory(directory);
         }
 
-        static void CreateManifestPackage(WamManifestSettings settings) {
+        static void CreateManifestPackage(IEnumerable<string> args) {
+            BuildingCommandParameter? parameter = null;
+
+            string? src = null;
+            string? dst = null;
+            string? targetNamespace = null;
+            string? manifestName = null;
+            bool guid = false;
+
+            //Description = "create a wam manifest. \"build-manifest -in <src> -out <dest> -ns <namespace> (-name <*.json>) (-guid)\"",
+            foreach(var arg in args) {
+                if(parameter != null) {
+                    switch(parameter.Value) {
+                        case BuildingCommandParameter.Source:
+                            if(src != null) {
+                                Console.WriteLine("warning: multiple source parameters in argument stream");
+                            }
+                            src = arg;
+                            break;
+                        case BuildingCommandParameter.Destination:
+                            if(dst != null) {
+                                Console.WriteLine("warning: multiple destination parameters in argument stream");
+                            }
+                            dst = arg;
+                            break;
+                        case BuildingCommandParameter.TargetNamespace:
+                            if(targetNamespace != null) {
+                                Console.WriteLine("warning: multiple target namespace parameters in argument stream");
+                            }
+                            targetNamespace = arg;
+                            break;
+                        case BuildingCommandParameter.ManifestName:
+                            if(manifestName != null) {
+                                Console.WriteLine("warning: multiple manifest name parameters in argument stream");
+                            }
+                            manifestName = arg;
+                            break;
+                    }
+                    parameter = null;
+                    continue;
+                }
+                
+                if(!arg.StartsWith('-')) {
+                    Console.WriteLine($"unexpected token '{arg}'");
+                    return;
+                }
+                var parameterString = arg.TrimStart('-').ToLowerInvariant();
+                switch(parameterString) {
+                    case "i":
+                    case "src":
+                    case "in":
+                    case "input":
+                    case "source":
+                        parameter = BuildingCommandParameter.Source;
+                        break;
+                    case "o":
+                    case "dst":
+                    case "out":
+                    case "output":
+                    case "destination":
+                        parameter = BuildingCommandParameter.Destination;
+                        break;
+                    case "n":
+                    case "ns":
+                    case "namespace":
+                        parameter = BuildingCommandParameter.TargetNamespace;
+                        break;
+                    case "m":
+                    case "manifest":
+                        parameter = BuildingCommandParameter.ManifestName;
+                        break;
+                    case "guid":
+                        if(guid == true) {
+                            Console.WriteLine("warning: multiple guid flags in argument stream");
+                        }
+                        guid = true;
+                        break;
+                    default:
+                        Console.WriteLine($"unknown parameter '{parameterString}'");
+                        return;
+                }
+            }
+
+            if(parameter != null) {
+                Console.WriteLine("unexpected end of parameter sequence");
+                return;
+            }
+
+            if(src == null) {
+                Console.WriteLine("no source specified (use \"-i <src>\")");
+                return;
+            }
+
+            if(dst == null) {
+                Console.WriteLine("no destination specified (use \"-o <dst>\")");
+                return;
+            }
+
+            if(targetNamespace == null) {
+                Console.WriteLine("no target namespace specified (use \"-n <namespace>\")");
+                return;
+            }
+
+            var settings = new WamManifestSettings(src,dst,targetNamespace,null,guid,false,manifestName!);
             if(
                 !FromCommandLine &&
                 Directory.Exists(settings.Destination) &&
@@ -223,15 +343,6 @@ namespace WAM.CLI {
             var manifestPath = Path.Combine(settings.Destination,settings.ManifestOutputFile);
             File.WriteAllText(manifestPath,json);
             Console.WriteLine($"created manifest file at '{manifestPath}'");
-        }
-
-        static void Debug(IEnumerable<string> args) {
-            var settings = new WamManifestSettings(
-                Source: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets",
-                Destination: @"C:\Users\pinks\OneDrive\Documents\Rust Projects\fourteen\assets\debug-output",
-                TargetNamespace: "test-namespace"
-            );
-            CreateManifestPackage(settings);
         }
     }
 }

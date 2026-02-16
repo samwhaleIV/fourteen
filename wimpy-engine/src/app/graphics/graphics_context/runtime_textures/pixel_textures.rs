@@ -54,4 +54,7 @@ impl<T: GetColor> TextureData for T {
     fn size(&self) -> (u32,u32) {
         return (1,1);
     }
+    fn get_format(&self) -> TextureFormat {
+        return TextureFormat::Rgba8Unorm;
+    }
 }

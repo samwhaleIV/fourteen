@@ -46,7 +46,8 @@ struct TextureCreationParameters {
     size: (u32,u32),
     identity: TextureContainerIdentity,
     mutable: bool,
-    with_data: bool
+    with_data: bool,
+    texture_format: TextureFormat
 }
 
 pub struct TextureDataWriteParameters<'a> {
@@ -61,6 +62,7 @@ pub struct TextureDataWriteParameters<'a> {
 pub trait TextureData {
     fn write_to_queue(self,parameters: &TextureDataWriteParameters);
     fn size(&self) -> (u32,u32);
+    fn get_format(&self) -> TextureFormat;
 }
 
 impl TextureContainer {
@@ -93,7 +95,7 @@ impl TextureContainer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
 
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: parameters.texture_format,
 
             usage: usage_flags,
             label: Some("Texture"),
@@ -125,6 +127,7 @@ impl TextureContainer {
         Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
+            texture_format: INTERNAL_TEXTURE_FORMAT,
             with_data: false,
             mutable: true
         })
@@ -140,6 +143,7 @@ impl TextureContainer {
         let texture_container = Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
+            texture_format: texture_data.get_format(),
             with_data: true,
             mutable: false
         });

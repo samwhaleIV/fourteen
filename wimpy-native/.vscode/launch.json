@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug executable 'wimpy-native'",
+            "name": "Debug 'wimpy-native'",
             "type": "lldb",
             "request": "launch",
             "cargo": {
@@ -21,33 +21,25 @@
             }
         },
         {
-            "name": "Debug unit tests in library 'wimpy_engine'",
-            "type": "lldb",
+            "name": "Compile WAM Assets (Native)",
+            "type": "coreclr",
             "request": "launch",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--package=wimpy-engine"
-                ]
-            },
-            "env": {
-                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
-            }
-        },
-        {
-            "name": "Debug unit tests in executable 'wimpy-native'",
-            "type": "lldb",
-            "request": "launch",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--bin=wimpy-native",
-                    "--package=wimpy-native"
-                ]
-            },
-            "env": {
-                "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
-            }
+            "program": "dotnet",
+            "args": [
+                "${workspaceFolder}../../wam/wam-cli/bin/Debug/net10.0/wam-cli.dll",
+                "build-manifest",
+                "-i",
+                "assets",
+                "-o",
+                "assets/debug-output",
+                "-n",
+                "test-namespace",
+                "-m",
+                "wam.json"
+            ],
+            "cwd": "${workspaceFolder}../../",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
         }
     ]
 }

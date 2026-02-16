@@ -8,7 +8,7 @@ impl MissingTexture {
     const COLOR_1: [u8;Self::BYTES_PER_PIXEL] = [182,0,205,255];
     const COLOR_2: [u8;Self::BYTES_PER_PIXEL] = [53,23,91,255];
 
-    const SIZE: usize = 16;
+    const SIZE: usize = 64;
     const GRID_DIVISION: usize = 4;
     const BYTES_PER_PIXEL: usize = 4;
     const PIXEL_COUNT: usize = Self::SIZE * Self::SIZE;
@@ -26,7 +26,7 @@ impl MissingTexture {
         };
     }
 
-    pub fn create() -> Self {
+    pub fn create() -> Self { 
         let mut data: [u8;Self::DATA_SIZE] = [0;Self::DATA_SIZE];
 
         let mut i: usize = 0;
@@ -70,5 +70,8 @@ impl TextureData for MissingTexture {
     }
     fn size(&self) -> (u32,u32) {
         return (Self::SIZE as u32,Self::SIZE as u32);
+    }
+    fn get_format(&self) -> TextureFormat {
+        return TextureFormat::Rgba8UnormSrgb;
     }
 }

@@ -19,6 +19,27 @@
             "runtimeExecutable": "npx",
             "args": ["serve", "${workspaceFolder}/html"],
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Compile WAM Assets (Web)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "dotnet",
+            "args": [
+                "${workspaceFolder}../../wam/wam-cli/bin/Debug/net10.0/wam-cli.dll",
+                "build-manifest",
+                "-i",
+                "assets",
+                "-o",
+                "wimpy-web/html/assets",
+                "-n",
+                "test-namespace",
+                "-m",
+                "wam.json"
+            ],
+            "cwd": "${workspaceFolder}../../",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
         }
     ]
 }

@@ -3,7 +3,7 @@ use crate::app::graphics::*;
 use crate::shared::*;
 
 pub struct PlaceholderApp {
-    test_texture: TextureFrame
+    test_texture: TextureFrame,
 }
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
@@ -12,7 +12,7 @@ where
 {
     async fn load(context: &mut WimpyContext<'_>) -> Self {
         return Self {
-            test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
+            test_texture: context.load_image_or_default::<IO>("test-namespace/balls").await
         };
     }
 
@@ -35,17 +35,15 @@ where
 
             let texture = self.test_texture;
 
-            let size: Size = 400.into();
-
             let layout = WimpyLayout {
                 x: LayoutDimension {
                     position: Position::center_of_parent(),
-                    size,
+                    size: texture.width().into(),
                     size_offset: 0.into(),
                 },
                 y: LayoutDimension {
                     position: Position::center_of_parent(),
-                    size,
+                    size: texture.height().into(),
                     size_offset: 0.into(),
                 },
             };
