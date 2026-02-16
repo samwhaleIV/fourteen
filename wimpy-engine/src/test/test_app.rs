@@ -74,7 +74,7 @@ impl GraphicsContextConfig for PlaceholderConfig {
     const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = mb_to_b(10);
     const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = mb_to_b(10);
 
-    const UNIFORM_BUFFER_SIZE: usize = 65536;
+    const UNIFORM_BUFFER_SIZE: usize = 16384;
 
     const INSTANCE_BUFFER_SIZE_2D: usize = mb_to_b(5);
     const INSTANCE_BUFFER_SIZE_3D: usize = mb_to_b(5);
