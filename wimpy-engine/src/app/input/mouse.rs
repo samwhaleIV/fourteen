@@ -1,7 +1,7 @@
 use crate::shared::WimpyArea;
 use super::prelude::*;
 
-const JOYSTICK_CURSOR_PIXELS_PER_SECOND: f32 = 1000.0;
+const JOYSTICK_CURSOR_PIXELS_PER_SECOND: f32 = 1500.0;
 
 #[derive(Default,Copy,Clone,PartialEq,Debug)]
 pub struct MousePosition {
@@ -50,7 +50,6 @@ pub enum MouseModeSwitchCommand {
     CameraToInterface,
 }
 
-#[derive(Default)]
 pub struct VirtualMouse {
     left_click_state: MousePressState,
     right_click_state: MousePressState,
@@ -68,6 +67,24 @@ pub struct VirtualMouse {
     show_camera_center_crosshair: bool,
 
     center_screen: (f32,f32)
+}
+
+impl Default for VirtualMouse {
+    fn default() -> Self {
+        Self {
+            left_click_state: Default::default(),
+            right_click_state: Default::default(),
+            position: Default::default(),
+            delta: Default::default(),
+            virtual_mouse_mode: Default::default(),
+            mode_switch_command: Default::default(),
+            interaction_state: Default::default(),
+            emulation_active: Default::default(),
+            show_emulated_cursor_over_ui: true,
+            show_camera_center_crosshair: true,
+            center_screen: Default::default()
+        }
+    }
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
@@ -92,12 +109,12 @@ impl From<MousePressState> for bool {
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
 pub enum CursorGlyph {
+    None,
     #[default]
     Default,
     CanInteract,
     IsInteracting,
     CameraCrosshair,
-    None,
 }
 
 #[derive(Default,Copy,Clone)]
@@ -136,6 +153,8 @@ impl From<InteractionState> for CursorGlyph {
 
 pub struct VirtualMouseShellState {
     pub cursor_glyph: CursorGlyph,
+    pub cursor_x: f32,
+    pub cursor_y: f32,
     pub cursor_rendering_strategy: CursorRenderingStrategy,
     pub mode_switch_command: Option<MouseModeSwitchCommand>
 }
@@ -283,7 +302,9 @@ impl VirtualMouse {
                     false => CursorGlyph::None,
                 },
                 cursor_rendering_strategy: CursorRenderingStrategy::Emulated,
-                mode_switch_command
+                mode_switch_command,
+                cursor_x: self.position.x,
+                cursor_y: self.position.y
             };
         }
         match self.emulation_active {
@@ -294,13 +315,17 @@ impl VirtualMouse {
                     false => CursorGlyph::None,
                 },
                 cursor_rendering_strategy: CursorRenderingStrategy::Emulated,
-                mode_switch_command
+                mode_switch_command,
+                cursor_x: self.position.x,
+                cursor_y: self.position.y
             },
             // UI mode with real mouse
             false => VirtualMouseShellState {
                 cursor_glyph: self.interaction_state.into(),
                 cursor_rendering_strategy: CursorRenderingStrategy::Hardware,
-                mode_switch_command
+                mode_switch_command,
+                cursor_x: self.position.x,
+                cursor_y: self.position.y
             },
         }
     }

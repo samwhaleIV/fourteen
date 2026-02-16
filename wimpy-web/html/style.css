@@ -8,6 +8,22 @@ body {
     overflow: hidden;
 }
 
+body.cursor-default {
+    cursor: default;
+}
+
+body.cursor-interact {
+    cursor: grab;
+}
+
+body.cursor-interacting {
+    cursor: grabbing;
+}
+
+body.cursor-hidden {
+    cursor: none;
+}
+
 canvas#main-canvas {
     background-color: white;
     position: relative;
@@ -20,4 +36,32 @@ pre#debug-output {
     font-family: monospace;
     margin: 20px;
     font-size: 18px;
+}
+
+div#virtual-cursor {
+    display: block;
+    background-color: transparent;
+    pointer-events: none;
+    position: absolute;
+    width: 12px;
+    height: 16px;
+    top: 0px;
+    left: 0px;
+}
+
+div#virtual-cursor.cursor-default {
+    background-color: red;
+}
+
+div#virtual-cursor.cursor-interact {
+    background-color: red;
+}
+
+div#virtual-cursor.cursor-interacting {
+    background-color: red;
+}
+
+div#virtual-cursor.cursor-hidden {
+    display: none;
+    background-color: transparent;
 }

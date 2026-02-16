@@ -68,20 +68,24 @@ fn get_axis_sign(value: f32) -> AxisSign {
 }
 
 impl InterpretiveAxis {
-    pub fn from_f32(value: f32) -> Self {
-        let value = value.abs().max(0.0).min(1.0) * value.signum();
+    pub fn from_f32_with_deadzone(value: f32) -> Self {
+        let out = if value.abs() <= AXIS_DEADZONE {
+            0.0
+        } else {
+            value.signum() * (value.abs() - AXIS_DEADZONE) / (1.0 - AXIS_DEADZONE)
+        };
         Self {
-            sign: get_axis_sign(value),
-            value,
+            sign: get_axis_sign(out),
+            value: out,
         }
     }
     pub fn from_bool(negative: bool,positive: bool) -> InterpretiveAxis {
         match (negative,positive) {
-            (true,  true) => InterpretiveAxis {
+            (true, true) => InterpretiveAxis {
                 sign: AxisSign::Zero,
                 value: 0.0,
             },
-            (true,  false) => InterpretiveAxis {
+            (true, false) => InterpretiveAxis {
                 sign: AxisSign::Negative,
                 value: -1.0,
             },

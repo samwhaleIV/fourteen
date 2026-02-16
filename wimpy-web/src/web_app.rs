@@ -16,6 +16,10 @@ const CANVAS_ID: &'static str = "main-canvas";
 const LEFT_MOUSE_BUTTON: i16 = 0;
 const RIGHT_MOUSE_BUTTON: i16 = 2;
 
+/* Must match 'html/style.css @ div#virtual-cursor' */
+const EMULATED_CURSOR_WIDTH: u32 = 12;
+const EMULATED_CURSOR_HEIGHT: u32 = 16;
+
 #[derive(Debug)]
 pub enum WebAppError {
     WindowNotFound,
@@ -87,6 +91,12 @@ impl Default for MouseState {
             right_pressed: false
         }
     }
+}
+
+#[wasm_bindgen(module = "/html/virtual-cursor.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = updateVirtualCursor)]
+    fn update_virtual_cursor(x: f32,y: f32,glyph: u8,is_emulated: bool,mode_switch_command: u8);
 }
 
 impl<TWimpyApp> WebApp<TWimpyApp>
@@ -198,8 +208,30 @@ where
             WimpyArea {
                 x: 0.0,
                 y: 0.0,
-                width: self.size.0 as f32,
-                height: self.size.1 as f32
+                width: (self.size.0 - EMULATED_CURSOR_WIDTH) as f32,
+                height: (self.size.1 - EMULATED_CURSOR_HEIGHT) as f32
+            }
+        );
+        update_virtual_cursor(
+            mouse_shell_state.cursor_x,
+            mouse_shell_state.cursor_y,
+            match mouse_shell_state.cursor_glyph {
+                CursorGlyph::None => 1,
+                CursorGlyph::Default => 2,
+                CursorGlyph::CanInteract => 3,
+                CursorGlyph::IsInteracting => 4,
+                CursorGlyph::CameraCrosshair => 5,
+            },
+            match mouse_shell_state.cursor_rendering_strategy {
+                CursorRenderingStrategy::Hardware => false,
+                CursorRenderingStrategy::Emulated => true,
+            },
+            match mouse_shell_state.mode_switch_command {
+                Some(value) => match value {
+                    MouseModeSwitchCommand::InterfaceToCamera => 1,
+                    MouseModeSwitchCommand::CameraToInterface => 2,
+                }
+                None => 0,
             }
         );
         //log::trace!("Virtual Mouse Position: {:?}",self.input_manager.get_virtual_mouse().get_position());
