@@ -37,7 +37,8 @@ function processModeSwitchCommand(command) {
 
 
 export function updateVirtualCursor(x,y,glyph,isEmulated,modeSwitchCommand) {
-    console.log(x,y,glyph,isEmulated,modeSwitchCommand);
+    //console.log(x,y,glyph,isEmulated,modeSwitchCommand);
+
     const virtualCursorElement = document.getElementById("virtual-cursor");
 
     if(isEmulated) {

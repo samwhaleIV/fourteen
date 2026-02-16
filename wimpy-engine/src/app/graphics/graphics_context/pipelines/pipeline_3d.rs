@@ -38,12 +38,12 @@ pub struct FrameRenderPass3D<'gc> {
     context: RenderPassContext<'gc>,
     render_pass: RenderPass<'gc>,
     has_transform_bind: bool,
-    frame_size: (u32,u32)
+    //frame_size: (u32,u32)
 }
 
 impl<'gc> FrameRenderPass<'gc> for FrameRenderPass3D<'gc> {
     fn create(
-        frame_size: (u32,u32),
+        _frame_size: (u32,u32),
         mut render_pass: RenderPass<'gc>,
         context: RenderPassContext<'gc>
     ) -> Self {
@@ -66,7 +66,7 @@ impl<'gc> FrameRenderPass<'gc> for FrameRenderPass3D<'gc> {
         );
 
         return Self {
-            frame_size,
+            //frame_size,
             context,
             render_pass,
             has_transform_bind: false,

@@ -125,7 +125,7 @@ impl GraphicsContext {
             Err(error) => {
                 log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
                 let texture_id = self.texture_id_generator.next();
-                self.frame_cache.insert_with_lease(size,TextureContainer::create_mutable(
+                self.frame_cache.insert_with_lease(size,TextureContainer::create_render_target(
                     &self.graphics_provider,
                     texture_id,
                     (size,size)
@@ -153,7 +153,7 @@ impl GraphicsContext {
                 input: size,
                 output
             },
-            self.frame_cache.insert_keyless(TextureContainer::create_mutable(
+            self.frame_cache.insert_keyless(TextureContainer::create_render_target(
                 &self.graphics_provider,
                 texture_id,
                 output
@@ -184,7 +184,7 @@ impl GraphicsContext {
             return;
         }
         let texture_id = self.texture_id_generator.next();
-        self.frame_cache.insert(size,TextureContainer::create_mutable(
+        self.frame_cache.insert(size,TextureContainer::create_render_target(
             &self.graphics_provider,
             texture_id,
             (size,size)

@@ -45,8 +45,10 @@ impl TextureIdentityGenerator {
 struct TextureCreationParameters {
     size: (u32,u32),
     identity: TextureContainerIdentity,
-    mutable: bool,
-    with_data: bool,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    render_target: bool,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    with_queue_data: bool,
     texture_format: TextureFormat
 }
 
@@ -78,15 +80,21 @@ impl TextureContainer {
             depth_or_array_layers: 1,
         };
 
-        let mut usage_flags = TextureUsages::TEXTURE_BINDING;
+        #[cfg(not(target_arch = "wasm32"))]
+        let usage_flags = {
+            let mut flags = TextureUsages::TEXTURE_BINDING;
+            if parameters.with_queue_data {
+                usage_flags |= TextureUsages::COPY_DST;
+            }
+            if parameters.render_target {
+                usage_flags |= TextureUsages::RENDER_ATTACHMENT;
+            }
+        };
 
-        if parameters.with_data {
-            usage_flags |= TextureUsages::COPY_DST;
-        }
-
-        if parameters.mutable {
-            usage_flags |= TextureUsages::RENDER_ATTACHMENT;
-        }
+        //Explanation... https://github.com/gpuweb/gpuweb/issues/3357#issuecomment-1223400585
+        // https://github.com/hansjm10/Idle-Game-Engine/issues/846
+        #[cfg(target_arch = "wasm32")]
+        let usage_flags = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
 
         let device = graphics_provider.get_device();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -119,7 +127,7 @@ impl TextureContainer {
         return self.identity;
     }
 
-    pub fn create_mutable(
+    pub fn create_render_target(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
         size: (u32,u32) // Externally validated (in graphics context)
@@ -128,8 +136,8 @@ impl TextureContainer {
             size,
             identity,
             texture_format: INTERNAL_TEXTURE_FORMAT,
-            with_data: false,
-            mutable: true
+            with_queue_data: false,
+            render_target: true
         })
     }
 
@@ -144,8 +152,8 @@ impl TextureContainer {
             size,
             identity,
             texture_format: texture_data.get_format(),
-            with_data: true,
-            mutable: false
+            with_queue_data: true,
+            render_target: false
         });
 
         texture_data.write_to_queue(&TextureDataWriteParameters {

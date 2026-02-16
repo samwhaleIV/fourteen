@@ -3,7 +3,7 @@ use std::path::Path;
 
 use std::{cell::RefCell,rc::Rc};
 use wasm_bindgen::{JsCast,JsValue,prelude::Closure};
-use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, Performance, Window};
+use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, Window};
 use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 
 use wimpy_engine::app::*;
