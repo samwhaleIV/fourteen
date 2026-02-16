@@ -269,7 +269,7 @@ where
                     }
                     let axis_value = cast_axis_value(value);
                     if match axis {
-                        Axis::TriggerLeft | Axis::TriggerRight => significant_trigger_difference(
+                        Axis::TriggerLeft | Axis::TriggerRight => trigger_active(
                             0.0,
                             axis_value
                         ),

@@ -37,13 +37,6 @@ pub struct MouseInput {
     pub right_pressed: bool
 }
 
-impl MouseInput {
-    pub fn has_significant_activity(&self,other: &MouseInput) -> bool {
-        // Might want to see if it's more than a few pixels... or not. Who cares
-        return self != other;
-    }
-}
-
 #[derive(Clone,Copy)]
 pub enum MouseModeSwitchCommand {
     InterfaceToCamera,
@@ -82,7 +75,7 @@ impl Default for VirtualMouse {
             emulation_active: Default::default(),
             show_emulated_cursor_over_ui: true,
             show_camera_center_crosshair: true,
-            center_screen: Default::default()
+            center_screen: Default::default(),
         }
     }
 }

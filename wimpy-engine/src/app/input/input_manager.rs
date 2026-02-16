@@ -21,7 +21,7 @@ pub enum InputType {
 
 #[derive(Default)]
 pub struct InputManager {
-    previous_mouse_state: MouseInput,
+    recent_mouse_input: MouseInput,
     gamepad_cache: GamepadCache,
     keyboard_state: KeyboardState,
     keyboard_translator: KeyboardTranslator,
@@ -158,14 +158,19 @@ pub mod app_shell_controller {
         ) -> VirtualMouseShellState {
             let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);
 
-            if mouse_input.has_significant_activity(&self.previous_mouse_state) {
-                self.recent_input_method = InputType::KeyboardAndMouse;
-            }
-            self.previous_mouse_state = mouse_input;
-
             if self.gamepad_cache.update(gamepad_input) == UserActivity::Some {
                 self.recent_input_method = InputType::Gamepad;
             }
+
+            let old_mouse_input = &self.recent_mouse_input;
+            if
+                old_mouse_input.left_pressed != mouse_input.left_pressed ||
+                old_mouse_input.right_pressed != mouse_input.right_pressed ||
+                old_mouse_input.position != mouse_input.position
+            {
+                self.recent_input_method = InputType::KeyboardAndMouse;
+            }
+            self.recent_mouse_input = mouse_input;
 
             let gamepad_state = self.gamepad_cache.impulse_set();
             let new_state = ImpulseSet::mix(&keyboard_state,&gamepad_state);
@@ -188,7 +193,7 @@ pub mod app_shell_controller {
             self.impulse_state = new_state;
 
             let virtual_mouse_shell_state = self.virtual_mouse.update(
-                &self.previous_mouse_state,
+                &self.recent_mouse_input,
                 &self.gamepad_cache,
                 self.recent_input_method,
                 delta_seconds,

@@ -7,12 +7,10 @@ pub struct GamepadCache {
     output: GamepadOutput
 }
 
-const THUMBSTICK_IMPULSE_THRESHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
-const TRIGGER_PRESSED_THREHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
+const JOYSTICK_IMPULSE_THRESHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
+const TRIGGER_IS_PRESSED_THREHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
 
-/* Try and match parity with 'html/gamepad-manager.js' */
-pub const AXIS_DEADZONE: f32 = 0.1;
-const TRIGGER_INEQUALITY_DISTANCE: f32 = 1.0 / 20.0;
+pub const AXIS_DEADZONE: f32 = 0.15;
 
 bitflags! {
     #[derive(Debug,PartialEq,Eq,Copy,Clone)]
@@ -104,7 +102,7 @@ impl InterpetiveTrigger {
     fn create(value: f32) -> Self {
         return Self {
             value,
-            is_pressed: value >= TRIGGER_PRESSED_THREHOLD
+            is_pressed: value >= TRIGGER_IS_PRESSED_THREHOLD
         }
     }
     pub fn is_pressed(&self) -> bool {
@@ -194,7 +192,7 @@ impl GamepadInput {
 
     fn get_impulse_set(&self,axes: &InterpretiveAxes) -> ImpulseSet {
 
-        let threshold = THUMBSTICK_IMPULSE_THRESHOLD;
+        let threshold = JOYSTICK_IMPULSE_THRESHOLD;
 
         ImpulseSet::new(ImpulseSetDescription {
             up:    axes.infer_impulse(Direction::Up,threshold),
@@ -232,53 +230,15 @@ impl GamepadInput {
     }
 }
 
-pub fn significant_axis_difference(a: f32,b: f32) -> bool {
-    f32::abs(a - b) > 0.0
-}
-
-pub fn significant_trigger_difference(a: f32,b: f32) -> bool {
-    f32::abs(a - b) >= TRIGGER_INEQUALITY_DISTANCE
-}
-
-fn significant_joystick_difference(a: InterpretiveAxes,b: InterpretiveAxes) -> bool {
-    significant_axis_difference(
-        a.get_x_f32(),
-        b.get_x_f32()
-    ) ||
-    significant_axis_difference(
-        a.get_y_f32(),
-        b.get_y_f32()
-    )
-}
-
-fn has_significant_button_activity(a: &GamepadInput,b: &GamepadInput) -> bool {
-    a.buttons != b.buttons ||
-    significant_trigger_difference(
-        a.left_trigger,
-        b.left_trigger
-    ) ||
-    significant_trigger_difference(
-        a.right_trigger,
-        b.right_trigger
-    )
-}
-
 impl GamepadCache {
     pub fn update(&mut self,gamepad_input: GamepadInput) -> UserActivity {
-        let mut user_activity = match has_significant_button_activity(&self.input,&gamepad_input) {
+        let user_activity = match &self.input.buttons != &gamepad_input.buttons {
             true => UserActivity::Some,
             false => UserActivity::None,
         };
 
         self.input = gamepad_input;
         self.output = self.input.get_output();
-
-        if user_activity == UserActivity::None && significant_joystick_difference(
-            self.output.left_interpretive_axes,
-            self.output.right_interpretive_axes
-        ) {
-            user_activity = UserActivity::Some;
-        }
 
         return user_activity;
     }

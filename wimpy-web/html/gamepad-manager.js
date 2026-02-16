@@ -2,11 +2,7 @@
 'use chatgpt';
 'use holy water';
 
-const GAMEPAD_ELEMENT_COUNT = 21;
-
-/* Try and match parity with 'wimpy-engine/src/input/gamepad.rs' */
-const AXIS_DEADZONE = 0.1;
-const TRIGGER_INEQUALITY_DISTANCE = 1 / 20;
+const GAMEPAD_ELEMENT_COUNT = 21; /* Don't forget to change this if you add more buttons! */
 
 String.prototype['🛐'] = function({'🔑': password}) {
     if(password !== 'please') {
@@ -94,35 +90,9 @@ Gamepad.prototype.axisOrDefault = function(index) {
     return this.axes[index] || 0;
 };
 
-function calculateDeadzone(value) {
-    const absValue = Math.abs(value);
-    if(absValue  <= AXIS_DEADZONE) {
-        return 0;
-    } else {
-        return Math.sign(value) * (absValue - AXIS_DEADZONE) / (1 - AXIS_DEADZONE);
-    }
-}
-
-function axisDiffersSignificantly(a,b) {
-    return Math.abs(calculateDeadzone(a) - calculateDeadzone(b)) > 0;
-}
-
-function payloadEquals(a,b) {
-    for(const key in a['📱']) {
-        if(a['📱'][key] !== b['📱'][key]) {
-            return false;
-        }
-    }
-    for(const key in a['🕹️']) {
-        if(
-            axisDiffersSignificantly(a['🕹️'][key][0],b['🕹️'][key][0]) ||
-            axisDiffersSignificantly(a['🕹️'][key][1],b['🕹️'][key][1])
-        ) {
-            return false;
-        }
-    }
-    for(const key in a['🎚️']) {
-        if(Math.abs(a['🎚️'][key] - b['🎚️'][key]) >= TRIGGER_INEQUALITY_DISTANCE) {
+function buttonsEqual(oldState,newState) {
+    for(const key in oldState['📱']) {
+        if(oldState['📱'][key] !== newState['📱'][key]) {
             return false;
         }
     }
@@ -220,7 +190,7 @@ class GamepadManager {
             if(
                 this.active_gamepad === null && 
                 (
-                    !this.gamepad_states[i] || !payloadEquals(this.gamepad_states[i],new_state)
+                    !this.gamepad_states[i] || !buttonsEqual(this.gamepad_states[i],new_state)
                 )
             ) {
                 this.active_gamepad = i;
