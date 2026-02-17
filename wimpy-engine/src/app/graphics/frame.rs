@@ -88,6 +88,7 @@ pub trait FrameReference {
 
 pub trait MutableFrame: FrameReference {
     fn get_clear_color(&self) -> Option<wgpu::Color>;
+    fn is_output_surface(&self) -> bool;
 }
 
 impl FrameReference for OutputFrame {
@@ -150,17 +151,26 @@ impl MutableFrame for OutputFrame {
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         Some(self.clear_color)
     }
+    fn is_output_surface(&self) -> bool {
+        return true;
+    }
 }
 
 impl MutableFrame for TempFrame {
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         Some(self.clear_color)
     }
+    fn is_output_surface(&self) -> bool {
+        return false;
+    }
 }
 
 impl MutableFrame for LongLifeFrame {
     fn get_clear_color(&self) -> Option<wgpu::Color> {
         None
+    }
+    fn is_output_surface(&self) -> bool {
+        return false;
     }
 }
 

@@ -1,10 +1,12 @@
 use super::prelude::*;
 
-pub mod pipeline_shared;
-pub mod pipeline_core;
-pub mod pipeline_2d;
-pub mod pipeline_3d;
+mod pipeline_creator;
+mod pipeline_shared;
+mod pipeline_core;
+mod pipeline_2d;
+mod pipeline_3d;
 
+pub use pipeline_creator::*;
 pub use pipeline_shared::*;
 pub use pipeline_core::*;
 pub use pipeline_2d::*;

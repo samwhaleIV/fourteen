@@ -5,7 +5,7 @@ pub use shader_definitions::*;
 use super::*;
 
 pub struct Pipeline2D {
-    render_pipeline: RenderPipeline,
+    pipelines: PipelineVariants,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<QuadInstance>,
@@ -54,12 +54,13 @@ impl PipelineController for Pipeline2D {
 
 impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
     fn create(
-        frame_size: (u32,u32),
+        frame: &impl MutableFrame,
         mut render_pass: RenderPass<'gc>,
         mut context: RenderPassContext<'gc>
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
-        render_pass.set_pipeline(&pipeline_2d.render_pipeline); 
+
+        render_pass.set_pipeline(pipeline_2d.pipelines.select(frame));
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),
@@ -76,7 +77,7 @@ impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
 
-        let transform = TransformUniform::create_ortho(frame_size);
+        let transform = TransformUniform::create_ortho(frame.size());
         let uniform_buffer_range = context.get_shared_mut().get_uniform_buffer().push(transform);
         let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
 

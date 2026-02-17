@@ -130,6 +130,6 @@ impl TextureData for ExternalImageSourceWrapper {
     }
     
     fn get_format(&self) -> wgpu::TextureFormat {
-        return wgpu::TextureFormat::Rgba8UnormSrgb;
+        return wgpu::TextureFormat::Rgba8UnormSrgb
     }
 }

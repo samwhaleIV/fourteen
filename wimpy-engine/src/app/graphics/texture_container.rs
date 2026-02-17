@@ -135,7 +135,7 @@ impl TextureContainer {
         Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
-            texture_format: INTERNAL_TEXTURE_FORMAT,
+            texture_format: INTERNAL_RENDER_TARGET_FORMAT,
             with_queue_data: false,
             render_target: true
         })

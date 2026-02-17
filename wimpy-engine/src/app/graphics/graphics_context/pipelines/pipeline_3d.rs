@@ -9,7 +9,7 @@ use crate::app::wam::ModelData;
 use super::*;
 
 pub struct Pipeline3D {
-    pipeline: RenderPipeline,
+    pipelines: PipelineVariants,
     instance_buffer: DoubleBuffer<ModelInstance>,
 }
 
@@ -38,17 +38,16 @@ pub struct FrameRenderPass3D<'gc> {
     context: RenderPassContext<'gc>,
     render_pass: RenderPass<'gc>,
     has_transform_bind: bool,
-    //frame_size: (u32,u32)
 }
 
 impl<'gc> FrameRenderPass<'gc> for FrameRenderPass3D<'gc> {
     fn create(
-        _frame_size: (u32,u32),
+        frame: &impl MutableFrame,
         mut render_pass: RenderPass<'gc>,
         context: RenderPassContext<'gc>
     ) -> Self {
         let pipeline_3d = context.get_3d_pipeline();
-        render_pass.set_pipeline(&pipeline_3d.pipeline);
+        render_pass.set_pipeline(pipeline_3d.pipelines.select(frame));
 
         render_pass.set_index_buffer(
             context.model_cache.get_index_buffer_slice(),

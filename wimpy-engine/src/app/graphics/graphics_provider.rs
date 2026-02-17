@@ -39,8 +39,10 @@ impl GraphicsProvider {
         };
 
         let max_texture_dimension = adapter.limits().max_texture_dimension_2d;
+        let max_uniform_buffer_size = adapter.limits().max_uniform_buffer_binding_size;
 
         config.limits.max_texture_dimension_2d = max_texture_dimension;
+        config.limits.max_uniform_buffer_binding_size = max_uniform_buffer_size;
 
         let (device,queue) = match adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
@@ -56,13 +58,24 @@ impl GraphicsProvider {
 
         log::info!("LIMITS INFO: min_uniform_buffer_offset_alignment: {}",adapter.limits().min_uniform_buffer_offset_alignment);
         log::info!("LIMITS INFO: max_texture_dimension_2d: {}",adapter.limits().max_texture_dimension_2d);
+        log::info!("LIMITS INFO: max_uniform_buffer_size: {}",adapter.limits().max_uniform_buffer_binding_size);
 
         let surface_capabilities = config.surface.get_capabilities(&adapter);
 
+        /* Due to inconsistency of surface availability between WebGl and WebGPU, sRGB must be applied by our own pipelines. */
         let surface_format = surface_capabilities.formats.iter()
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_capabilities.formats[0]);
+
+        for format in surface_capabilities.formats.iter() {
+            log::info!("Available surface format: {:?}",format);
+        }
+        log::info!("Selected surface format: {:?}",surface_format);
+
+        // if surface_format != TextureFormat::Rgba8Unorm {
+        //     log::warn!("Output surface format is not Rgba8Unorm")
+        // }
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

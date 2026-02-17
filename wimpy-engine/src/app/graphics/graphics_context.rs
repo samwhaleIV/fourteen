@@ -21,7 +21,7 @@ pub struct OutputBuilderContext<'gc> {
 
 pub trait FrameRenderPass<'rp> {
     fn create(
-        frame_size: (u32,u32),
+        frame: &impl MutableFrame,
         render_pass: RenderPass<'rp>,
         context: RenderPassContext<'rp>
     ) -> Self;
@@ -283,7 +283,7 @@ impl<'gc> OutputBuilder<'gc> {
         };
 
         let frame_render_pass = TRenderPass::create(
-            frame.get_input_size(),
+            frame,
             render_pass,
             render_pass_context
         );

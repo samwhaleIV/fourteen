@@ -110,7 +110,7 @@ where
         let canvas = get_canvas()?;
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
             ..InstanceDescriptor::default()
         });
         let surface_target = SurfaceTarget::Canvas(canvas);

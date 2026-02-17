@@ -11,12 +11,12 @@ impl Pipeline3D {
     {
         let device = graphics_provider.get_device();
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader = &device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Pipeline 3D Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("pipeline3D.wgsl").into())
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let render_pipeline_layout = &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 3D Render Layout"),
             bind_group_layouts: &[
                 texture_layout,
@@ -25,29 +25,15 @@ impl Pipeline3D {
             push_constant_ranges: &[]
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Pipeline 3D"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[
-                    ModelVertex::get_buffer_layout(),
-                    ModelInstance::get_buffer_layout()
-                ]
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: graphics_provider.get_output_format(),
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })]
-            }),
-            primitive: wgpu::PrimitiveState {
+        let pipeline_creator = PipelineCreator {
+            graphics_provider,
+            render_pipeline_layout,
+            shader,
+            vertex_buffer_layout: &[
+                ModelVertex::get_buffer_layout(),
+                ModelInstance::get_buffer_layout()
+            ],
+            primitive_state: &wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
@@ -56,15 +42,9 @@ impl Pipeline3D {
                 unclipped_depth: false,
                 conservative: false
             },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None
-        });
+            label: "Pipeline 3D",
+        };
+        let pipelines = pipeline_creator.create_variants();
 
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
@@ -76,8 +56,8 @@ impl Pipeline3D {
         );
 
         return Self {
-            pipeline,
-            instance_buffer
+            pipelines,
+            instance_buffer,
         }
     }
 }
