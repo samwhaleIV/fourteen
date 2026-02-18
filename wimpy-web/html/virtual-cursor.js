@@ -31,23 +31,37 @@ function clearPointerLock() {
     }
 }
 
+const ACTIVE_TEXT = "Camera Control Active";
+const PENDING_TEXT = "Camera Control Pending";
+
 const mousePollBuffer = new Float32Array(6);
 let shouldBeInPointerLock = false;
 
 export function updateVirtualCursor(x,y,glyph,isEmulated,mode) {
     //console.log(x,y,glyph,isEmulated,mode);
     const virtualCursor = document.getElementById("virtual-cursor");
+    const statusElement = document.getElementById("mouse-mode-status");
 
     if(mode === CAMERA_MODE_CODE) {
+        statusElement.className = "";
         shouldBeInPointerLock = true;
         virtualCursor.className = "cursor-hidden";
         if(isEmulated) {
             clearPointerLock();
             document.body.className = "cursor-hidden";
+            statusElement.textContent = ACTIVE_TEXT;
         } else {
-            document.body.className = document.pointerLockElement? "cursor-hidden" : "click-me";
+            if(document.pointerLockElement) {
+                document.body.className = "cursor-hidden";
+                statusElement.textContent = ACTIVE_TEXT;
+            } else {
+                document.body.className = "click-me";
+                statusElement.textContent = PENDING_TEXT;
+            }
         }
     } else {
+        statusElement.className = "hidden";
+        statusElement.textContent = "";
         shouldBeInPointerLock = false;
         clearPointerLock();
         if(isEmulated) {
