@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug 'wimpy-native'",
+            "name": "Build Debug",
             "type": "lldb",
             "request": "launch",
             "cargo": {
@@ -18,6 +18,23 @@
             "args": [],
             "env": {
                 "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
+            }
+        },
+        {
+            "name": "Build Release",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "run",
+                    "--release",
+                    "--bin=wimpy-native",
+                    "--package=wimpy-native"
+                ]
+            },
+            "args": [],
+            "env": {
+                "RUST_LOG": "wimpy_engine,wimpy_native=INFO"
             }
         },
         {

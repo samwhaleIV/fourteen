@@ -186,7 +186,8 @@ where
                 y: 0.0,
                 width: (self.size.0 - EMULATED_CURSOR_WIDTH) as f32,
                 height: (self.size.1 - EMULATED_CURSOR_HEIGHT) as f32
-            }
+            },
+            false
         );
 
         update_virtual_cursor(
@@ -199,9 +200,9 @@ where
                 CursorGlyph::IsInteracting => 4,
                 CursorGlyph::CameraCrosshair => 5,
             },
-            match mouse_shell_state.cursor_rendering_strategy {
-                CursorRenderingStrategy::Hardware => false,
-                CursorRenderingStrategy::Emulated => true,
+            match mouse_shell_state.likely_active_device {
+                LikelyActiveDevice::Mouse => false,
+                LikelyActiveDevice::Gamepad => true,
             },
             match mouse_shell_state.mouse_mode {
                 MouseMode::Interface => 1,

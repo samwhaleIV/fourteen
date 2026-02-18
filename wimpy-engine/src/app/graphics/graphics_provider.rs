@@ -82,7 +82,7 @@ impl GraphicsProvider {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1
+            desired_maximum_frame_latency: 3
         };
 
         let max_texture_power_of_two = prev_power_of_two(max_texture_dimension);

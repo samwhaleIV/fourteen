@@ -150,6 +150,7 @@ pub mod app_shell_controller {
             gamepad_input: GamepadInput,
             delta_seconds: f32,
             mouse_emulation_bounds: WimpyArea,
+            context_can_reposition_hardware_cursor: bool,
         ) -> VirtualMouseShellState {
             let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);
 
@@ -193,6 +194,7 @@ pub mod app_shell_controller {
                 &self.gamepad_cache,
                 delta_seconds,
                 mouse_emulation_bounds,
+                context_can_reposition_hardware_cursor
             );
 
             self.delta_seconds = delta_seconds;

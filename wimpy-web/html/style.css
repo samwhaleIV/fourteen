@@ -70,10 +70,6 @@ div#virtual-cursor.cursor-hidden {
     background-color: transparent;
 }
 
-p#mouse-mode-status.hidden {
-    display: none;
-}
-
 p#mouse-mode-status {
     position: absolute;
     display: block;
@@ -90,4 +86,16 @@ p#mouse-mode-status {
     color: black;
     font-size: 14px;
     pointer-events: none;
+}
+
+p#mouse-mode-status.hidden {
+    display: none;
+}
+
+p#mouse-mode-status.active::after {
+    content: "Camera Control Active";
+}
+
+p#mouse-mode-status.pending::after {
+    content: "Camera Control Pending";
 }

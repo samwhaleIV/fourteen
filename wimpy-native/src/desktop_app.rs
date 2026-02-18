@@ -1,25 +1,28 @@
 const WINDOW_TITLE: &'static str = "Wimpy Engine";
 const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
 
+const LEFT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 2;
+const RIGHT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 8;
+
 use std::{
     collections::HashMap,
     path::Path
 };
 
 use sdl2::{
-    EventPump, GameControllerSubsystem, Sdl, VideoSubsystem, controller::{
+    EventPump, GameControllerSubsystem, Sdl, TimerSubsystem, VideoSubsystem, controller::{
         Axis,
         Button,
         GameController
     }, event::{
         Event,
         WindowEvent
-    }
+    }, mouse::MouseButton, video::Window
 };
 
 use wgpu::{Instance, Limits, Surface};
 
-use wimpy_engine::app::*;
+use wimpy_engine::{app::*, shared::WimpyArea};
 use wimpy_engine::app::wam::*;
 use wimpy_engine::app::input::*;
 use wimpy_engine::app::graphics::*;
@@ -42,12 +45,15 @@ struct InnerApp<TWimpyApp> {
     graphics_context: GraphicsContext,
     input_manager: InputManager,
     asset_manager: AssetManager,
-    window_id: u32,
     key_value_store: KeyValueStore,
+    mouse_cache: MouseInput,
+    window: Window,
+    now: u64
 }
 
 struct SDLSystems {
     main: Sdl,
+    timer: TimerSubsystem,
     video: VideoSubsystem,
     game_controller: Option<GameControllerSubsystem>,
 }
@@ -56,8 +62,7 @@ async fn async_load<TWimpyApp,TConfig>(
     manifest_path: Option<&Path>,
     instance: Instance,
     surface: Surface<'static>,
-    window_id: u32,
-    window_size: (u32,u32),
+    window: Window,
     sdl_systems: SDLSystems
 ) -> Option<InnerApp<TWimpyApp>>
 where
@@ -75,6 +80,8 @@ where
             return None;
         }
     };
+
+    let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
     let mut asset_manager = AssetManager::load_or_default::<DekstopAppIO>(manifest_path).await;
@@ -94,6 +101,8 @@ where
         assets: &mut asset_manager
     }).await;
 
+    let now = sdl_systems.timer.performance_counter();
+
     return Some(InnerApp {
         sdl: sdl_systems,
         wimpy_app,
@@ -102,8 +111,10 @@ where
         graphics_context,
         input_manager,
         asset_manager,
-        window_id,
+        window,
+        mouse_cache: Default::default(),
         key_value_store,
+        now,
     });
 }
 
@@ -123,9 +134,12 @@ where
         },
     };
 
+    let timer_subsystem = sdl.timer().expect("sdl timer subsystem");
+
     let sdl_systems = SDLSystems {
         game_controller: game_controller_subsystem,
         video: video_subsystem,
+        timer: timer_subsystem,
         main: sdl
     };
 
@@ -153,8 +167,8 @@ where
     if let Some(mut inner_app) = pollster::block_on(async_load::<TWimpyApp,TConfig>(
         manifest,
         instance,
-        surface,window.id(),
-        window.size(),
+        surface,
+        window,
         sdl_systems
     )) {
         inner_app.start_loop();
@@ -180,12 +194,55 @@ where
     }
 
     fn update(&mut self) {
+        let last = self.now;
+        self.now = self.sdl.timer.performance_counter();
+
+        let delta_seconds = ((self.now - last) as f64 / self.sdl.timer.performance_frequency() as f64) as f32;
+
         let gamepad_state = match &self.active_gamepad {
             Some(gamepad) => get_gamepad_state(gamepad),
             None => Default::default(),
         };
 
-        self.input_manager.update(gamepad_state);
+        let size = self.graphics_context.get_graphics_provider().get_size();
+
+        let shell_state = self.input_manager.update(
+            self.mouse_cache,
+            gamepad_state,
+            delta_seconds,
+            WimpyArea {
+                x: LEFT_EDGE_VIRTUAL_MODE_MARGIN as f32,
+                y: LEFT_EDGE_VIRTUAL_MODE_MARGIN as f32,
+                width: (size.0 - RIGHT_EDGE_VIRTUAL_MODE_MARGIN) as f32,
+                height: (size.1 - RIGHT_EDGE_VIRTUAL_MODE_MARGIN) as f32,
+            },
+            true
+        );
+
+        self.mouse_cache.delta = Default::default();
+
+        let sdl_mouse = self.sdl.main.mouse();
+
+        match shell_state.mouse_mode {
+            MouseMode::Interface => {
+                if sdl_mouse.relative_mouse_mode() {
+                    sdl_mouse.set_relative_mouse_mode(false);
+                }
+            },
+            MouseMode::Camera => {
+                if !sdl_mouse.relative_mouse_mode() {
+                    sdl_mouse.set_relative_mouse_mode(true);
+                }
+            },
+        };
+
+        if shell_state.should_reposition_hardware_cursor {
+            sdl_mouse.warp_mouse_in_window(
+                &self.window,
+                shell_state.position.x as i32, 
+                shell_state.position.y as i32
+            );
+        }
 
         self.wimpy_app.update(&mut WimpyContext {
             graphics: &mut self.graphics_context,
@@ -200,14 +257,62 @@ where
             match event {
                 Event::Window {
                     window_id,
+                    win_event: WindowEvent::FocusLost,
+                    ..
+                } if window_id == self.window.id() => {
+                    let sdl_mouse = self.sdl.main.mouse();
+                    if sdl_mouse.relative_mouse_mode() {
+                        sdl_mouse.set_relative_mouse_mode(false);
+                    }
+                }
+                Event::Window {
+                    window_id,
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
-                } if window_id == self.window_id => {
+                } if window_id == self.window.id() => {
                     self.graphics_context.get_graphics_provider_mut().set_size(
                         width as u32,
                         height as u32
                     );
-                }
+                },
+                Event::MouseButtonDown { x, y, mouse_btn, .. } => {
+                    self.mouse_cache.position = Position {
+                        x: x as f32,
+                        y: y as f32
+                    };
+                    match mouse_btn {
+                        MouseButton::Left => {
+                            self.mouse_cache.left_pressed = true;
+                        },
+                        MouseButton::Right => {
+                            self.mouse_cache.right_pressed = true;
+                        },
+                        _ => {}
+                    };
+                },
+                Event::MouseButtonUp { x, y, mouse_btn, .. } => {
+                    self.mouse_cache.position = Position {
+                        x: x as f32,
+                        y: y as f32
+                    };
+                    match mouse_btn {
+                        MouseButton::Left => {
+                            self.mouse_cache.left_pressed = false;
+                        },
+                        MouseButton::Right => {
+                            self.mouse_cache.right_pressed = false;
+                        },
+                        _ => {}
+                    };
+                },
+                Event::MouseMotion { x, y, xrel, yrel, .. } => {
+                    self.mouse_cache.delta.x += xrel as f32;
+                    self.mouse_cache.delta.y += yrel as f32;
+                    self.mouse_cache.position = Position {
+                        x: x as f32,
+                        y: y as f32
+                    };
+                },
                 Event::KeyDown {
                     keycode: Some(keycode),
                     repeat,
@@ -263,29 +368,13 @@ where
                         }
                     }
                 },
-                Event::ControllerAxisMotion { which, value, axis, .. } => {
-                    if self.active_gamepad.is_some() {
-                        continue;
-                    }
-                    let axis_value = cast_axis_value(value);
-                    if match axis {
-                        Axis::TriggerLeft | Axis::TriggerRight => trigger_active(
-                            0.0,
-                            axis_value
-                        ),
-                        Axis::LeftX | Axis::LeftY | Axis::RightX | Axis::RightY => significant_axis_difference(
-                            0.0,
-                            axis_value
-                        ),
-                    } {
+                Event::ControllerAxisMotion { which, .. } => {
+                    if self.active_gamepad.is_none() {
                         self.set_active_controller(which);
                     }
                 },
                 Event::ControllerButtonDown { which, .. } |
-                Event::ControllerButtonUp { which, .. } |
-                Event::ControllerTouchpadDown { which, .. } |
-                Event::ControllerTouchpadUp { which, .. } |
-                Event::ControllerTouchpadMotion { which, .. } => {
+                Event::ControllerButtonUp { which, .. } => {
                     if self.active_gamepad.is_none() {
                         self.set_active_controller(which);
                     }

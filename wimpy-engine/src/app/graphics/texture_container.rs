@@ -84,11 +84,12 @@ impl TextureContainer {
         let usage_flags = {
             let mut flags = TextureUsages::TEXTURE_BINDING;
             if parameters.with_queue_data {
-                usage_flags |= TextureUsages::COPY_DST;
+                flags |= TextureUsages::COPY_DST;
             }
             if parameters.render_target {
-                usage_flags |= TextureUsages::RENDER_ATTACHMENT;
+                flags |= TextureUsages::RENDER_ATTACHMENT;
             }
+            flags
         };
 
         //Explanation... https://github.com/gpuweb/gpuweb/issues/3357#issuecomment-1223400585

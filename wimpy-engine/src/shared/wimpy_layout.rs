@@ -47,18 +47,11 @@ impl WimpyArea {
         return (self.x + self.width * 0.5,self.y + self.height * 0.5);
     }
 
-    pub fn clip(&self,mut x: Unit,mut y: Unit) -> (Unit,Unit) {
-        if x < self.left() {
-            x = self.left();
-        } else if x > self.right() {
-            x = self.right();
-        }
-        if y < self.top() {
-            y = self.top();
-        } else if y > self.bottom() {
-            y = self.bottom();
-        }
-        return (x,y);
+    pub fn get_point_contained(&self,x: Unit,y: Unit) -> (Unit,Unit) {
+        return (
+            x.max(self.left()).min(self.right()),
+            y.max(self.left()).min(self.bottom()),
+        );
     }
 
     pub fn to_center_encoded(&self) -> Self {

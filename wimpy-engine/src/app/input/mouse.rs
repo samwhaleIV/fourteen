@@ -16,7 +16,7 @@ impl Position {
         self
     }
     fn clip(mut self,bounds: WimpyArea) -> Self {
-        let point = bounds.clip(self.x,self.y);
+        let point = bounds.get_point_contained(self.x,self.y);
         self.x = point.0;
         self.y = point.1;
         self
@@ -44,7 +44,13 @@ pub enum MouseModeSwitchCommand {
 }
 
 impl MouseInput {
-    fn from_gamepad(gamepad: &GamepadCache,position: Position,retain_position: bool,emulation_bounds: WimpyArea,delta_seconds: f32) -> Self {
+    fn from_gamepad(
+        gamepad: &GamepadCache,
+        position: Position,
+        retain_position: bool,
+        emulation_bounds: WimpyArea,
+        delta_seconds: f32
+    ) -> Self {
         let max_pixels = JOYSTICK_CURSOR_PIXELS_PER_SECOND * delta_seconds;
         let delta = Delta {
             x: gamepad.right_axes().get_x_f32() * max_pixels,
@@ -97,7 +103,8 @@ pub struct VirtualMouse {
     hide_emulated_cursor_over_ui: bool,
     hide_camera_center_crosshair: bool,
 
-    gamepad_position_init: bool
+    gamepad_position_init: bool,
+    initialized: bool
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
@@ -147,10 +154,10 @@ pub enum MouseMode {
 }
 
 #[derive(Debug,Default,Copy,Clone,PartialEq,Eq)]
-pub enum CursorRenderingStrategy {
+pub enum LikelyActiveDevice {
     #[default]
-    Hardware,
-    Emulated
+    Mouse,
+    Gamepad
 }
 
 impl From<InteractionState> for CursorGlyph {
@@ -167,8 +174,9 @@ impl From<InteractionState> for CursorGlyph {
 pub struct VirtualMouseShellState {
     pub cursor_glyph: CursorGlyph,
     pub position: Position,
-    pub cursor_rendering_strategy: CursorRenderingStrategy,
+    pub likely_active_device: LikelyActiveDevice,
     pub mouse_mode: MouseMode,
+    pub should_reposition_hardware_cursor: bool
 }
 
 fn get_delta_press_state(old_state: MousePressState,is_pressed: bool) -> MousePressState {
@@ -193,16 +201,8 @@ impl VirtualMouse {
         gamepad: &GamepadCache,
         delta_seconds: f32,
         emulation_bounds: WimpyArea,
+        context_can_reposition_hardware_cursor: bool
     ) -> VirtualMouseShellState {
-
-        if !self.gamepad_position_init {
-            let center = emulation_bounds.center();
-            self.gamepad_position_init = true;
-            self.gamepad_state.position = Position {
-                x: center.0,
-                y: center.1
-            };
-        }
 
         self.gamepad_state = MouseInput::from_gamepad(
             gamepad,
@@ -212,12 +212,26 @@ impl VirtualMouse {
             delta_seconds
         );
 
+        let mut should_reposition_hardware_cursor = false;
+
         let previous_mouse_state = self.mouse_state;
         self.mouse_state = new_mouse_state;
 
         if self.previous_mode != self.current_mode {
             self.mouse_state.delta = Delta::default();
             self.gamepad_state.delta = Delta::default();
+            if self.current_mode == MouseMode::Interface {
+                let center = emulation_bounds.center();
+                let center_pos = Position {
+                    x: center.0,
+                    y: center.1
+                };
+                self.gamepad_state.position = center_pos;
+                if context_can_reposition_hardware_cursor {
+                    self.mouse_state.position = center_pos;
+                    should_reposition_hardware_cursor = true;
+                }
+            }
             match input_hint {
                 InputType::Unknown | InputType::Keyboard => {
                     self.emulation_active = false;
@@ -229,27 +243,23 @@ impl VirtualMouse {
         }
         self.previous_mode = self.current_mode;
 
+        let has_mouse_activity_right_now = self.mouse_state.position_differs(&previous_mouse_state);
+
         match (
             self.gamepad_state.has_delta_activity(),
-            self.mouse_state.position_differs(&previous_mouse_state)
+            has_mouse_activity_right_now
         ) {
             /* Mouse control */
             (false, true) => {
                 self.fused_state = self.mouse_state.create_fused(&self.gamepad_state);
-                // if self.emulation_active {
-                //     self.fused_state.delta = Delta::default();
-                // }
                 self.emulation_active = false;
             },
             /* Gamepad control */
             (true, false) => {
                 self.fused_state = self.gamepad_state.create_fused(&self.mouse_state);
-                // if !self.emulation_active {
-                //     self.fused_state.delta = Delta::default();
-                // }
                 self.emulation_active = true;
             },
-            /* Reuse previous frame's priority */
+            /* Reuse previous frame's priority. Short circuit for if both devices change in the same frame. (Or a synthetic zero-delta mouse event got generated) */
             (true, true) | (false, false) => match self.emulation_active {
                 true => {
                     // Mouse buttons on top of gamepad axis
@@ -272,13 +282,54 @@ impl VirtualMouse {
             self.fused_state.right_pressed
         );
 
-        return self.get_cursor_shell_state();
+        match self.emulation_active {
+            /* Gamepad active */
+            true => {
+                /* First position fix - start in center screen if the mouse was never activated */
+                if !self.gamepad_position_init {
+                    self.gamepad_position_init = true;
+                    let center = emulation_bounds.center();
+                    self.gamepad_state.position = Position {
+                        x: center.0,
+                        y: center.1
+                    };
+                    if context_can_reposition_hardware_cursor {
+                        should_reposition_hardware_cursor = true;
+                    }
+                    /* If we don't update the output state, there will be a single frame error with the cursor displayed at the origin. */
+                    self.fused_state.position = self.gamepad_state.position;
+                } else if
+                    context_can_reposition_hardware_cursor &&
+                    self.current_mode == MouseMode::Interface
+                {
+                    should_reposition_hardware_cursor = true;
+                }
+            }
+
+            /* Mouse active */
+            false => {
+                /* Update the gamepad state behind the scenes (it is inactive) */
+                self.gamepad_state.position = self.fused_state.position;
+                if
+                    !self.gamepad_position_init &&
+                    self.initialized &&
+                    has_mouse_activity_right_now &&
+                    self.current_mode == MouseMode::Interface
+                {
+                    self.gamepad_position_init = true;
+                }
+            },
+        };
+
+        self.initialized = true;
+
+        return self.get_cursor_shell_state(should_reposition_hardware_cursor);
     }
 
-    fn get_cursor_shell_state(&self) -> VirtualMouseShellState {
+    fn get_cursor_shell_state(&self,should_reposition_hardware_cursor: bool) -> VirtualMouseShellState {
 
         let glyph: CursorGlyph;
-        let strategy: CursorRenderingStrategy;
+        let device: LikelyActiveDevice;
 
         match self.current_mode {
             MouseMode::Camera => {
@@ -287,9 +338,9 @@ impl VirtualMouse {
                     true => CursorGlyph::None,
                 };
                 // Even though the cursor won't be visible, we prime the cursor rendering in anticipation of a mode swap
-                strategy = match self.emulation_active {
-                    true => CursorRenderingStrategy::Emulated,
-                    false => CursorRenderingStrategy::Hardware,
+                device = match self.emulation_active {
+                    true => LikelyActiveDevice::Gamepad,
+                    false => LikelyActiveDevice::Mouse,
                 };
             },
             MouseMode::Interface => {
@@ -300,22 +351,23 @@ impl VirtualMouse {
                             false => self.interaction_state.into(),
                             true => CursorGlyph::None,
                         };
-                        strategy = CursorRenderingStrategy::Emulated;
+                        device = LikelyActiveDevice::Gamepad;
                     },
                     // UI mode with real mouse
                     false => {
                         glyph = self.interaction_state.into();
-                        strategy = CursorRenderingStrategy::Hardware;
+                        device = LikelyActiveDevice::Mouse;
                     },
                 };
             },
-
         }
+
         return VirtualMouseShellState {
             cursor_glyph: glyph,
             position: self.fused_state.position,
-            cursor_rendering_strategy: strategy,
+            likely_active_device: device,
             mouse_mode: self.current_mode,
+            should_reposition_hardware_cursor,
         };
     }
 
