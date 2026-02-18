@@ -24,6 +24,10 @@ body.cursor-hidden {
     cursor: none;
 }
 
+body.click-me {
+    cursor: url("clickme.png") 52 42, auto;
+}
+
 canvas#main-canvas {
     background-color: white;
     position: relative;

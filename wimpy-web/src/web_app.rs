@@ -3,7 +3,8 @@ use std::path::Path;
 
 use std::{cell::RefCell,rc::Rc};
 use wasm_bindgen::{JsCast,JsValue,prelude::Closure};
-use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, Window};
+use web_sys::js_sys::Float32Array;
+use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, Window};
 use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 
 use wimpy_engine::app::*;
@@ -13,8 +14,6 @@ use wimpy_engine::app::wam::*;
 use wimpy_engine::shared::WimpyArea;
 
 const CANVAS_ID: &'static str = "main-canvas";
-const LEFT_MOUSE_BUTTON: i16 = 0;
-const RIGHT_MOUSE_BUTTON: i16 = 2;
 
 /* Must match 'html/style.css @ div#virtual-cursor' */
 const EMULATED_CURSOR_WIDTH: u32 = 12;
@@ -28,7 +27,7 @@ pub enum WebAppError {
     InvalidCanvasElement,
     WGPUInitFailure,
     SurfaceCreationFailure,
-    MouseEventBindFailure,
+    KeyEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
     PerformanceDoesNotExist
@@ -41,7 +40,6 @@ pub struct WebApp<TWimpyApp> {
     asset_manager: AssetManager,
     gamepad_manager: GamepadManager,
     kvs_store: KeyValueStore,
-    mouse_state: MouseState,
     last_frame_time: f64,
     current_frame_time: f64,
     size: (u32,u32)
@@ -54,49 +52,31 @@ pub enum ResizeConfig {
     FitWindow,
 }
 
-struct MouseState {
-    last_x: i32,
-    last_y: i32,
-    x: i32,
-    y: i32,
-    left_pressed: bool,
-    right_pressed: bool
-}
-
-impl MouseState {
-    pub fn to_wimpy_mouse_state(&self) -> MouseInput {
-        return MouseInput {
-            position:  Position {
-                x: self.x as f32,
-                y: self.y as f32
-            },
-            delta: Delta {
-                x: (self.last_x - self.x) as f32,
-                y: (self.last_y - self.y) as f32
-            },
-            left_pressed: self.left_pressed,
-            right_pressed: self.right_pressed
-        }
-    }
-}
-
-impl Default for MouseState {
-    fn default() -> Self {
-        Self {
-            last_x: 0,
-            last_y: 0,
-            x: 0,
-            y: 0,
-            left_pressed: false,
-            right_pressed: false
-        }
-    }
-}
-
 #[wasm_bindgen(module = "/html/virtual-cursor.js")]
 extern "C" {
     #[wasm_bindgen(js_name = updateVirtualCursor)]
     fn update_virtual_cursor(x: f32,y: f32,glyph: u8,is_emulated: bool,mode_switch_command: u8);
+
+    #[wasm_bindgen(js_name = pollMouse)]
+    fn poll_mouse_js() -> Float32Array;
+}
+
+fn poll_mouse() -> MouseInput {
+    let src = poll_mouse_js();
+    let mut buffer = [0.0f32;6];
+    src.copy_to(&mut buffer);
+    return MouseInput {
+        position: Position {
+            x: buffer[0],
+            y: buffer[1],
+        },
+        delta: Delta {
+            x: buffer[2],
+            y: buffer[3],
+        },
+        left_pressed: buffer[4] != 0.0,
+        right_pressed: buffer[5] != 0.0
+    };
 }
 
 impl<TWimpyApp> WebApp<TWimpyApp>
@@ -155,7 +135,6 @@ where
             input_manager,
             asset_manager,
             wimpy_app,
-            mouse_state: Default::default(),
             kvs_store: Default::default(),
         })));
     }
@@ -194,10 +173,7 @@ where
             self.gamepad_manager.buffer()
         );
 
-        let mouse_input = self.mouse_state.to_wimpy_mouse_state();
-
-        self.mouse_state.last_x = self.mouse_state.x;
-        self.mouse_state.last_y = self.mouse_state.y;
+        let mouse_input = poll_mouse();
 
         let delta_time = ((self.current_frame_time - self.last_frame_time) * 0.001) as f32;
 
@@ -212,9 +188,10 @@ where
                 height: (self.size.1 - EMULATED_CURSOR_HEIGHT) as f32
             }
         );
+
         update_virtual_cursor(
-            mouse_shell_state.cursor_x,
-            mouse_shell_state.cursor_y,
+            mouse_shell_state.position.x,
+            mouse_shell_state.position.y,
             match mouse_shell_state.cursor_glyph {
                 CursorGlyph::None => 1,
                 CursorGlyph::Default => 2,
@@ -226,15 +203,23 @@ where
                 CursorRenderingStrategy::Hardware => false,
                 CursorRenderingStrategy::Emulated => true,
             },
-            match mouse_shell_state.mode_switch_command {
-                Some(value) => match value {
-                    MouseModeSwitchCommand::InterfaceToCamera => 1,
-                    MouseModeSwitchCommand::CameraToInterface => 2,
-                }
-                None => 0,
+            match mouse_shell_state.mouse_mode {
+                MouseMode::Interface => 1,
+                MouseMode::Camera => 2,
             }
         );
-        //log::trace!("Virtual Mouse Position: {:?}",self.input_manager.get_virtual_mouse().get_position());
+
+        // log::trace!(
+        //     "Render strategy: {:?}, Mouse Mode: {:?}",
+        //     mouse_shell_state.cursor_rendering_strategy,
+        //     mouse_shell_state.mouse_mode
+        // );
+
+        // log::trace!(
+        //     "Position: {:?}, Delta: {:?}",
+        //     self.input_manager.get_virtual_mouse().position(),
+        //     self.input_manager.get_virtual_mouse().delta()
+        // );
     }
 
     fn render_frame(&mut self) {
@@ -246,20 +231,6 @@ where
             input: &mut self.input_manager,
             assets: &mut self.asset_manager
         });
-    }
-
-    fn key_down(&mut self,code: String) {
-        let Some(key_code) = KEY_CODES.get(&code) else {
-            return;
-        };
-        self.input_manager.set_key_code_pressed(*key_code);
-    }
-
-    fn key_up(&mut self,code: String) {
-        let Some(key_code) = KEY_CODES.get(&code) else {
-            return;
-        };
-        self.input_manager.set_key_code_released(*key_code);
     }
 
     fn update_size(&mut self) {
@@ -295,59 +266,16 @@ where
     fn setup_events(app: &Rc<RefCell<Self>>,resize_config: ResizeConfig) -> Result<(),WebAppError> {
         {
             let app = app.clone();
-            let closure = Closure::<dyn FnMut(_)>::new(move|event: MouseEvent| {
-                match event.button() {
-                    LEFT_MOUSE_BUTTON => {
-                        let mouse_state = &mut app.borrow_mut().mouse_state;
-                        mouse_state.left_pressed = true;
-                        mouse_state.x = event.client_x();
-                        mouse_state.y = event.client_y();
-                    },
-                    RIGHT_MOUSE_BUTTON => {
-                        let mouse_state = &mut app.borrow_mut().mouse_state;
-                        mouse_state.right_pressed = true;
-                        mouse_state.x = event.client_x();
-                        mouse_state.y = event.client_y();
-                    },
-                    _ => {}
-                }
-            });
-            get_document()?.add_event_listener_with_callback("mousedown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
-            closure.forget();
-        }
-        {
-            let app = app.clone();
-            let closure = Closure::<dyn FnMut(_)>::new(move|event: MouseEvent| {
-                if event.button() != 0 {
+            let closure = Closure::<dyn FnMut(_)>::new(move|event: KeyboardEvent| {
+                if event.repeat() {
                     return;
                 }
-                match event.button() {
-                    LEFT_MOUSE_BUTTON => {
-                        let mouse_state = &mut app.borrow_mut().mouse_state;
-                        mouse_state.left_pressed = false;
-                        mouse_state.x = event.client_x();
-                        mouse_state.y = event.client_y();
-                    },
-                    RIGHT_MOUSE_BUTTON => {
-                        let mouse_state = &mut app.borrow_mut().mouse_state;
-                        mouse_state.right_pressed = false;
-                        mouse_state.x = event.client_x();
-                        mouse_state.y = event.client_y();
-                    },
-                    _ => {}
-                }
+                let Some(key_code) = KEY_CODES.get(&event.code()) else {
+                    return;
+                };
+                app.borrow_mut().input_manager.set_key_code_pressed(*key_code);
             });
-            get_document()?.add_event_listener_with_callback("mouseup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
-            closure.forget();
-        }
-        {
-            let app = app.clone();
-            let closure = Closure::<dyn FnMut(_)>::new(move|event: MouseEvent| {
-                let mouse_state = &mut app.borrow_mut().mouse_state;
-                mouse_state.x = event.client_x();
-                mouse_state.y = event.client_y();
-            });
-            get_document()?.add_event_listener_with_callback("mousemove",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
+            get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;
             closure.forget();
         }
         {
@@ -356,20 +284,13 @@ where
                 if event.repeat() {
                     return;
                 }
-                app.borrow_mut().key_down(event.code());
-            });
-            get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
-            closure.forget();
-        }
-        {
-            let app = app.clone();
-            let closure = Closure::<dyn FnMut(_)>::new(move|event: KeyboardEvent| {
-                if event.repeat() {
+                let Some(key_code) = KEY_CODES.get(&event.code()) else {
                     return;
-                }
-                app.borrow_mut().key_up(event.code());
+                };
+                app.borrow_mut().input_manager.set_key_code_released(*key_code);
+
             });
-            get_document()?.add_event_listener_with_callback("keyup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::MouseEventBindFailure)?;
+            get_document()?.add_event_listener_with_callback("keyup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;
             closure.forget();
         }
         if resize_config == ResizeConfig::FitWindow {

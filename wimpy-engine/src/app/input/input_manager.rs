@@ -12,7 +12,7 @@ pub enum UserActivity {
 }
 
 // Do not use for input control flow! Only for UI hints
-#[derive(Default,Copy,Clone)]
+#[derive(Debug,Default,Copy,Clone,PartialEq,Eq)]
 pub enum InputType {
     #[default]
     Unknown,
@@ -135,13 +135,13 @@ pub mod app_shell_controller {
             if self.captured_key_code.is_none() {
                 self.captured_key_code = Some(key_code);
             }
-            log::trace!("Key code pressed: {:?}",key_code);
+            // log::trace!("Key code pressed: {:?}",key_code);
         }
 
         pub fn set_key_code_released(&mut self,key_code: KeyCode) {
             self.keyboard_state.set_released(key_code);
             self.input_hint = InputType::Keyboard;
-            log::trace!("Key code released: {:?}",key_code);
+            // log::trace!("Key code released: {:?}",key_code);
         }
 
         pub fn update(
@@ -188,6 +188,7 @@ pub mod app_shell_controller {
             self.impulse_state = new_state;
 
             let virtual_mouse_shell_state = self.virtual_mouse.update(
+                self.input_hint,
                 self.recent_mouse_input,
                 &self.gamepad_cache,
                 delta_seconds,

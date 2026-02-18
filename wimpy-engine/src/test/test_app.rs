@@ -4,6 +4,7 @@ use crate::shared::*;
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
+    offset: (f32,f32)
 }
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
@@ -12,13 +13,35 @@ where
 {
     async fn load(context: &mut WimpyContext<'_>) -> Self {
         return Self {
-            test_texture: context.load_image_or_default::<IO>("test-namespace/balls").await
+            offset: (0.0,0.0),
+            test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
         };
     }
 
     fn update(&mut self,context: &mut WimpyContext) {
 
         // Start render ...
+
+        let mut mouse_mode = context.input.get_virtual_mouse().get_mouse_mode();
+        for event in context.input.iter_recent_events() {
+            match (event.impulse,event.state) {
+                (input::Impulse::Confirm, input::ImpulseState::Pressed) => {
+                    mouse_mode = match mouse_mode {
+                        input::MouseMode::Interface => input::MouseMode::Camera,
+                        input::MouseMode::Camera => input::MouseMode::Interface,
+                    };
+                },
+                _ => {}
+            }
+        }
+        let mouse = context.input.get_virtual_mouse_mut();
+        mouse.set_mouse_mode(mouse_mode);
+
+        if mouse_mode == input::MouseMode::Camera {
+            let delta = mouse.delta();
+            self.offset.0 += delta.x;
+            self.offset.1 += delta.y;
+        }
 
         let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
             Ok(value) => value,
@@ -50,8 +73,12 @@ where
 
             render_pass.set_sampler_mode(SamplerMode::NearestClamp);
 
+            let mut destination = layout.compute(output.frame.area());
+            destination.x += self.offset.0;
+            destination.y += self.offset.1;
+
             render_pass.draw(&texture,&[DrawData2D {
-                destination: layout.compute(output.frame.area()),
+                destination,
                 source: WimpyArea::ONE,
                 color: WimpyColor::WHITE,
                 rotation: 0.0,

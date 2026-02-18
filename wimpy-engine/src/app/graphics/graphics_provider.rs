@@ -68,10 +68,7 @@ impl GraphicsProvider {
             .copied()
             .unwrap_or(surface_capabilities.formats[0]);
 
-        for format in surface_capabilities.formats.iter() {
-            log::info!("Available surface format: {:?}",format);
-        }
-        log::info!("Selected surface format: {:?}",surface_format);
+        log::info!("Selected surface format: {:?} (Available formats: {:?})",surface_format,surface_capabilities.formats);
 
         // if surface_format != TextureFormat::Rgba8Unorm {
         //     log::warn!("Output surface format is not Rgba8Unorm")
@@ -85,7 +82,7 @@ impl GraphicsProvider {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2
+            desired_maximum_frame_latency: 1
         };
 
         let max_texture_power_of_two = prev_power_of_two(max_texture_dimension);

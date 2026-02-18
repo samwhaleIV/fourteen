@@ -31,37 +31,39 @@ fn trigger_clamp(value: f32) -> f32 {
 }
 
 pub fn create_gamepad_state(src: Float32Array) -> GamepadInput {
+    let mut buffer = [0.0f32;21];
+    src.copy_to(&mut buffer);
     GamepadInput {
         buttons: GamepadButtons::from_set(GamepadButtonSet {
-            dpad_up:      to_bool(src.get_index(0)),
-            dpad_down:    to_bool(src.get_index(1)),
-            dpad_left:    to_bool(src.get_index(2)),
-            dpad_right:   to_bool(src.get_index(3)),
+            dpad_up:      to_bool(buffer[0]),
+            dpad_down:    to_bool(buffer[1]),
+            dpad_left:    to_bool(buffer[2]),
+            dpad_right:   to_bool(buffer[3]),
 
-            select:       to_bool(src.get_index(4)),
-            start:        to_bool(src.get_index(5)),
-            guide:        to_bool(src.get_index(6)),
+            select:       to_bool(buffer[4]),
+            start:        to_bool(buffer[5]),
+            guide:        to_bool(buffer[6]),
 
-            a:            to_bool(src.get_index(7)),
-            b:            to_bool(src.get_index(8)),
-            x:            to_bool(src.get_index(9)),
-            y:            to_bool(src.get_index(10)),
+            a:            to_bool(buffer[7]),
+            b:            to_bool(buffer[8]),
+            x:            to_bool(buffer[9]),
+            y:            to_bool(buffer[10]),
 
-            left_bumper:  to_bool(src.get_index(11)),
-            right_bumper: to_bool(src.get_index(12)),
+            left_bumper:  to_bool(buffer[11]),
+            right_bumper: to_bool(buffer[12]),
 
-            left_stick:   to_bool(src.get_index(13)),
-            right_stick:  to_bool(src.get_index(14)),
+            left_stick:   to_bool(buffer[13]),
+            right_stick:  to_bool(buffer[14]),
         }),
         left_stick: GamepadJoystick {
-            x: axis_clamp(src.get_index(15)),
-            y: axis_clamp(src.get_index(16)),
+            x: axis_clamp(buffer[15]),
+            y: axis_clamp(buffer[16]),
         },
         right_stick: GamepadJoystick {
-            x: axis_clamp(src.get_index(17)),
-            y: axis_clamp(src.get_index(18)),
+            x: axis_clamp(buffer[17]),
+            y: axis_clamp(buffer[18]),
         },
-        left_trigger: trigger_clamp(src.get_index(19)),
-        right_trigger: trigger_clamp(src.get_index(20)),
+        left_trigger: trigger_clamp(buffer[19]),
+        right_trigger: trigger_clamp(buffer[20]),
     }
 }

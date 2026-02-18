@@ -34,7 +34,7 @@ pub struct MouseInput {
     pub position: Position,
     pub delta: Delta,
     pub left_pressed: bool,
-    pub right_pressed: bool
+    pub right_pressed: bool,
 }
 
 #[derive(Clone,Copy)]
@@ -44,23 +44,28 @@ pub enum MouseModeSwitchCommand {
 }
 
 impl MouseInput {
-    fn from_gamepad(gamepad: &GamepadCache,position: Position,emulation_bounds: WimpyArea,delta_seconds: f32) -> Self {
+    fn from_gamepad(gamepad: &GamepadCache,position: Position,retain_position: bool,emulation_bounds: WimpyArea,delta_seconds: f32) -> Self {
         let max_pixels = JOYSTICK_CURSOR_PIXELS_PER_SECOND * delta_seconds;
         let delta = Delta {
             x: gamepad.right_axes().get_x_f32() * max_pixels,
             y: gamepad.right_axes().get_y_f32() * max_pixels
         };
+        let position = match retain_position {
+            true => position,
+            false => position.add_delta(&delta).clip(emulation_bounds),
+        };
         return Self {
-            position: position.add_delta(&delta).clip(emulation_bounds),
+            position,
             delta,
             left_pressed: gamepad.left_trigger().is_pressed(),
             right_pressed: gamepad.right_trigger().is_pressed(),
         }
     }
-    fn delta_changed(&self,other: &Self) -> bool {
+    fn position_differs(&self,other: &Self) -> bool {
+        self.position != other.position ||
         self.delta != other.delta
     }
-    fn fuse_buttons(&self,other: &Self) -> Self {
+    fn create_fused(&self,other: &Self) -> Self {
         return Self {
             position: self.position,
             delta: self.delta,
@@ -68,21 +73,23 @@ impl MouseInput {
             right_pressed: self.right_pressed || other.right_pressed,
         }
     }
+    fn has_delta_activity(&self) -> bool {
+        return self.delta.x != 0.0 || self.delta.y != 0.0;
+    }
 }
 
 #[derive(Default)]
 pub struct VirtualMouse {
+    fused_state: MouseInput,
 
-    state: MouseInput,
-
-    last_mouse_state: MouseInput,
-    last_gamepad_state: MouseInput,
+    mouse_state: MouseInput,
+    gamepad_state: MouseInput,
 
     left_press_state: MousePressState,
     right_press_state: MousePressState,
 
-    virtual_mouse_mode: MouseMode,
-    mode_switch_command: Option<MouseModeSwitchCommand>,
+    previous_mode: MouseMode,
+    current_mode: MouseMode,
 
     interaction_state: InteractionState,
     emulation_active: bool,
@@ -90,9 +97,8 @@ pub struct VirtualMouse {
     hide_emulated_cursor_over_ui: bool,
     hide_camera_center_crosshair: bool,
 
-    center_screen: (f32,f32)
+    gamepad_position_init: bool
 }
-
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
 pub enum MousePressState {
@@ -133,14 +139,14 @@ pub enum InteractionState {
     IsInteracting
 }
 
-#[derive(Default,Copy,Clone,PartialEq,Eq)]
+#[derive(Debug,Default,Copy,Clone,PartialEq,Eq)]
 pub enum MouseMode {
     #[default]
     Interface,
     Camera
 }
 
-#[derive(Default,Copy,Clone,PartialEq,Eq)]
+#[derive(Debug,Default,Copy,Clone,PartialEq,Eq)]
 pub enum CursorRenderingStrategy {
     #[default]
     Hardware,
@@ -160,10 +166,9 @@ impl From<InteractionState> for CursorGlyph {
 
 pub struct VirtualMouseShellState {
     pub cursor_glyph: CursorGlyph,
-    pub cursor_x: f32,
-    pub cursor_y: f32,
+    pub position: Position,
     pub cursor_rendering_strategy: CursorRenderingStrategy,
-    pub mode_switch_command: Option<MouseModeSwitchCommand>
+    pub mouse_mode: MouseMode,
 }
 
 fn get_delta_press_state(old_state: MousePressState,is_pressed: bool) -> MousePressState {
@@ -183,65 +188,142 @@ fn get_delta_press_state(old_state: MousePressState,is_pressed: bool) -> MousePr
 impl VirtualMouse {
     pub(super) fn update(
         &mut self,
-        mouse_state: MouseInput,
+        input_hint: InputType,
+        new_mouse_state: MouseInput,
         gamepad: &GamepadCache,
         delta_seconds: f32,
         emulation_bounds: WimpyArea,
     ) -> VirtualMouseShellState {
-        self.center_screen = emulation_bounds.center();
-        let mode_switch_command = self.mode_switch_command;
-        self.mode_switch_command = None;
 
-        let gamepad_state = MouseInput::from_gamepad(
+        if !self.gamepad_position_init {
+            let center = emulation_bounds.center();
+            self.gamepad_position_init = true;
+            self.gamepad_state.position = Position {
+                x: center.0,
+                y: center.1
+            };
+        }
+
+        self.gamepad_state = MouseInput::from_gamepad(
             gamepad,
-            self.state.position,
+            self.gamepad_state.position,
+            self.current_mode == MouseMode::Camera,
             emulation_bounds,
             delta_seconds
         );
 
-        let gamepad_state_changed = gamepad_state.delta_changed(&self.last_gamepad_state);
-        let mouse_state_changed = mouse_state.delta_changed(&self.last_mouse_state);
+        let previous_mouse_state = self.mouse_state;
+        self.mouse_state = new_mouse_state;
 
-        self.last_gamepad_state = gamepad_state;
-        self.last_mouse_state = mouse_state;
+        if self.previous_mode != self.current_mode {
+            self.mouse_state.delta = Delta::default();
+            self.gamepad_state.delta = Delta::default();
+            match input_hint {
+                InputType::Unknown | InputType::Keyboard => {
+                    self.emulation_active = false;
+                },
+                InputType::Gamepad => {
+                    self.emulation_active = true;
+                },
+            };
+        }
+        self.previous_mode = self.current_mode;
 
-        match (gamepad_state_changed,mouse_state_changed) {
-            (false, true) | (true, true) => {
-                self.state = mouse_state.fuse_buttons(&gamepad_state);
+        match (
+            self.gamepad_state.has_delta_activity(),
+            self.mouse_state.position_differs(&previous_mouse_state)
+        ) {
+            /* Mouse control */
+            (false, true) => {
+                self.fused_state = self.mouse_state.create_fused(&self.gamepad_state);
+                // if self.emulation_active {
+                //     self.fused_state.delta = Delta::default();
+                // }
                 self.emulation_active = false;
             },
+            /* Gamepad control */
             (true, false) => {
-                self.state = gamepad_state.fuse_buttons(&mouse_state);
+                self.fused_state = self.gamepad_state.create_fused(&self.mouse_state);
+                // if !self.emulation_active {
+                //     self.fused_state.delta = Delta::default();
+                // }
                 self.emulation_active = true;
             },
-            (false, false) => match self.emulation_active {
+            /* Reuse previous frame's priority */
+            (true, true) | (false, false) => match self.emulation_active {
                 true => {
-                    self.state = gamepad_state.fuse_buttons(&mouse_state);
+                    // Mouse buttons on top of gamepad axis
+                    self.fused_state = self.gamepad_state.create_fused(&self.mouse_state);
                 },
                 false => {
-                    self.state = mouse_state.fuse_buttons(&gamepad_state);
+                    // Gamepad buttons on top of mouse movement
+                    self.fused_state = self.mouse_state.create_fused(&self.gamepad_state);
                 },
             },
         }
 
         self.left_press_state = get_delta_press_state(
             self.left_press_state,
-            self.state.left_pressed
+            self.fused_state.left_pressed
         );
 
         self.right_press_state = get_delta_press_state(
             self.right_press_state,
-            self.state.right_pressed
+            self.fused_state.right_pressed
         );
 
-        return self.get_cursor_shell_state(mode_switch_command);
+        return self.get_cursor_shell_state();
     }
 
-    pub fn get_left_press_state(&self) -> MousePressState {
+    fn get_cursor_shell_state(&self) -> VirtualMouseShellState {
+
+        let glyph: CursorGlyph;
+        let strategy: CursorRenderingStrategy;
+
+        match self.current_mode {
+            MouseMode::Camera => {
+                glyph = match self.hide_camera_center_crosshair {
+                    false => CursorGlyph::CameraCrosshair,
+                    true => CursorGlyph::None,
+                };
+                // Even though the cursor won't be visible, we prime the cursor rendering in anticipation of a mode swap
+                strategy = match self.emulation_active {
+                    true => CursorRenderingStrategy::Emulated,
+                    false => CursorRenderingStrategy::Hardware,
+                };
+            },
+            MouseMode::Interface => {
+                match self.emulation_active {
+                    // UI mode with virtual mouse
+                    true => {
+                        glyph = match self.hide_emulated_cursor_over_ui {
+                            false => self.interaction_state.into(),
+                            true => CursorGlyph::None,
+                        };
+                        strategy = CursorRenderingStrategy::Emulated;
+                    },
+                    // UI mode with real mouse
+                    false => {
+                        glyph = self.interaction_state.into();
+                        strategy = CursorRenderingStrategy::Hardware;
+                    },
+                };
+            },
+
+        }
+        return VirtualMouseShellState {
+            cursor_glyph: glyph,
+            position: self.fused_state.position,
+            cursor_rendering_strategy: strategy,
+            mouse_mode: self.current_mode,
+        };
+    }
+
+    pub fn left_press_state(&self) -> MousePressState {
         return self.left_press_state;
     }
 
-    pub fn get_right_press_state(&self) -> MousePressState {
+    pub fn right_press_state(&self) -> MousePressState {
         return self.right_press_state;
     }
 
@@ -253,19 +335,12 @@ impl VirtualMouse {
         return self.right_press_state.into();
     }
 
-    pub fn get_delta(&self) -> Delta {
-        return self.state.delta;
+    pub fn delta(&self) -> Delta {
+        return self.fused_state.delta;
     }
 
-    pub fn get_position(&self) -> Position {
-        return self.state.position;
-    }
-
-    pub fn set_emulated_position(&mut self,position: Position) {
-        if self.emulation_active {
-            self.state.delta = Default::default();
-            self.state.position = position;
-        }
+    pub fn position(&self) -> Position {
+        return self.fused_state.position;
     }
 
     pub fn set_interaction_state(&mut self,interaction_state: InteractionState) {
@@ -273,73 +348,18 @@ impl VirtualMouse {
     }
 
     pub fn set_mouse_mode(&mut self,new_mode: MouseMode) {
-        let old_mode = self.virtual_mouse_mode;
-        self.virtual_mouse_mode = new_mode;
-        match (old_mode,new_mode) {
-            (MouseMode::Interface, MouseMode::Camera) => {
-                self.mode_switch_command = Some(MouseModeSwitchCommand::InterfaceToCamera);
-            },
-            (MouseMode::Camera, MouseMode::Interface) => {
-                self.mode_switch_command = Some(MouseModeSwitchCommand::CameraToInterface);
-                self.set_emulated_position(Position {
-                    x: self.center_screen.0,
-                    y: self.center_screen.1
-                });
-            },
-            _ => {}
-        };
+        self.current_mode = new_mode;
     }
 
-    pub fn enable_center_crosshair_in_camera_mode(&mut self) {
-        self.hide_camera_center_crosshair = false;
+    pub fn get_mouse_mode(&self) -> MouseMode {
+        return self.current_mode;
     }
 
-    pub fn disable_center_crosshair_in_camera_mode(&mut self) {
-        self.hide_camera_center_crosshair = true;
+    pub fn set_camera_center_crosshair(&mut self,show_crosshair: bool) {
+        self.hide_camera_center_crosshair = !show_crosshair;
     }
 
-    pub fn enable_emulated_crosshair_over_ui(&mut self) {
-        self.hide_emulated_cursor_over_ui = false;
-    }
-
-    pub fn disable_emulated_crosshair_over_ui(&mut self) {
-        self.hide_emulated_cursor_over_ui = true;
-    }
-
-    fn get_cursor_shell_state(&self,mode_switch_command: Option<MouseModeSwitchCommand>) -> VirtualMouseShellState {
-        if self.virtual_mouse_mode == MouseMode::Camera {
-            // Camera control mode with any mouse
-            return VirtualMouseShellState {
-                cursor_glyph: match self.hide_camera_center_crosshair {
-                    false => CursorGlyph::CameraCrosshair,
-                    true => CursorGlyph::None,
-                },
-                cursor_rendering_strategy: CursorRenderingStrategy::Emulated,
-                mode_switch_command,
-                cursor_x: self.state.position.x,
-                cursor_y: self.state.position.y,
-            };
-        }
-        match self.emulation_active {
-            // UI mode with virtual mouse
-            true => VirtualMouseShellState {
-                cursor_glyph: match self.hide_emulated_cursor_over_ui {
-                    false => self.interaction_state.into(),
-                    true => CursorGlyph::None,
-                },
-                cursor_rendering_strategy: CursorRenderingStrategy::Emulated,
-                mode_switch_command,
-                cursor_x: self.state.position.x,
-                cursor_y: self.state.position.y,
-            },
-            // UI mode with real mouse
-            false => VirtualMouseShellState {
-                cursor_glyph: self.interaction_state.into(),
-                cursor_rendering_strategy: CursorRenderingStrategy::Hardware,
-                mode_switch_command,
-                cursor_x: self.state.position.x,
-                cursor_y: self.state.position.y,
-            },
-        }
+    pub fn set_emulated_cursor_over_ui(&mut self,show_pointer: bool) {
+        self.hide_emulated_cursor_over_ui = !show_pointer;
     }
 }

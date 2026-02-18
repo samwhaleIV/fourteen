@@ -184,6 +184,15 @@ impl From<u32> for Size {
     }
 }
 
+impl From<f32> for Size {
+    fn from(value: f32) -> Self {
+        return Self {
+            value,
+            mode: SizeMode::Absolute,
+        }
+    }
+}
+
 impl Size {
     pub fn of_parent_height(value: Unit) -> Self {
         return Self {
