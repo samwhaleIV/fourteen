@@ -45,7 +45,7 @@ pub struct LongLifeFrame {
 }
 
 pub trait FrameReference {
-    fn get_cache_reference(&self) -> FrameCacheReference;
+    fn get_ref(&self) -> FrameCacheReference;
 
     /// The size of the frame as requested by the user. In the case of an imported texture frame, this is its original size.
     fn get_input_size(&self) -> (u32,u32);
@@ -92,7 +92,7 @@ pub trait MutableFrame: FrameReference {
 }
 
 impl FrameReference for OutputFrame {
-    fn get_cache_reference(&self) -> FrameCacheReference {
+    fn get_ref(&self) -> FrameCacheReference {
         self.cache_reference
     }
 
@@ -106,7 +106,7 @@ impl FrameReference for OutputFrame {
 }
 
 impl FrameReference for TextureFrame {
-    fn get_cache_reference(&self) -> FrameCacheReference {
+    fn get_ref(&self) -> FrameCacheReference {
         self.cache_reference
     }
 
@@ -120,7 +120,7 @@ impl FrameReference for TextureFrame {
 }
 
 impl FrameReference for TempFrame {
-    fn get_cache_reference(&self) -> FrameCacheReference {
+    fn get_ref(&self) -> FrameCacheReference {
         self.cache_reference
     }
 
@@ -134,7 +134,7 @@ impl FrameReference for TempFrame {
 }
 
 impl FrameReference for LongLifeFrame {
-    fn get_cache_reference(&self) -> FrameCacheReference {
+    fn get_ref(&self) -> FrameCacheReference {
         self.cache_reference
     }
 

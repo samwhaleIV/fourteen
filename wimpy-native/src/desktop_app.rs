@@ -23,7 +23,6 @@ use sdl2::{
 use wgpu::{Instance, Limits, Surface};
 
 use wimpy_engine::{app::*, shared::WimpyArea};
-use wimpy_engine::app::wam::*;
 use wimpy_engine::app::input::*;
 use wimpy_engine::app::graphics::*;
 
@@ -39,16 +38,13 @@ enum EventLoopOperation {
 
 struct InnerApp<TWimpyApp> {
     sdl: SDLSystems,
-    wimpy_app: TWimpyApp,
     active_gamepad: Option<GameController>,
     unused_gamepads: HashMap<u32,GameController>,
-    graphics_context: GraphicsContext,
-    input_manager: InputManager,
-    asset_manager: AssetManager,
-    key_value_store: KeyValueStore,
     mouse_cache: MouseInput,
     window: Window,
-    now: u64
+    now: u64,
+    wimpy_app: TWimpyApp,
+    wimpy_context: WimpyContext,
 }
 
 struct SDLSystems {
@@ -80,41 +76,30 @@ where
             return None;
         }
     };
-
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let mut asset_manager = AssetManager::load_or_default::<DekstopAppIO>(manifest_path).await;
+    let Some(mut wimpy_systems) = WimpyContext::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
+        manifest_path,
+        input_type_hint: InputType::Unknown,
+        graphics_provider,
+    }).await else {
+        return None;
+    };
 
-    let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
-    let mut key_value_store = KeyValueStore::default();
-
-    let mut input_manager = InputManager::with_input_type_hint(
-        InputType::Unknown
-        // Reminder: Set input type ahead of time on specific platforms.
-    );
-
-    let wimpy_app = TWimpyApp::load(&mut WimpyContext {
-        graphics: &mut graphics_context,
-        storage: &mut key_value_store,
-        input: &mut input_manager,
-        assets: &mut asset_manager
-    }).await;
+    let wimpy_app = TWimpyApp::load(&mut wimpy_systems).await;
 
     let now = sdl_systems.timer.performance_counter();
 
     return Some(InnerApp {
         sdl: sdl_systems,
-        wimpy_app,
         active_gamepad: None,
         unused_gamepads: Default::default(),
-        graphics_context,
-        input_manager,
-        asset_manager,
-        window,
         mouse_cache: Default::default(),
-        key_value_store,
+        window,
         now,
+        wimpy_app,
+        wimpy_context: wimpy_systems,
     });
 }
 
@@ -204,9 +189,9 @@ where
             None => Default::default(),
         };
 
-        let size = self.graphics_context.get_graphics_provider().get_size();
+        let size = self.wimpy_context.graphics.get_graphics_provider().get_size();
 
-        let shell_state = self.input_manager.update(
+        let shell_state = self.wimpy_context.input.update(
             self.mouse_cache,
             gamepad_state,
             delta_seconds,
@@ -244,12 +229,7 @@ where
             );
         }
 
-        self.wimpy_app.update(&mut WimpyContext {
-            graphics: &mut self.graphics_context,
-            storage: &mut self.key_value_store,
-            input: &mut self.input_manager,
-            assets: &mut self.asset_manager
-        });
+        self.wimpy_app.update(&mut self.wimpy_context);
     }
 
     fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {
@@ -270,7 +250,7 @@ where
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
                 } if window_id == self.window.id() => {
-                    self.graphics_context.get_graphics_provider_mut().set_size(
+                    self.wimpy_context.graphics.get_graphics_provider_mut().set_size(
                         width as u32,
                         height as u32
                     );
@@ -319,7 +299,7 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        self.input_manager.set_key_code_pressed(wk);
+                        self.wimpy_context.input.set_key_code_pressed(wk);
                     }
                 },
                 Event::KeyUp {
@@ -328,7 +308,7 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        self.input_manager.set_key_code_released(wk);
+                        self.wimpy_context.input.set_key_code_released(wk);
                     }
                 },
                 Event::Quit { .. } => {

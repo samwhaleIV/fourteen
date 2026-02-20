@@ -1,6 +1,10 @@
 use super::*;
 
 impl Pipeline2D {
+    pub const VERTEX_BUFFER_INDEX: u32 = 0;
+    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
+    pub const INDEX_BUFFER_SIZE: u32 = 6;
+
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
         texture_layout: &BindGroupLayout,
@@ -70,21 +74,21 @@ impl Pipeline2D {
         ];
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Index Buffer"),
+            label: Some("Pipeline 2D Index Buffer"),
             contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX
         });
 
         // Investigate if vertex buffer can be put at the start of the instance buffer
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("Vertex Buffer"),
+            label: Some("Pipeline 2D Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX
         });
 
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
-                label: Some("Instance Buffer"),
+                label: Some("Pipeline 2D Instance Buffer"),
                 size: TConfig::INSTANCE_BUFFER_SIZE_2D as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,

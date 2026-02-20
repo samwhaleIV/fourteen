@@ -20,11 +20,6 @@ struct TextureDrawData {
     strategy: TextureStrategy,
 }
 
-impl Pipeline3D {
-    pub const VERTEX_BUFFER_INDEX: u32 = 0;
-    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
-}
-
 impl PipelineController for Pipeline3D {
     fn write_dynamic_buffers(&mut self,queue: &Queue) {
         self.instance_buffer.write_out(queue);
@@ -34,17 +29,17 @@ impl PipelineController for Pipeline3D {
     }
 }
 
-pub struct FrameRenderPass3D<'gc> {
-    context: RenderPassContext<'gc>,
-    render_pass: RenderPass<'gc>,
+pub struct Pipeline3DPass<'a,'frame> {
+    context: &'a mut RenderPassContext<'frame>,
+    render_pass: &'a mut RenderPass<'frame>,
     has_transform_bind: bool,
 }
 
-impl<'gc> FrameRenderPass<'gc> for FrameRenderPass3D<'gc> {
+impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
     fn create(
-        frame: &impl MutableFrame,
-        mut render_pass: RenderPass<'gc>,
-        context: RenderPassContext<'gc>
+        frame: &'frame impl MutableFrame,
+        render_pass: &'a mut RenderPass<'frame>,
+        context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let pipeline_3d = context.get_3d_pipeline();
         render_pass.set_pipeline(pipeline_3d.pipelines.select(frame));
@@ -97,7 +92,7 @@ pub enum TextureStrategy {
     LightmapToDiffuse,
 }
 
-impl FrameRenderPass3D<'_> {
+impl Pipeline3DPass<'_,'_> {
     pub fn set_transform(&mut self,transform: TransformUniform) {
         let uniform_buffer_range = self.context.pipelines
             .get_shared_mut()
@@ -172,7 +167,7 @@ impl FrameRenderPass3D<'_> {
         self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::DualChannel {
             ch_0: BindGroupChannelConfig {
                 mode: texture_data.diffuse_sampler,
-                texture: match self.context.frame_cache.get(diffuse.get_cache_reference()) {
+                texture: match self.context.frame_cache.get(diffuse.get_ref()) {
                     Ok(value) => value,
                     Err(error) => {
                         log::error!("Could not resolve diffuse texture frame to a texture view: {:?}",error);
@@ -182,7 +177,7 @@ impl FrameRenderPass3D<'_> {
             },
             ch_1: BindGroupChannelConfig {
                 mode: SamplerMode::LinearClamp,
-                texture: match self.context.frame_cache.get(lightmap.get_cache_reference()) {
+                texture: match self.context.frame_cache.get(lightmap.get_ref()) {
                     Ok(value) => value,
                     Err(error) => {
                         log::error!("Could not resolve lightmap texture frame to a texture view: {:?}",error);

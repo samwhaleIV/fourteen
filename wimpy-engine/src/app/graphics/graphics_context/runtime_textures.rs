@@ -6,14 +6,6 @@ use super::*;
 use missing_texture::*;
 use pixel_textures::*;
 
-pub struct RuntimeTextures {
-    pub missing: TextureFrame,
-    pub opaque_white: TextureFrame,
-    pub opaque_black: TextureFrame,
-    pub transparent_white: TextureFrame,
-    pub transparent_black: TextureFrame
-}
-
 struct TextureFrameBuilder<'a> {
     graphics_provider: &'a GraphicsProvider,
     frame_cache: &'a mut FrameCache,
@@ -34,7 +26,7 @@ impl TextureFrameBuilder<'_> {
     }
 }
 
-impl RuntimeTextures {
+impl EngineTextures {
     pub fn create(
         graphics_provider: &GraphicsProvider,
         id_generator: &mut TextureIdentityGenerator,
@@ -55,6 +47,10 @@ impl RuntimeTextures {
             opaque_black: builder.create(OpaqueBlack),
             transparent_white: builder.create(TransparentWhite),
             transparent_black: builder.create(TransparentBlack),
+            font_classic: None,
+            font_classic_outline: None,
+            font_twelven: None,
+            font_twelven_shaded: None,
         }
     }
 }

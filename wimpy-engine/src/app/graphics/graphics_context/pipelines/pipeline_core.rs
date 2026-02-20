@@ -3,6 +3,7 @@ use super::*;
 pub struct UniquePipelines {
     pub pipeline_2d: Pipeline2D,
     pub pipeline_3d: Pipeline3D,
+    pub text_pipeline: TextPipeline
 }
 
 pub struct RenderPipelines {
@@ -38,10 +39,17 @@ impl RenderPipelines {
             uniform_bind_group_layout
         );
 
+        let text_pipeline = TextPipeline::create::<TConfig>(
+            graphics_provider,
+            texture_bind_group_layout,
+            uniform_bind_group_layout
+        );
+
         return Self {
             pipelines_unique: UniquePipelines {
                 pipeline_2d,
-                pipeline_3d
+                pipeline_3d,
+                text_pipeline,
             },
             pipeline_shared,
         }
@@ -51,6 +59,7 @@ impl RenderPipelines {
         // Investigate: only finalize the pipelines that were used during this output builder's life (or let the pipelines no-op on their own?)
         self.pipelines_unique.pipeline_2d.write_dynamic_buffers(queue);
         self.pipelines_unique.pipeline_3d.write_dynamic_buffers(queue);
+        self.pipelines_unique.text_pipeline.write_dynamic_buffers(queue);
 
         // We always write the shared buffers
         self.pipeline_shared.write_uniform_buffer(queue);

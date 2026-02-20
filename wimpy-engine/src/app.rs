@@ -1,6 +1,8 @@
 pub mod graphics;
 pub mod wam;
 pub mod input;
+
+mod debug;
 mod kvs;
 
 pub use kvs::*;
@@ -19,7 +21,10 @@ use input::{
 
 use wam::*;
 
-use crate::app::graphics::TextureFrame;
+use crate::app::{
+    debug::DebugShell,
+    graphics::{GraphicsContextConfig, GraphicsProvider, TextureFrame}, input::InputType
+};
 
 #[derive(Debug,Deserialize)]
 pub enum FileError {
@@ -44,18 +49,50 @@ pub trait WimpyIO {
     fn load_image_file(path: &Path) -> impl Future<Output = Result<impl TextureData + 'static,FileError>>;
 }
 
-pub struct WimpyContext<'a> {
-    pub graphics: &'a mut GraphicsContext,
-    pub storage: &'a mut KeyValueStore,
-    pub input: &'a mut InputManager,
-    pub assets: &'a mut AssetManager
+pub struct WimpyContext {
+    pub graphics: GraphicsContext,
+    pub storage: KeyValueStore,
+    pub input: InputManager,
+    pub assets: AssetManager,
+    pub debug: DebugShell,
 }
 
-impl WimpyContext<'_> {
+pub struct WimpyContextCreationConfig<'a> {
+    pub manifest_path: Option<&'a Path>,
+    pub input_type_hint: InputType,
+    pub graphics_provider: GraphicsProvider
+}
+
+impl WimpyContext {
+    pub async fn create<IO,TConfig>(config: WimpyContextCreationConfig<'_>) -> Option<Self>
+    where
+        IO: WimpyIO,
+        TConfig: GraphicsContextConfig
+    {
+
+        let mut assets = AssetManager::load_or_default::<IO>(config.manifest_path).await;
+
+        let graphics = GraphicsContext::create::<IO,TConfig>(
+            &mut assets,
+            config.graphics_provider
+        ).await;
+
+        let input = InputManager::with_input_type_hint(config.input_type_hint);
+        let storage = KeyValueStore::default();
+        let debug = DebugShell::default();
+
+        return Some(Self {
+            graphics,
+            storage,
+            input,
+            assets,
+            debug,
+        });
+    }
 
     async fn load_image<IO: WimpyIO>(&mut self,name: &str) -> Result<TextureFrame,AssetManagerError> {
         let reference = self.assets.get_image_reference(name)?;
-        return Ok(self.assets.load_image::<IO>(&reference,self.graphics).await?);
+        return Ok(self.assets.load_image::<IO>(&reference,&mut self.graphics).await?);
     }
 
     pub async fn load_image_or_default<IO: WimpyIO>(&mut self,name: &str) -> TextureFrame {

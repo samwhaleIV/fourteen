@@ -10,7 +10,6 @@ use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 use wimpy_engine::app::*;
 use wimpy_engine::app::graphics::*;
 use wimpy_engine::app::input::*;
-use wimpy_engine::app::wam::*;
 use wimpy_engine::shared::WimpyArea;
 
 const CANVAS_ID: &'static str = "main-canvas";
@@ -30,19 +29,17 @@ pub enum WebAppError {
     KeyEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
-    PerformanceDoesNotExist
+    PerformanceDoesNotExist,
+    WimpyContextCreationFailure,
 }
 
 pub struct WebApp<TWimpyApp> {
-    graphics_context: GraphicsContext,
-    input_manager: InputManager,
-    wimpy_app: TWimpyApp,
-    asset_manager: AssetManager,
-    gamepad_manager: GamepadManager,
-    kvs_store: KeyValueStore,
     last_frame_time: f64,
     current_frame_time: f64,
-    size: (u32,u32)
+    gamepad_manager: GamepadManager,
+    size: (u32,u32),
+    wimpy_app: TWimpyApp,
+    wimpy_context: WimpyContext,
 }
 
 #[allow(unused)]
@@ -88,6 +85,7 @@ where
         TConfig: GraphicsContextConfig
     {
         let canvas = get_canvas()?;
+        let gamepad_manager = GamepadManager::new();
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
             backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
@@ -111,31 +109,23 @@ where
             },
         }?;
 
-        let mut graphics_context = GraphicsContext::create::<TConfig>(graphics_provider);
-        let mut input_manager = InputManager::default();
-        let mut kvs_store = KeyValueStore::default();
+        let Some(mut wimpy_context) = WimpyContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
+            manifest_path,
+            input_type_hint: InputType::Unknown,
+            graphics_provider,
+        }).await else {
+            return Err(WebAppError::WimpyContextCreationFailure);
+        };
 
-        let gamepad_manager = GamepadManager::new();
-
-        let mut asset_manager = AssetManager::load_or_default::<WimpyWebIO>(manifest_path).await;
-
-        let wimpy_app = TWimpyApp::load(&mut WimpyContext {
-            graphics: &mut graphics_context,
-            storage: &mut kvs_store,
-            input: &mut input_manager,
-            assets: &mut asset_manager
-        }).await;
+        let wimpy_app = TWimpyApp::load(&mut wimpy_context).await;
 
         return Ok(Rc::new(RefCell::new(Self {
             last_frame_time: 0.0,
             current_frame_time: 0.0,
             size: (0,0),
-            gamepad_manager,
-            graphics_context,
-            input_manager,
-            asset_manager,
+            wimpy_context,
             wimpy_app,
-            kvs_store: Default::default(),
+            gamepad_manager,
         })));
     }
 
@@ -177,7 +167,7 @@ where
 
         let delta_time = ((self.current_frame_time - self.last_frame_time) * 0.001) as f32;
 
-        let mouse_shell_state = self.input_manager.update(
+        let mouse_shell_state = self.wimpy_context.input.update(
             mouse_input,
             gamepad_state,
             delta_time,
@@ -209,29 +199,11 @@ where
                 MouseMode::Camera => 2,
             }
         );
-
-        // log::trace!(
-        //     "Render strategy: {:?}, Mouse Mode: {:?}",
-        //     mouse_shell_state.cursor_rendering_strategy,
-        //     mouse_shell_state.mouse_mode
-        // );
-
-        // log::trace!(
-        //     "Position: {:?}, Delta: {:?}",
-        //     self.input_manager.get_virtual_mouse().position(),
-        //     self.input_manager.get_virtual_mouse().delta()
-        // );
     }
 
     fn render_frame(&mut self) {
         self.update_input();
-
-        self.wimpy_app.update(&mut WimpyContext {
-            graphics: &mut self.graphics_context,
-            storage: &mut self.kvs_store,
-            input: &mut self.input_manager,
-            assets: &mut self.asset_manager
-        });
+        self.wimpy_app.update(&mut self.wimpy_context);
     }
 
     fn update_size(&mut self) {
@@ -245,7 +217,7 @@ where
             return;
         };
 
-        let graphics_provider = self.graphics_context.get_graphics_provider_mut();
+        let graphics_provider = self.wimpy_context.graphics.get_graphics_provider_mut();
 
         let inner_width = translate_html_size(window.inner_width());
         let inner_height = translate_html_size(window.inner_height());
@@ -261,7 +233,6 @@ where
         canvas.set_height(height);
 
         self.size = (inner_width,inner_height);
-        //log::trace!("Web app: Update Size - ({},{})",width,height);
     }
 
     fn setup_events(app: &Rc<RefCell<Self>>,resize_config: ResizeConfig) -> Result<(),WebAppError> {
@@ -274,7 +245,7 @@ where
                 let Some(key_code) = KEY_CODES.get(&event.code()) else {
                     return;
                 };
-                app.borrow_mut().input_manager.set_key_code_pressed(*key_code);
+                app.borrow_mut().wimpy_context.input.set_key_code_pressed(*key_code);
             });
             get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;
             closure.forget();
@@ -288,7 +259,7 @@ where
                 let Some(key_code) = KEY_CODES.get(&event.code()) else {
                     return;
                 };
-                app.borrow_mut().input_manager.set_key_code_released(*key_code);
+                app.borrow_mut().wimpy_context.input.set_key_code_released(*key_code);
 
             });
             get_document()?.add_event_listener_with_callback("keyup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;

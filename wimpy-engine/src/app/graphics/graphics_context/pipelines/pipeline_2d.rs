@@ -11,9 +11,9 @@ pub struct Pipeline2D {
     instance_buffer: DoubleBuffer<QuadInstance>,
 }
 
-pub struct FrameRenderPass2D<'gc> {
-    context: RenderPassContext<'gc>,
-    render_pass: RenderPass<'gc>,
+pub struct Pipeline2DPass<'a,'frame> {
+    context: &'a mut RenderPassContext<'frame>,
+    render_pass: &'a mut RenderPass<'frame>,
     needs_sampler_update: bool,
     sampler_mode: SamplerMode,
     current_sampling_frame: FrameCacheReference,
@@ -37,12 +37,6 @@ impl Default for DrawData2D {
     }
 }
 
-impl Pipeline2D {
-    pub const VERTEX_BUFFER_INDEX: u32 = 0;
-    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
-    pub const INDEX_BUFFER_SIZE: u32 = 6;
-}
-
 impl PipelineController for Pipeline2D {
     fn write_dynamic_buffers(&mut self,queue: &Queue) {
         self.instance_buffer.write_out(queue);
@@ -52,11 +46,11 @@ impl PipelineController for Pipeline2D {
     }
 }
 
-impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
+impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
     fn create(
-        frame: &impl MutableFrame,
-        mut render_pass: RenderPass<'gc>,
-        mut context: RenderPassContext<'gc>
+        frame: &'frame impl MutableFrame,
+        render_pass: &'a mut RenderPass<'frame>,
+        context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
 
@@ -87,7 +81,7 @@ impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
             &[dynamic_offset as u32]
         );
 
-        let current_sampling_frame = context.textures.transparent_black.get_cache_reference();
+        let current_sampling_frame = context.textures.transparent_black.get_ref();
 
         return Self {
             context,
@@ -99,7 +93,7 @@ impl<'gc> FrameRenderPass<'gc> for FrameRenderPass2D<'gc> {
     }
 }
 
-impl FrameRenderPass2D<'_> {
+impl Pipeline2DPass<'_,'_> {
     fn update_sampler_if_needed(&mut self,reference: FrameCacheReference) -> Result<(),()> {
         if !(self.needs_sampler_update || self.current_sampling_frame != reference) {
             return Err(());
@@ -126,7 +120,7 @@ impl FrameRenderPass2D<'_> {
     }
 
     pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: &[DrawData2D]) {
-        let reference = frame_reference.get_cache_reference();
+        let reference = frame_reference.get_ref();
         if let Err(()) = self.update_sampler_if_needed(reference) {
             return;
         }

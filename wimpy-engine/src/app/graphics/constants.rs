@@ -15,3 +15,10 @@ pub const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
 
 // Used for intermediate frames. Should not be sRGB because the render target pipelines do not expect it.
 pub const INTERNAL_RENDER_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+pub mod assets {
+    pub const FONT_CLASSIC:             &'static str = "wimpy/font/classic";
+    pub const FONT_CLASSIC_OUTLINE:     &'static str = "wimpy/font/classic-outline";
+    pub const FONT_TWELVEN:             &'static str = "wimpy/font/twelven";
+    pub const FONT_TWELVEN_SHADED:      &'static str = "wimpy/font/twelven-shaded";
+}

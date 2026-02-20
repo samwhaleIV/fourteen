@@ -4,36 +4,40 @@ mod bind_group_cache;
 
 pub use pipelines::*;
 pub use bind_group_cache::*;
-pub use runtime_textures::*;
+
+use crate::app::{
+    WimpyIO,
+    wam::AssetManager
+};
 
 use super::prelude::*;
 
-pub struct OutputBuilder<'gc> {
-    graphics_context: &'gc mut GraphicsContext,
+pub struct OutputBuilder<'a> {
+    graphics_context: &'a mut GraphicsContext,
     encoder: CommandEncoder,
     output_surface: SurfaceTexture,
 }
 
-pub struct OutputBuilderContext<'gc> {
-    pub builder: OutputBuilder<'gc>,
+pub struct OutputBuilderContext<'a> {
+    pub builder: OutputBuilder<'a>,
     pub frame: OutputFrame,
 }
 
-pub trait FrameRenderPass<'rp> {
+pub trait PipelinePass<'a,'frame> {
     fn create(
-        frame: &impl MutableFrame,
-        render_pass: RenderPass<'rp>,
-        context: RenderPassContext<'rp>
+        frame: &'frame impl MutableFrame,
+        render_pass: &'a mut RenderPass<'frame>,
+        context: &'a mut RenderPassContext<'frame>
     ) -> Self;
 }
 
-pub struct RenderPassContext<'gc> {
-    model_cache: &'gc ModelCache,
-    frame_cache: &'gc FrameCache,
-    pipelines: &'gc mut RenderPipelines,
-    textures: &'gc RuntimeTextures,
-    bind_groups: &'gc mut BindGroupCache,
-    graphics_provider: &'gc GraphicsProvider
+pub struct RenderPassContext<'a> {
+    model_cache: &'a ModelCache,
+    frame_cache: &'a FrameCache,
+    pipelines: &'a mut RenderPipelines,
+    textures: &'a EngineTextures,
+    bind_groups: &'a mut BindGroupCache,
+    graphics_provider: &'a GraphicsProvider
 }
 
 pub enum AvailableControls {
@@ -41,14 +45,27 @@ pub enum AvailableControls {
     RenderPassCreation
 }
 
+pub struct EngineTextures {
+    pub font_classic: Option<TextureFrame>,
+    pub font_classic_outline: Option<TextureFrame>,
+    pub font_twelven: Option<TextureFrame>,
+    pub font_twelven_shaded: Option<TextureFrame>,
+
+    pub missing: TextureFrame,
+    pub opaque_white: TextureFrame,
+    pub opaque_black: TextureFrame,
+    pub transparent_white: TextureFrame,
+    pub transparent_black: TextureFrame,
+}
+
 pub struct GraphicsContext {
     graphics_provider: GraphicsProvider,
     pipelines: RenderPipelines,
     frame_cache: FrameCache,
-    runtime_textures: RuntimeTextures,
     model_cache: ModelCache,
     bind_group_cache: BindGroupCache,
-    texture_id_generator: TextureIdentityGenerator
+    texture_id_generator: TextureIdentityGenerator,
+    engine_textures: EngineTextures
 }
 
 pub trait GraphicsContextConfig {
@@ -58,6 +75,7 @@ pub trait GraphicsContextConfig {
     const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize;
     const MODEL_CACHE_INDEX_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_3D: usize;
+    const TEXT_PIPELINE_BUFFER_SIZE: usize;
 }
 
 impl GraphicsContext {
@@ -67,7 +85,10 @@ impl GraphicsContext {
     pub fn get_graphics_provider_mut(&mut self) -> &mut GraphicsProvider {
         return &mut self.graphics_provider;
     }
-    pub fn create<TConfig: GraphicsContextConfig>(graphics_provider: GraphicsProvider) -> Self {
+    pub async fn create<IO: WimpyIO,TConfig: GraphicsContextConfig>(
+        asset_manager: &mut AssetManager,
+        graphics_provider: GraphicsProvider
+    ) -> Self {
 
         let mut texture_id_generator = TextureIdentityGenerator::default();
 
@@ -86,25 +107,51 @@ impl GraphicsContext {
 
         let mut frame_cache = FrameCache::default();
 
-        let runtime_textures = RuntimeTextures::create(
+        let engine_textures = EngineTextures::create(
             &graphics_provider,
             &mut texture_id_generator,
             &mut frame_cache,
         );
 
-        return Self {
+        let mut graphics_context = Self {
             graphics_provider,
             texture_id_generator,
             pipelines,
             model_cache,
             frame_cache,
-            runtime_textures,
-            bind_group_cache
+            engine_textures,
+            bind_group_cache,
         };
-    }
-}
 
-impl GraphicsContext {
+        graphics_context.load_engine_textures::<IO>(asset_manager).await;
+
+        return graphics_context;
+    }
+
+    async fn load_engine_textures<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager) {
+        use assets::*;
+        self.engine_textures.font_classic =         self.load_texture::<IO>(asset_manager,FONT_CLASSIC).await;
+        self.engine_textures.font_classic_outline = self.load_texture::<IO>(asset_manager,FONT_CLASSIC_OUTLINE).await;
+        self.engine_textures.font_twelven =         self.load_texture::<IO>(asset_manager,FONT_TWELVEN).await;
+        self.engine_textures.font_twelven_shaded =  self.load_texture::<IO>(asset_manager,FONT_TWELVEN_SHADED).await;
+    }
+
+    async fn load_texture<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager,asset_name: &str) -> Option<TextureFrame> {
+        let log_error = |error| {
+            log::error!("Engine asset load failure: '{}': {:?}",asset_name,error);
+            None
+        };
+        let key = match asset_manager.get_image_reference(asset_name) {
+            Ok(value) => value,
+            Err(error) => return log_error(error),
+        };
+        let image = match asset_manager.load_image::<IO>(&key,self).await {
+            Ok(value) => value,
+            Err(error) => return log_error(error),
+        };
+        return Some(image);
+    }
+
     pub fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,TextureError> {
         let texture_id = self.texture_id_generator.next();
         let texture_container = TextureContainer::from_image(
@@ -140,7 +187,7 @@ impl GraphicsContext {
     }
 
     pub fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),FrameCacheError> {
-        let cache_reference = frame.get_cache_reference();
+        let cache_reference = frame.get_ref();
         self.frame_cache.end_lease(cache_reference)?;
         Ok(())
     }
@@ -162,7 +209,7 @@ impl GraphicsContext {
     }
 
     pub fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),FrameCacheError> {
-        let cache_reference = frame.get_cache_reference();
+        let cache_reference = frame.get_ref();
         self.frame_cache.remove(cache_reference)?;
         Ok(())
     }
@@ -204,12 +251,10 @@ impl GraphicsContext {
     }
 
     pub fn get_missing_texture(&self) -> TextureFrame {
-        return self.runtime_textures.missing.clone();
+        return self.engine_textures.missing.clone();
     }
-}
 
-impl GraphicsContext {
-    pub fn create_output_builder<'gc>(&'gc mut self,clear_color: WimpyColor) -> Result<OutputBuilderContext<'gc>,SurfaceError> {
+    pub fn create_output_builder<'a>(&'a mut self,clear_color: WimpyColor) -> Result<OutputBuilderContext<'a>,SurfaceError> {
         let surface = self.graphics_provider.get_output_surface()?;
 
         // Note: size is already validated by the graphics provider
@@ -241,20 +286,51 @@ impl GraphicsContext {
     }
 }
 
-impl<'gc> OutputBuilder<'gc> {
+pub struct RenderPassBuilder<'a,TFrame> {
+    frame: &'a TFrame,
+    render_pass: RenderPass<'a>,
+    context: RenderPassContext<'a>
+}
 
-    fn start_pass<'rp,TRenderPass,TFrame>(
-        graphics_context: &'rp mut GraphicsContext,
-        encoder: &'rp mut CommandEncoder,
-        frame: &'rp TFrame
-    ) -> Result<TRenderPass,FrameCacheError>
+impl<'frame,TFrame> RenderPassBuilder<'frame,TFrame>
+where
+    TFrame: MutableFrame
+{
+    pub fn set_pipeline<'a,TPipelinePass>(&'a mut self) -> TPipelinePass
     where
-        TFrame: MutableFrame,
-        TRenderPass: FrameRenderPass<'rp>
+        TPipelinePass: PipelinePass<'a,'frame>
     {
-        let view = graphics_context.frame_cache.get(frame.get_cache_reference())?.get_view();
+        let pipeline_render_pass = TPipelinePass::create(
+            self.frame,
+            &mut self.render_pass,
+            &mut self.context
+        );
+        return pipeline_render_pass;
+    }
 
-        let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+    pub fn set_pipeline_2d<'a>(&'a mut self) -> Pipeline2DPass<'a,'frame> {
+        self.set_pipeline()
+    }
+
+    pub fn set_pipeline_3d<'a>(&'a mut self) -> Pipeline3DPass<'a,'frame> {
+        self.set_pipeline()
+    }
+
+    pub fn set_pipeline_text<'a>(&'a mut self) -> PipelineTextPass<'a,'frame> {
+        self.set_pipeline()
+    }
+}
+
+//experiment where we put 'a
+impl OutputBuilder<'_> {
+
+    pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    where
+        TFrame: MutableFrame
+    {
+        let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_view();
+
+        let render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
@@ -273,35 +349,20 @@ impl<'gc> OutputBuilder<'gc> {
             timestamp_writes: None,
         });
 
-        let render_pass_context = RenderPassContext {
-            model_cache: &graphics_context.model_cache,
-            frame_cache: &graphics_context.frame_cache,
-            pipelines: &mut graphics_context.pipelines,
-            textures: &graphics_context.runtime_textures,
-            bind_groups: &mut graphics_context.bind_group_cache,
-            graphics_provider: &graphics_context.graphics_provider
+        let context = RenderPassContext {
+            model_cache: &self.graphics_context.model_cache,
+            frame_cache: &self.graphics_context.frame_cache,
+            pipelines: &mut self.graphics_context.pipelines,
+            textures: &self.graphics_context.engine_textures,
+            bind_groups: &mut self.graphics_context.bind_group_cache,
+            graphics_provider: &self.graphics_context.graphics_provider,
         };
 
-        let frame_render_pass = TRenderPass::create(
+        return Ok(RenderPassBuilder {
             frame,
             render_pass,
-            render_pass_context
-        );
-        return Ok(frame_render_pass);
-    }
-
-    pub fn start_pass_2d<'rp,TFrame>(&'rp mut self,frame: &'rp TFrame) -> Result<FrameRenderPass2D<'rp>,FrameCacheError>
-    where
-        TFrame: MutableFrame
-    {
-        return Self::start_pass(self.graphics_context,&mut self.encoder,frame);
-    }
-
-    pub fn start_pass_3d<'rp,TFrame>(&'rp mut self,frame: &'rp TFrame) -> Result<FrameRenderPass3D<'rp>,FrameCacheError>
-    where
-        TFrame: MutableFrame
-    {
-        return Self::start_pass(self.graphics_context,&mut self.encoder,frame);
+            context,
+        })
     }
 }
 
@@ -313,7 +374,7 @@ impl OutputBuilderContext<'_> {
         graphics_context.pipelines.write_pipeline_buffers(queue);
         queue.submit(std::iter::once(self.builder.encoder.finish()));
 
-        if let Err(error) = graphics_context.frame_cache.remove(self.frame.get_cache_reference()) {
+        if let Err(error) = graphics_context.frame_cache.remove(self.frame.get_ref()) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
         self.builder.output_surface.present();

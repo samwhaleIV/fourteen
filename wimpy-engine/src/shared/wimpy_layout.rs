@@ -81,22 +81,20 @@ impl WimpyArea {
         }
     }
 
-    pub fn multiply(self,value: Unit) -> Self {
-        return Self {
-            x: self.x * value,
-            y: self.y * value,
-            width: self.width * value,
-            height: self.height * value,
-        }
+    pub fn multiply(mut self,value: Unit) -> Self {
+        self.x *= value;
+        self.y *= value;
+        self.width *= value;
+        self.height *= value;
+        self
     }
 
-    pub fn multiply_2d(self,value: (Unit,Unit)) -> Self {
-        return Self {
-            x: self.x * value.0,
-            y: self.y * value.1,
-            width: self.width * value.0,
-            height: self.height * value.1,
-        }
+    pub fn multiply_2d(mut self,value: (Unit,Unit)) -> Self {
+        self.x *= value.0;
+        self.y *= value.1;
+        self.width *= value.0;
+        self.height *= value.1;
+        self
     }
 
     pub fn size(&self) -> (Unit,Unit) {

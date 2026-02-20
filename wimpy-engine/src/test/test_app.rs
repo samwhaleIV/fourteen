@@ -11,7 +11,7 @@ impl<IO> WimpyApp<IO> for PlaceholderApp
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyContext<'_>) -> Self {
+    async fn load(context: &mut WimpyContext) -> Self {
         return Self {
             offset: (0.0,0.0),
             test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
@@ -22,27 +22,6 @@ where
 
         // Start render ...
 
-        let mut mouse_mode = context.input.get_virtual_mouse().get_mouse_mode();
-        for event in context.input.iter_recent_events() {
-            match (event.impulse,event.state) {
-                (input::Impulse::Confirm, input::ImpulseState::Pressed) => {
-                    mouse_mode = match mouse_mode {
-                        input::MouseMode::Interface => input::MouseMode::Camera,
-                        input::MouseMode::Camera => input::MouseMode::Interface,
-                    };
-                },
-                _ => {}
-            }
-        }
-        let mouse = context.input.get_virtual_mouse_mut();
-        mouse.set_mouse_mode(mouse_mode);
-
-        if mouse_mode == input::MouseMode::Camera {
-            let delta = mouse.delta();
-            self.offset.0 += delta.x;
-            self.offset.1 += delta.y;
-        }
-
         let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
             Ok(value) => value,
             Err(surface_error) => {
@@ -51,10 +30,11 @@ where
             },
         };
 
-        'first_pass: {
-            let Ok(mut render_pass) = output.builder.start_pass_2d(&output.frame) else {
-                break 'first_pass;
+        'output_pass: {
+            let Ok(mut render_pass_builder) = output.builder.create_render_pass(&output.frame) else {
+                break 'output_pass;
             };
+            let mut render_pass_2d = render_pass_builder.set_pipeline_2d();
 
             let texture = self.test_texture;
 
@@ -71,13 +51,13 @@ where
                 },
             };
 
-            render_pass.set_sampler_mode(SamplerMode::NearestClamp);
+            render_pass_2d.set_sampler_mode(SamplerMode::NearestClamp);
 
             let mut destination = layout.compute(output.frame.area());
             destination.x += self.offset.0;
             destination.y += self.offset.1;
 
-            render_pass.draw(&texture,&[DrawData2D {
+            render_pass_2d.draw(&texture,&[DrawData2D {
                 destination,
                 source: WimpyArea::ONE,
                 color: WimpyColor::WHITE,
@@ -98,11 +78,13 @@ const fn mb_to_b(value: usize) -> usize {
 impl GraphicsContextConfig for PlaceholderConfig {
     // If a vertex is 32 bytes, there is 31,250 vertices per megabyte.
 
-    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = mb_to_b(10);
-    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = mb_to_b(10);
+    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = mb_to_b(1);
+    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = mb_to_b(1);
 
     const UNIFORM_BUFFER_SIZE: usize = 16384;
 
-    const INSTANCE_BUFFER_SIZE_2D: usize = mb_to_b(5);
-    const INSTANCE_BUFFER_SIZE_3D: usize = mb_to_b(5);
+    const INSTANCE_BUFFER_SIZE_2D: usize = mb_to_b(1);
+    const INSTANCE_BUFFER_SIZE_3D: usize = mb_to_b(1);
+    
+    const TEXT_PIPELINE_BUFFER_SIZE: usize = mb_to_b(1);
 }

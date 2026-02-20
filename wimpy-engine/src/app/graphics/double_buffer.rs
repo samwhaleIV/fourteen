@@ -33,6 +33,10 @@ impl<TItem> DoubleBuffer<TItem> {
         return Range { start, end };
     }
 
+    pub fn len(&self) -> usize {
+        return self.input_buffer.len();
+    }
+
     pub fn reset(&mut self) {
        self.input_buffer.clear();
     }
