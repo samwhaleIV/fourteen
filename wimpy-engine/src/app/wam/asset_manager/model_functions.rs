@@ -1,8 +1,3 @@
-use crate::app::graphics::{
-    CollisionShape,
-    RenderBufferReference
-};
-
 use super::*;
 
 #[derive(Debug)]
@@ -37,12 +32,11 @@ impl AssetManager {
 
         match model.data.state {
             HardAssetState::Unloaded => {
-                self.path_buffer.push(model.file_source.as_ref());
-                let gltf_data = match IO::load_binary_file(self.path_buffer.as_path()).await {
+                let path = get_full_path(&self.root,model.path.as_ref());
+                let gltf_data = match IO::load_binary_file(path.as_path()).await {
                     Ok(data) => data,
                     Err(error) => return Err(AssetManagerError::FileError(error)),
                 };
-                self.path_buffer.pop();
                 match graphics_context.create_model_cache_entry(&gltf_data) {
                     Ok(value) => {
                         model.data.state = HardAssetState::Loaded(value);

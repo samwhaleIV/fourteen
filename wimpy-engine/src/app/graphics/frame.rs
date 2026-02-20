@@ -1,4 +1,5 @@
-use super::prelude::*;
+use super::*;
+use crate::shared::*;
 
 #[derive(Copy,Clone)]
 pub struct RestrictedSize {
@@ -53,7 +54,7 @@ pub trait FrameReference {
     /// The size of the real texture this frame renders to.
     fn get_output_size(&self) -> (u32,u32);
 
-    fn get_output_uv_size(&self) -> (f32,f32) {
+    fn get_uv_scale(&self) -> (f32,f32) {
         let input = self.get_input_size();
         let output = self.get_output_size();
 

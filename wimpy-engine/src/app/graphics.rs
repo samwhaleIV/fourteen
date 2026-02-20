@@ -1,43 +1,27 @@
-mod texture_container;
 mod graphics_provider;
-mod constants;
-mod double_buffer;
 mod graphics_context;
+mod model_cache;
+mod texture_container;
 mod frame;
 mod frame_cache;
-mod model_cache;
-mod util;
+mod double_buffer;
+mod bind_group_cache;
+mod engine_textures;
 
-mod prelude {
-    pub use std::marker::PhantomData;
-    pub use std::num::NonZero;
-    pub use std::ops::Range;
-    pub use wgpu::util::{
-        DeviceExt,
-        BufferInitDescriptor
-    };
-    pub use cgmath::Matrix4;
-    pub use crate::shared::*;
-    pub use bytemuck::{
-        Pod,
-        Zeroable
-    };
-    pub use wgpu::*;
-    pub use super::*;
-    pub use constants::*;
-    pub use double_buffer::*;
-    pub use frame_cache::*;
-    pub use model_cache::*;
-    pub use texture_container::*;
-    pub use super::util::*;
-}
-
-pub use texture_container::{
-    TextureDataWriteParameters,
-    TextureData,
-};
+pub mod pipelines;
+pub mod fonts;
+pub mod constants;
 
 pub use graphics_provider::*;
-pub use frame::*;
-pub use model_cache::*;
 pub use graphics_context::*;
+pub use model_cache::*;
+pub use texture_container::*;
+pub use frame::*;
+pub use frame_cache::*;
+pub use bind_group_cache::*;
+pub use double_buffer::*;
+pub use engine_textures::*;
+
+pub use pipelines::pipeline_2d::DrawData2D;
+pub use pipelines::pipeline_3d::DrawData3D;
+pub use pipelines::text_pipeline::{TextRenderConfig,TextRenderBehavior};

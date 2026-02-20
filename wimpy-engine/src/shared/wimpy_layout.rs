@@ -5,7 +5,7 @@ pub struct WimpyLayout {
     pub y: LayoutDimension
 }
 
-#[derive(Copy,Clone)]
+#[derive(Debug,Copy,Clone)]
 pub struct WimpyArea {
     pub x: Unit,
     pub y: Unit,

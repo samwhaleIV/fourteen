@@ -20,12 +20,6 @@ mod prelude {
     pub use wam_manifest::*;
     pub use virtual_asset_translator::*;
     pub use file_type_definitions::*;
-    pub use crate::app::graphics::{
-        TextureFrame,
-        ModelCacheReference,
-        GraphicsContext,
-    };
-
     pub use crate::app::WimpyIO;
 }
 

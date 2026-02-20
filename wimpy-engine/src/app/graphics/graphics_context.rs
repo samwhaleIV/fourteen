@@ -1,16 +1,14 @@
-mod runtime_textures;
-mod pipelines;
-mod bind_group_cache;
+use super::{*,pipelines::core::*};
+use wgpu::*;
 
-pub use pipelines::*;
-pub use bind_group_cache::*;
+use crate::app::{wam::AssetManager,WimpyIO};
+use crate::shared::WimpyColor;
 
-use crate::app::{
-    WimpyIO,
-    wam::AssetManager
+use pipelines::{
+    pipeline_2d::*,
+    pipeline_3d::*,
+    text_pipeline::*
 };
-
-use super::prelude::*;
 
 pub struct OutputBuilder<'a> {
     graphics_context: &'a mut GraphicsContext,
@@ -32,12 +30,43 @@ pub trait PipelinePass<'a,'frame> {
 }
 
 pub struct RenderPassContext<'a> {
-    model_cache: &'a ModelCache,
-    frame_cache: &'a FrameCache,
-    pipelines: &'a mut RenderPipelines,
-    textures: &'a EngineTextures,
-    bind_groups: &'a mut BindGroupCache,
-    graphics_provider: &'a GraphicsProvider
+    pub model_cache: &'a ModelCache,
+    pub frame_cache: &'a FrameCache,
+    pub pipelines: &'a mut RenderPipelines,
+    pub textures: &'a EngineTextures,
+    pub bind_groups: &'a mut BindGroupCache,
+    pub graphics_provider: &'a GraphicsProvider
+}
+
+impl RenderPassContext<'_> {
+    pub fn get_shared(&self) -> &SharedPipeline {
+        return self.pipelines.get_shared();
+    }
+    pub fn get_shared_mut(&mut self) -> &mut SharedPipeline {
+        return self.pipelines.get_shared_mut();
+    }
+    pub fn get_3d_pipeline(&self) -> &Pipeline3D {
+        return &self.pipelines.get_unique().pipeline_3d;
+    }
+    pub fn get_3d_pipeline_mut(&mut self) -> &mut Pipeline3D {
+        return &mut self.pipelines.get_unique_mut().pipeline_3d;
+    }
+    pub fn get_2d_pipeline(&self) -> &Pipeline2D {
+        return &self.pipelines.get_unique().pipeline_2d;
+    }
+    pub fn get_2d_pipeline_mut(&mut self) -> &mut Pipeline2D {
+        return &mut self.pipelines.get_unique_mut().pipeline_2d;
+    }
+    pub fn get_text_pipeline(&self) -> &TextPipeline {
+        return &self.pipelines.get_unique().text_pipeline;
+    }
+    pub fn get_text_pipeline_mut(&mut self) -> &mut TextPipeline {
+        return &mut self.pipelines.get_unique_mut().text_pipeline;
+    }
+    pub fn set_texture_bind_group(&mut self,render_pass: &mut RenderPass,bind_group_identity: &BindGroupCacheIdentity) {
+        let bind_group = self.bind_groups.get(self.graphics_provider.get_device(),bind_group_identity);
+        render_pass.set_bind_group(super::constants::TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
+    }
 }
 
 pub enum AvailableControls {
@@ -129,7 +158,7 @@ impl GraphicsContext {
     }
 
     async fn load_engine_textures<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager) {
-        use assets::*;
+        use super::constants::assets::*;
         self.engine_textures.font_classic =         self.load_texture::<IO>(asset_manager,FONT_CLASSIC).await;
         self.engine_textures.font_classic_outline = self.load_texture::<IO>(asset_manager,FONT_CLASSIC_OUTLINE).await;
         self.engine_textures.font_twelven =         self.load_texture::<IO>(asset_manager,FONT_TWELVEN).await;

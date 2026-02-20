@@ -7,7 +7,7 @@ pub struct Asset<'a,TData> {
 
 pub struct AssetMut<'a,TData> {
     pub data: &'a mut TData,
-    pub file_source: Rc<str>
+    pub path: Rc<str>
 }
 
 impl AssetManager {
@@ -68,7 +68,7 @@ impl AssetManager {
         )?;
         return Ok(AssetMut {
             data,
-            file_source
+            path: file_source
         });
     }
 }

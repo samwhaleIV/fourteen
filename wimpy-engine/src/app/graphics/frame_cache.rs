@@ -1,6 +1,6 @@
-use crate::collections::cache_arena::*;
-use super::prelude::*;
+use super::TextureContainer;
 
+use crate::collections::cache_arena::*;
 pub struct FrameCacheConfig;
 
 impl CacheArenaConfig for FrameCacheConfig {

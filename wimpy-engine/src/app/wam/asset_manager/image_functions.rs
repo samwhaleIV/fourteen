@@ -37,12 +37,11 @@ impl AssetManager {
 
         match image.data.state {
             HardAssetState::Unloaded => {
-                self.path_buffer.push(image.file_source.as_ref());
-                let image_data = match IO::load_image_file(self.path_buffer.as_path()).await {
+                let path = get_full_path(&self.root,image.path.as_ref());
+                let image_data = match IO::load_image_file(path.as_path()).await {
                     Ok(data) => data,
                     Err(error) => return Err(AssetManagerError::FileError(error)),
                 };
-                self.path_buffer.pop();
                 let texture_frame = match graphics_context.create_texture_frame(image_data) {
                     Ok(value) => value,
                     Err(error) => return Err(AssetManagerError::TextureImportError(error)),

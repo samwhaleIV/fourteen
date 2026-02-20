@@ -68,22 +68,22 @@ impl WimpyIO for DekstopAppIO {
                 },
                 Err(image_error) => Err(match image_error {
                     ImageError::Decoding(decoding_error) => {
-                        log::error!("Image decode error: {:?}",decoding_error);
+                        log::error!("Image decode error '{:?}': {:?}",path,decoding_error);
                         FileError::DecodeFailure
                     },
                     ImageError::Unsupported(unsupported_error) => {
-                        log::error!("Image unsupported error: {:?}",unsupported_error);
+                        log::error!("Image unsupported error '{:?}': {:?}",path,unsupported_error);
                         FileError::DecodeFailure
                     },
                     ImageError::IoError(error) => {
-                        log::error!("Image IO error: {:?}",error);
+                        //log::error!("Image IO error: {:?}",error);
                         map_std_io_error(error.kind())
                     },
                     _ => FileError::Unknown
                 }),
             },
             Err(error) => Err({
-                log::error!("Image IO error: {:?}",error);
+                log::error!("Image IO error '{:?}': {}",path,error);
                 map_std_io_error(error.kind())
             }),
         }
@@ -93,7 +93,7 @@ impl WimpyIO for DekstopAppIO {
         match std::fs::read(path) {
             Ok(value) => Ok(value),
             Err(error) => {
-                log::error!("Load binary file error ({:?}): {:?}",path,error);
+                //log::error!("Load binary file error ({:?}): {:?}",path,error);
                 Err(map_std_io_error(error.kind()))
             }
         }
@@ -103,7 +103,7 @@ impl WimpyIO for DekstopAppIO {
         match std::fs::read_to_string(path) {
             Ok(value) => Ok(value),
             Err(error) => {
-                log::error!("Load text file error ({:?}): {:?}",path,error);
+                //log::error!("Load text file error ({:?}): {:?}",path,error);
                 Err(map_std_io_error(error.kind()))
             }
         }

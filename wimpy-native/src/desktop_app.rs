@@ -221,7 +221,10 @@ where
             },
         };
 
-        if shell_state.should_reposition_hardware_cursor {
+        if
+            shell_state.should_reposition_hardware_cursor &&
+            self.window.has_input_focus()
+        {
             sdl_mouse.warp_mouse_in_window(
                 &self.window,
                 shell_state.position.x as i32, 

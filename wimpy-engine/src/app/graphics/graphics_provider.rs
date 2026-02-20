@@ -1,4 +1,4 @@
-use super::prelude::*;
+use wgpu::*;
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,
@@ -29,8 +29,8 @@ pub enum TextureError {
 
 impl GraphicsProvider {
     pub async fn new(mut config: GraphicsProviderConfig) -> Result<Self,GraphicsProviderError> {
-        let adapter = match config.instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
+        let adapter = match config.instance.request_adapter(&RequestAdapterOptions {
+            power_preference: PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(&config.surface)
         }).await {
@@ -44,13 +44,13 @@ impl GraphicsProvider {
         config.limits.max_texture_dimension_2d = max_texture_dimension;
         config.limits.max_uniform_buffer_binding_size = max_uniform_buffer_size;
 
-        let (device,queue) = match adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device,queue) = match adapter.request_device(&DeviceDescriptor {
             label: None,
-            required_features: wgpu::Features::empty(),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            required_features: Features::empty(),
+            experimental_features: ExperimentalFeatures::disabled(),
             required_limits: config.limits,
             memory_hints: Default::default(),
-            trace: wgpu::Trace::Off
+            trace: Trace::Off
         }).await {
             Ok(value) => value,
             Err(error) => return Err(GraphicsProviderError::DeviceCreationError(error)),
@@ -74,13 +74,13 @@ impl GraphicsProvider {
         //     log::warn!("Output surface format is not Rgba8Unorm")
         // }
 
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        let surface_config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: 0,
             height: 0,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            present_mode: PresentMode::AutoVsync,
+            alpha_mode: CompositeAlphaMode::Opaque,
             view_formats: vec![],
             desired_maximum_frame_latency: 3
         };

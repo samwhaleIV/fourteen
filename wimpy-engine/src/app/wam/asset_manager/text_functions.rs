@@ -14,12 +14,11 @@ impl AssetManager {
 
         match &text.data.state {
             HardAssetState::Unloaded => {
-                self.path_buffer.push(text.file_source.as_ref());
-                let text_data: Rc<str> = Rc::from(match IO::load_text_file(self.path_buffer.as_path()).await {
+                let path = get_full_path(&self.root,text.path.as_ref());
+                let text_data: Rc<str> = Rc::from(match IO::load_text_file(path.as_path()).await {
                     Ok(data) => data,
                     Err(error) => return Err(AssetManagerError::FileError(error)),
                 });
-                self.path_buffer.pop();
                 text.data.state = HardAssetState::Loaded(text_data.clone());
                 Ok(text_data)
             },

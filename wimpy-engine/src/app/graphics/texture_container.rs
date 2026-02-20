@@ -1,6 +1,7 @@
+use super::*;
+use wgpu::*;
 use std::num::NonZeroU32;
-
-use super::prelude::*;
+use super::constants::*;
 
 #[derive(Copy,Clone,PartialEq,Eq,Hash)]
 pub enum TextureContainerIdentity {
@@ -15,13 +16,13 @@ pub struct TextureContainer {
 }
 
 pub struct TextureIdentityGenerator {
-    counter: NonZero<u32>
+    counter: NonZeroU32
 }
 
 impl Default for TextureIdentityGenerator {
     fn default() -> Self {
         Self {
-            counter: NonZero::<u32>::MIN
+            counter: NonZeroU32::MIN
         }
     }
 }
@@ -35,7 +36,7 @@ impl TextureIdentityGenerator {
             },
             None => {
                 log::warn!("Texture ID counter overflow. How do you have the RAM to make millions of textures? Wrapping the counter...");
-                self.counter = NonZero::<u32>::MIN;
+                self.counter = NonZeroU32::MIN;
             },
         };
         return TextureContainerIdentity::Known(current_id);

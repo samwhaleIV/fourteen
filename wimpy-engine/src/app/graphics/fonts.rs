@@ -1,11 +1,18 @@
-use super::*;
+use super::{
+    EngineTextures,
+    TextureFrame,
+    pipelines::text_pipeline::{
+        FontDefinition,
+        GlyphArea
+    }
+};
 
-pub struct Classic;
-pub struct ClassicOutlined;
-pub struct Twelven;
-pub struct TwelvenShaded;
+pub struct FontClassic;
+pub struct FontClassicOutlined;
+pub struct FontTwelven;
+pub struct FontTwelvenShaded;
 
-impl FontDefinition for Classic {
+impl FontDefinition for FontClassic {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_classic
         .unwrap_or(textures.missing)
@@ -80,7 +87,7 @@ impl FontDefinition for Classic {
     const WORD_SPACING: f32 = 3.0;
 }
 
-impl FontDefinition for ClassicOutlined {
+impl FontDefinition for FontClassicOutlined {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_classic_outline
         .unwrap_or(textures.missing)
@@ -242,7 +249,7 @@ fn get_twelven_glyph_area(character: char) -> GlyphArea {
     }
 }
 
-impl FontDefinition for Twelven {
+impl FontDefinition for FontTwelven {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_twelven
         .unwrap_or(textures.missing)
@@ -255,7 +262,7 @@ impl FontDefinition for Twelven {
     const WORD_SPACING: f32 = 8.0;
 }
 
-impl FontDefinition for TwelvenShaded {
+impl FontDefinition for FontTwelvenShaded {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_twelven_shaded
         .unwrap_or(textures.missing)

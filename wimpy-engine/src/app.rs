@@ -2,7 +2,7 @@ pub mod graphics;
 pub mod wam;
 pub mod input;
 
-mod debug;
+mod debug_shell;
 mod kvs;
 
 pub use kvs::*;
@@ -21,10 +21,15 @@ use input::{
 
 use wam::*;
 
-use crate::app::{
-    debug::DebugShell,
-    graphics::{GraphicsContextConfig, GraphicsProvider, TextureFrame}, input::InputType
+use debug_shell::DebugShell;
+
+use crate::app::graphics::{
+    GraphicsContextConfig,
+    GraphicsProvider,
+    TextureFrame
 };
+
+use crate::app::input::InputType;
 
 #[derive(Debug,Deserialize)]
 pub enum FileError {
@@ -99,7 +104,7 @@ impl WimpyContext {
         return match self.load_image::<IO>(name).await {
             Ok(value) => value,
             Err(error) => {
-                log::error!("Could not load image: {:?}",error);
+                log::error!("Could not load image '{}': {:?}",name,error);
                 return self.graphics.get_missing_texture();
             },
         };

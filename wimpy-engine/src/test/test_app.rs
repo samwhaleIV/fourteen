@@ -1,10 +1,7 @@
-use crate::app::*;
-use crate::app::graphics::*;
-use crate::shared::*;
+use crate::{shared::*,app::{*,graphics::{*,fonts::*},}};
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
-    offset: (f32,f32)
 }
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
@@ -13,7 +10,6 @@ where
 {
     async fn load(context: &mut WimpyContext) -> Self {
         return Self {
-            offset: (0.0,0.0),
             test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
         };
     }
@@ -31,10 +27,10 @@ where
         };
 
         'output_pass: {
-            let Ok(mut render_pass_builder) = output.builder.create_render_pass(&output.frame) else {
+            let Ok(mut render_pass) = output.builder.create_render_pass(&output.frame) else {
                 break 'output_pass;
             };
-            let mut render_pass_2d = render_pass_builder.set_pipeline_2d();
+            let mut pipeline_pass_2d = render_pass.set_pipeline_2d();
 
             let texture = self.test_texture;
 
@@ -51,18 +47,26 @@ where
                 },
             };
 
-            render_pass_2d.set_sampler_mode(SamplerMode::NearestClamp);
+            pipeline_pass_2d.set_sampler_mode(SamplerMode::NearestClamp);
 
-            let mut destination = layout.compute(output.frame.area());
-            destination.x += self.offset.0;
-            destination.y += self.offset.1;
+            let destination = layout.compute(output.frame.area());
 
-            render_pass_2d.draw(&texture,&[DrawData2D {
+            pipeline_pass_2d.draw(&texture,&[DrawData2D {
                 destination,
                 source: WimpyArea::ONE,
                 color: WimpyColor::WHITE,
                 rotation: 0.0,
             }]);
+
+            let mut text_pipeline_pass = render_pass.set_pipeline_text();
+            text_pipeline_pass.draw_text::<FontClassic>("abcdefghijkl",TextRenderConfig {
+                position: destination.center(),
+                scale: 4.0,
+                color: WimpyColor::WHITE,
+                line_height: 1.0,
+                word_seperator: ' ',
+                behavior: TextRenderBehavior::Centered,
+            });
         }
 
         output.present_output_surface();

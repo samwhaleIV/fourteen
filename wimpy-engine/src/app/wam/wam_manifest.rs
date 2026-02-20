@@ -31,7 +31,7 @@ pub struct HardAsset {
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
     pub virtual_assets: HashMap<Rc<str>,AssetReference>,
-    string_building_buffer: String,
+    string_builder: String,
 }
 
 #[derive(Deserialize,Debug)]
@@ -132,7 +132,7 @@ impl WamManifest {
         let mut manifest = Self {
             hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_key(),
             virtual_assets: Default::default(),
-            string_building_buffer: String::with_capacity(NAME_BUILDING_BUFFER_START_CAPACITY)
+            string_builder: String::with_capacity(DEFAULT_NAME_STRING_BUILDER_CAPACITY)
         };
 
         let item_count = namespace_table.len();
@@ -150,12 +150,12 @@ impl WamManifest {
     }
 
     pub fn get_virtual_asset_name(&mut self,mut local_name: String,namespace_name: &str) -> Rc<str> {
-        self.string_building_buffer.insert_str(0,namespace_name);
-        self.string_building_buffer.push('/');
-        self.string_building_buffer.push_str(&local_name);
+        self.string_builder.insert_str(0,namespace_name);
+        self.string_builder.push('/');
+        self.string_builder.push_str(&local_name);
         local_name.clear();
-        local_name.push_str(&self.string_building_buffer);
-        self.string_building_buffer.clear();
+        local_name.push_str(&self.string_builder);
+        self.string_builder.clear();
         return Rc::from(local_name);
     }
 

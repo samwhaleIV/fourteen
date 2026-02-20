@@ -1,49 +1,16 @@
-mod creation;
-pub mod engine_fonts;
-
-mod shader_definitions;
-pub use shader_definitions::*;
-use super::*;
+use wgpu::*;
+use wgpu::util::{BufferInitDescriptor,DeviceExt};
+use std::ops::Range;
+use bytemuck::{Pod,Zeroable};
+use crate::app::graphics::{*,constants::*};
+use crate::shared::*;
+use super::core::*;
 
 pub struct TextPipeline {
     pipelines: PipelineVariants,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<GlyphInstance>,
-}
-
-pub struct PipelineTextPass<'a,'frame> {
-    context: &'a mut RenderPassContext<'frame>,
-    render_pass: &'a mut RenderPass<'frame>,
-    current_texture: TextureFrame,
-    current_texture_uv_size: (f32,f32)
-}
-
-pub enum TextBehavior {
-    LTR,
-    RTL,
-    Centered,
-    LineBreakingLTR {
-        max_width: u32
-    }
-}
-
-pub struct TextRenderConfig {
-    position: (f32,f32),
-    scale: f32,
-    color: WimpyColor,
-    line_height: f32,
-    word_seperator: char,
-    behavior: TextBehavior
-}
-
-#[derive(Default)]
-pub struct GlyphArea {
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub y_offset: i16
 }
 
 pub trait FontDefinition {
@@ -65,6 +32,132 @@ pub trait FontDefinition {
     fn get_line_height(scale: f32,line_height: f32) -> f32 {
         (Self::LINE_HEIGHT * line_height * scale).round().max(Self::LINE_HEIGHT + 1.0)
     }
+}
+
+#[derive(Default)]
+pub struct GlyphArea {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub y_offset: i16
+}
+
+impl TextPipeline {
+    pub const VERTEX_BUFFER_INDEX: u32 = 0;
+    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
+    pub const INDEX_BUFFER_SIZE: u32 = 6;
+
+    pub fn create<TConfig>(
+        graphics_provider: &GraphicsProvider,
+        texture_layout: &BindGroupLayout,
+        uniform_layout: &BindGroupLayout,
+    ) -> Self
+    where
+        TConfig: GraphicsContextConfig
+    {
+        let device = graphics_provider.get_device();
+
+        let shader = &device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Text Pipeline Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/text_pipeline.wgsl").into())
+        });
+
+        let render_pipeline_layout = &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Text Pipeline Render Layout"),
+            bind_group_layouts: &[
+                texture_layout,
+                uniform_layout,
+            ],
+            push_constant_ranges: &[]
+        });
+
+        let pipeline_creator = PipelineCreator {
+            graphics_provider,
+            render_pipeline_layout,
+            shader,
+            vertex_buffer_layout: &[
+                GlyphVertex::get_buffer_layout(),
+                GlyphInstance::get_buffer_layout()
+            ],
+            primitive_state: &wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false
+            },
+            label: "Text Pipeline",
+        };
+        let pipelines = pipeline_creator.create_variants();
+
+        let vertices = [  
+            GlyphVertex { position: [-0.5,-0.5] },
+            GlyphVertex { position: [-0.5, 0.5] },
+            GlyphVertex { position: [0.5,-0.5] },
+            GlyphVertex { position: [0.5, 0.5] }
+        ];
+
+        let indices: [u32;Self::INDEX_BUFFER_SIZE as usize] = [
+            0,1,2,
+            2,1,3
+        ];
+
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor{
+            label: Some("Text Pipeline Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX
+        });
+
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor{
+            label: Some("Text Pipeline Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX
+        });
+
+        let instance_buffer = DoubleBuffer::new(
+            device.create_buffer(&BufferDescriptor{
+                label: Some("Text Pipeline Instance Buffer"),
+                size: TConfig::TEXT_PIPELINE_BUFFER_SIZE as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        );
+
+        return Self {
+            pipelines,
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+        }
+    }
+}
+
+pub struct PipelineTextPass<'a,'frame> {
+    context: &'a mut RenderPassContext<'frame>,
+    render_pass: &'a mut RenderPass<'frame>,
+    tex: TextureFrame,
+    uv_scalar: (f32,f32),
+}
+
+pub enum TextRenderBehavior {
+    LTR,
+    RTL,
+    Centered,
+    LineBreakingLTR {
+        max_width: u32
+    }
+}
+
+pub struct TextRenderConfig {
+    pub position: (f32,f32),
+    pub scale: f32,
+    pub color: WimpyColor,
+    pub line_height: f32,
+    pub word_seperator: char,
+    pub behavior: TextRenderBehavior
 }
 
 fn validate_scale(scale: f32) -> f32 {
@@ -125,20 +218,20 @@ impl<'a,'frame> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame> {
             &[dynamic_offset as u32]
         );
 
-        let current_texture = context.textures.transparent_black.clone();
+        let tex = context.textures.transparent_black.clone();
 
         return Self {
-            current_texture_uv_size: current_texture.get_output_uv_size(),
+            uv_scalar: (1.0,1.0),
+            tex,
             context,
             render_pass,
-            current_texture: current_texture
         }
     }
 }
 
 impl PipelineTextPass<'_,'_> {
     fn validate_texture<TFont: FontDefinition>(&mut self) -> bool {
-        let current_texture = self.current_texture;
+        let current_texture = self.tex;
         let target_texture = TFont::get_texture(self.context.textures);
         let target_texture_ref = target_texture.get_ref();
 
@@ -155,8 +248,12 @@ impl PipelineTextPass<'_,'_> {
                     return false;
                 }
             };
-            self.current_texture = target_texture;
-            self.current_texture_uv_size = self.current_texture.get_output_uv_size();
+            self.tex = target_texture;
+            let scale = self.tex.get_uv_scale();
+            self.uv_scalar = (
+                (1.0 / self.tex.width() as f32) * scale.0,
+                (1.0 / self.tex.height() as f32) * scale.1,
+            );
         }
 
         return true;
@@ -173,11 +270,11 @@ impl PipelineTextPass<'_,'_> {
         let height = glyph.height as f32;
 
         let source = WimpyArea {
-            x: glyph.x as f32,
+            x: (glyph.x as f32),
             y: glyph.y as f32,
             width,
             height,
-        }.multiply_2d(self.current_texture_uv_size);
+        }.multiply_2d(self.uv_scalar);
 
         let destination = WimpyArea {
             x: x,
@@ -195,6 +292,7 @@ impl PipelineTextPass<'_,'_> {
         };
 
         self.context.pipelines.get_unique_mut().text_pipeline.instance_buffer.push(glyph_instance);
+        log::info!("{:?}",glyph_instance);
 
         return destination.width;
     }
@@ -244,6 +342,8 @@ impl PipelineTextPass<'_,'_> {
 
     pub fn draw_text<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
 
+        log::info!("START TEXT");
+
         if !self.validate_texture::<TFont>() {
             return;
         }
@@ -251,25 +351,25 @@ impl PipelineTextPass<'_,'_> {
         let range_start = self.get_instance_buffer_len();
 
         match config.behavior {
-            TextBehavior::LTR | TextBehavior::LineBreakingLTR {
+            TextRenderBehavior::LTR | TextRenderBehavior::LineBreakingLTR {
                 max_width: 0
             } => {
                 self.draw_text_ltr::<TFont>(text,config)
             },
-            TextBehavior::Centered => {
+            TextRenderBehavior::Centered => {
                 self.draw_text_centered::<TFont>(text,config)
             },
-            TextBehavior::RTL => {
+            TextRenderBehavior::RTL => {
                 self.draw_text_rtl::<TFont>(text,config)
             },
-            TextBehavior::LineBreakingLTR { max_width } => {
+            TextRenderBehavior::LineBreakingLTR { max_width } => {
                 self.draw_text_line_breaking_ltr::<TFont>(text,config,max_width)
             }
         }
 
         let range_end = self.get_instance_buffer_len();
 
-        if range_start != range_end {
+        if range_start == range_end {
             return;
         }
 
@@ -277,5 +377,67 @@ impl PipelineTextPass<'_,'_> {
             start: range_start as u32,
             end: range_end as u32
         });
+
+        log::info!("END TEXT");
+    }
+}
+
+#[repr(C)]
+#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
+pub struct GlyphVertex {
+    pub position: [f32;2],
+}
+
+#[repr(C)]
+#[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
+pub struct GlyphInstance {
+    pub position: [f32;2],
+    pub size: [f32;2],
+    pub uv_position: [f32;2],
+    pub uv_size: [f32;2],
+    pub color: [u8;4],
+}
+
+#[non_exhaustive]
+struct ATTR;
+
+impl ATTR {
+    pub const VERTEX_POSITION: u32 = 0;
+    pub const INSTANCE_POSITION: u32 = 1;
+    pub const SIZE: u32 = 2;
+    pub const UV_POS: u32 = 3;
+    pub const UV_SIZE: u32 = 4;
+    pub const COLOR: u32 = 5;
+}
+
+impl GlyphVertex {
+    const ATTRS: [wgpu::VertexAttribute;1] = wgpu::vertex_attr_array![
+        ATTR::VERTEX_POSITION => Float32x2,
+    ];
+
+    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        return wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRS,
+        }
+    }
+}
+
+impl GlyphInstance {
+    const ATTRS: [wgpu::VertexAttribute;5] = wgpu::vertex_attr_array![
+        ATTR::INSTANCE_POSITION => Float32x2,
+        ATTR::SIZE => Float32x2,
+        ATTR::UV_POS => Float32x2,
+        ATTR::UV_SIZE => Float32x2,
+        ATTR::COLOR => Unorm8x4,
+    ];
+
+    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        return wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::ATTRS,
+        }
     }
 }

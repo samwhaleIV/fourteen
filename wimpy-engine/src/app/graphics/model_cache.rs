@@ -1,4 +1,7 @@
-use super::prelude::*;
+use super::pipelines::pipeline_3d::ModelVertex;
+use std::{marker::PhantomData, num::NonZero, ops::Range};
+use bytemuck::{Pod,Zeroable};
+use wgpu::*;
 
 use gltf::{
     Document,

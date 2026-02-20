@@ -11,12 +11,17 @@ use crate::app::FileError;
 
 use crate::app::graphics::{
     TextureError,
-    ModelError
+    ModelError,
+    TextureFrame,
+    ModelCacheReference,
+    GraphicsContext,
+    CollisionShape,
+    RenderBufferReference
 };
 
 pub struct AssetManager {
     manifest: WamManifest,
-    path_buffer: PathBuf,
+    root: PathBuf,
 }
 
 #[derive(Debug)]
@@ -33,9 +38,13 @@ pub enum AssetManagerError {
     TextureImportError(TextureError),
 }
 
-pub struct AssetManagerCreationData {
-    pub content_root: Option<PathBuf>,
-    pub manifest: WamManifest
+fn get_full_path(root: &PathBuf,virtual_path: &str) -> PathBuf {
+    let mut path_buffer = PathBuf::new();
+    path_buffer.push(root);
+    for component in virtual_path.split('/') {
+        path_buffer.push(component);
+    }
+    return path_buffer;
 }
 
 impl AssetManager {
@@ -47,38 +56,29 @@ impl AssetManager {
                     Ok(manifest) => {
                         let mut path_buffer = PathBuf::from(path);
                         path_buffer.pop();
-                        Self::create(AssetManagerCreationData {
-                            content_root: Some(path_buffer),
-                            manifest
-                        })
+                        Self {
+                            root: path_buffer,
+                            manifest: manifest
+                        }
                     },
                     Err(error) => {
                         log::error!("Could not parse manifest data '{:?}': {:?}",path,error);
-                        Self::create_without_manifest()
+                        Self::create_empty()
                     },
                 },
                 Err(error) => {
                     log::error!("Could not load manifest file '{:?}': {:?}",path,error);
-                    Self::create_without_manifest()
+                    Self::create_empty()
                 },
             },
-            None => Self::create_without_manifest(),
+            None => Self::create_empty(),
         };
     }
 
-    fn create_without_manifest() -> Self {
+    fn create_empty() -> Self {
         return Self {
             manifest: Default::default(),
-            path_buffer: PathBuf::with_capacity(PATH_BUFFER_START_SIZE),
-        }
-    }
-
-    fn create(data: AssetManagerCreationData) -> Self {
-        return Self {
-            manifest: data.manifest,
-            path_buffer: data.content_root.unwrap_or_else(||
-                PathBuf::with_capacity(PATH_BUFFER_START_SIZE)
-            ),
+            root: Default::default(),
         }
     }
 }
