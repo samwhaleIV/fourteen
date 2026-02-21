@@ -1,11 +1,10 @@
 use std::path::Path;
 
-use image::metadata::Cicp;
 use image::{
-    ConvertColorOptions, DynamicImage, EncodableLayout, ImageError, ImageReader
+    DynamicImage, EncodableLayout, ImageError, ImageReader
 };
 
-use wimpy_engine::app::*;
+use wimpy_engine::{UWimpyPoint, app::*};
 use wimpy_engine::app::graphics::{
     TextureData,
     TextureDataWriteParameters
@@ -19,8 +18,8 @@ struct DynamicImageWrapper {
 
 impl TextureData for DynamicImageWrapper {
 
-    fn size(&self) -> (u32,u32) {
-        (self.value.width(),self.value.height())
+    fn size(&self) -> UWimpyPoint {
+        [self.value.width(),self.value.height()].into()
     }
     
     fn write_to_queue(self,parameters: &TextureDataWriteParameters) {

@@ -88,7 +88,7 @@ impl Add<f32> for WimpyVec {
     fn add(self,rhs: f32) -> Self {
         Self {
             x: self.x + rhs,
-            y: self.x + rhs,
+            y: self.y + rhs,
         }
     }
 }
@@ -98,7 +98,7 @@ impl Add<Self> for WimpyVec {
     fn add(self,rhs: Self) -> Self {
         Self {
             x: self.x + rhs.x,
-            y: self.x + rhs.y,
+            y: self.y + rhs.y,
         }
     }
 }
@@ -188,6 +188,24 @@ impl From<[f32;2]> for WimpyVec {
     }
 }
 
+impl From<[i32;2]> for WimpyVec {
+    fn from(value: [i32;2]) -> Self {
+        Self {
+            x: value[0] as f32,
+            y: value[1] as f32
+        }
+    }
+}
+
+impl From<[u32;2]> for WimpyVec {
+    fn from(value: [u32;2]) -> Self {
+        Self {
+            x: value[0] as f32,
+            y: value[1] as f32
+        }
+    }
+}
+
 impl From<IWimpyPoint> for WimpyVec {
     fn from(value: IWimpyPoint) -> Self {
         Self {
@@ -212,5 +230,32 @@ impl From<WimpyVec> for [f32;2] {
             value.x,
             value.y
         ]
+    }
+}
+
+impl From<u32> for WimpyVec {
+    fn from(value: u32) -> Self {
+        Self {
+            x: value as f32,
+            y: value as f32,
+        }
+    }
+}
+
+impl From<f32> for WimpyVec {
+    fn from(value: f32) -> Self {
+        Self {
+            x: value,
+            y: value,
+        }
+    }
+}
+
+impl From<i32> for WimpyVec {
+    fn from(value: i32) -> Self {
+        Self {
+            x: value as f32,
+            y: value as f32,
+        }
     }
 }

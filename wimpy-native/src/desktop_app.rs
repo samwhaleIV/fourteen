@@ -22,7 +22,7 @@ use sdl2::{
 
 use wgpu::{Instance, Limits, Surface};
 
-use wimpy_engine::{app::*, shared::WimpyArea};
+use wimpy_engine::{WimpyColor, WimpyRect, WimpyVec, app::*};
 use wimpy_engine::app::input::*;
 use wimpy_engine::app::graphics::*;
 
@@ -219,15 +219,12 @@ where
             self.mouse_cache,
             gamepad_state,
             delta_seconds,
-            WimpyArea {
-                x: LEFT_EDGE_VIRTUAL_MODE_MARGIN as f32,
-                y: LEFT_EDGE_VIRTUAL_MODE_MARGIN as f32,
-                width: (size.0 - RIGHT_EDGE_VIRTUAL_MODE_MARGIN) as f32,
-                height: (size.1 - RIGHT_EDGE_VIRTUAL_MODE_MARGIN) as f32,
+            WimpyRect {
+                position: LEFT_EDGE_VIRTUAL_MODE_MARGIN.into(),
+                size: WimpyVec::from(size) - WimpyVec::from(RIGHT_EDGE_VIRTUAL_MODE_MARGIN),
             },
             true
         );
-
         self.mouse_cache.delta = Default::default();
 
         let sdl_mouse = self.sdl.main.mouse();
@@ -273,10 +270,7 @@ where
                     );
                 },
                 Event::MouseButtonDown { x, y, mouse_btn, .. } => {
-                    self.mouse_cache.position = Position {
-                        x: x as f32,
-                        y: y as f32
-                    };
+                    self.mouse_cache.position = WimpyVec::from([x,y]);
                     match mouse_btn {
                         MouseButton::Left => {
                             self.mouse_cache.left_pressed = true;
@@ -288,10 +282,7 @@ where
                     };
                 },
                 Event::MouseButtonUp { x, y, mouse_btn, .. } => {
-                    self.mouse_cache.position = Position {
-                        x: x as f32,
-                        y: y as f32
-                    };
+                    self.mouse_cache.position = WimpyVec::from([x,y]);
                     match mouse_btn {
                         MouseButton::Left => {
                             self.mouse_cache.left_pressed = false;
@@ -303,12 +294,8 @@ where
                     };
                 },
                 Event::MouseMotion { x, y, xrel, yrel, .. } => {
-                    self.mouse_cache.delta.x += xrel as f32;
-                    self.mouse_cache.delta.y += yrel as f32;
-                    self.mouse_cache.position = Position {
-                        x: x as f32,
-                        y: y as f32
-                    };
+                    self.mouse_cache.delta += WimpyVec::from([xrel,yrel]);
+                    self.mouse_cache.position = WimpyVec::from([x,y]);
                 },
                 Event::KeyDown {
                     keycode: Some(keycode),

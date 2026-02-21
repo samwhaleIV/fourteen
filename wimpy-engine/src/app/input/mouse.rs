@@ -180,6 +180,8 @@ impl VirtualMouse {
         context_can_reposition_hardware_cursor: bool
     ) -> VirtualMouseShellState {
 
+        let mut zero_out_delta = false;
+
         self.gamepad_state = MouseInput::from_gamepad(
             gamepad,
             self.gamepad_state.position,
@@ -194,8 +196,8 @@ impl VirtualMouse {
         self.mouse_state = new_mouse_state;
 
         if let Some(new_mode) = self.future_mode.take() && new_mode != self.current_mode {
-            self.mouse_state.delta = WimpyVec::ZERO;
-            self.gamepad_state.delta = WimpyVec::ZERO;
+            self.current_mode = new_mode;
+            zero_out_delta = true;
             if self.current_mode == MouseMode::Interface {
                 let center = emulation_bounds.center();
                 self.gamepad_state.position = center;
@@ -212,7 +214,6 @@ impl VirtualMouse {
                     self.emulation_active = true;
                 },
             };
-            self.current_mode = new_mode;
         }
 
         let has_mouse_activity_right_now = self.mouse_state.position_differs(&previous_mouse_state);
@@ -290,6 +291,10 @@ impl VirtualMouse {
         };
 
         self.initialized = true;
+
+        if zero_out_delta {
+            self.fused_state.delta = WimpyVec::ZERO;
+        }
 
         return self.get_cursor_shell_state(should_reposition_hardware_cursor);
     }

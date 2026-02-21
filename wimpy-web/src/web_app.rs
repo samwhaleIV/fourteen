@@ -10,12 +10,11 @@ use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::*};
 use wimpy_engine::app::graphics::*;
 use wimpy_engine::app::input::*;
-use wimpy_engine::shared::WimpyArea;
 
 const CANVAS_ID: &'static str = "main-canvas";
 
 /* Must match 'html/style.css @ div#virtual-cursor' */
-const EMULATED_CURSOR_SIZE: UWimpyPoint = [12,16].into();
+const EMULATED_CURSOR_SIZE: UWimpyPoint = UWimpyPoint {x: 12,y: 16};
 
 #[derive(Debug)]
 pub enum WebAppError {

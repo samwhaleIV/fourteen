@@ -2,9 +2,9 @@ use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, Mous
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
-    line_start: Option<(f32,f32)>,
+    line_start: Option<WimpyVec>,
     lines: Vec<[LinePoint;2]>,
-    offset: (f32,f32),
+    offset: WimpyVec,
     in_movement_mode: bool
 }
 
@@ -42,7 +42,7 @@ where
             lines: Vec::with_capacity(64),
             test_texture: context.load_image_or_default::<IO>("test-namespace/test").await,
             line_start: None,
-            offset: (0.0,0.0)
+            offset: WimpyVec::ZERO
         };
     }
 
@@ -72,8 +72,7 @@ where
                 match mouse.left_press_state() {
                     MousePressState::JustPressed | MousePressState::Pressed => {
                         if self.line_start.is_none() {
-                            let start = mouse.position();
-                            self.line_start = Some((start.x,start.y))
+                            self.line_start = Some(mouse.position())
                         }
                     },
                     MousePressState::JustReleased | MousePressState::Released => {
@@ -81,13 +80,11 @@ where
                             let end = mouse.position();
                             self.lines.push([
                                 LinePoint {
-                                    x: start.0,
-                                    y: start.1,
+                                    point: start,
                                     color: WimpyColor::RED,
                                 },
                                 LinePoint {
-                                    x: end.x,
-                                    y: end.y,
+                                    point: end,
                                     color: WimpyColor::GREEN,
                                 }
                             ])
@@ -96,8 +93,7 @@ where
                 }
             },
             input::MouseMode::Camera => {
-                self.offset.0 += mouse.delta().x;
-                self.offset.1 += mouse.delta().y;
+                self.offset += mouse.delta();
             },
         };
 
@@ -121,21 +117,19 @@ where
                 x: LayoutDimension {
                     position: Position::center_of_parent(),
                     size: texture.width().into(),
-                    size_offset: 0.into(),
+                    size_offset: Size::from(0),
                 },
                 y: LayoutDimension {
                     position: Position::center_of_parent(),
                     size: texture.height().into(),
-                    size_offset: 0.into(),
+                    size_offset: Size::from(0),
                 },
             };
 
             pipeline_pass_2d.set_sampler_mode(SamplerMode::NearestClamp);
 
             let mut destination = layout.compute(output.frame.area());
-
-            destination.x += self.offset.0;
-            destination.y += self.offset.1;
+            destination.position += self.offset;
 
             pipeline_pass_2d.draw(&texture,&[DrawData2D {
                 destination,
