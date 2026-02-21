@@ -1,34 +1,34 @@
 use super::*;
-use crate::shared::*;
+use crate::*;
 
 #[derive(Copy,Clone)]
 pub struct RestrictedSize {
-    pub input: (u32,u32),
-    pub output: (u32,u32),
+    pub input: UWimpyPoint,
+    pub output: UWimpyPoint,
 }
 
 #[derive(Copy,Clone)]
 pub struct CacheSize {
-    pub input: (u32,u32),
-    pub output: u32
+    pub input: UWimpyPoint,
+    pub output_single_dimension: u32
 }
 
 pub struct OutputFrame {
-    size: (u32,u32),
+    size: UWimpyPoint,
     cache_reference: FrameCacheReference,
     clear_color: wgpu::Color
 }
 
 #[derive(Clone,Copy,Debug)]
 pub struct TextureFrame {
-    size: (u32,u32),
+    size: UWimpyPoint,
     cache_reference: FrameCacheReference,
 }
 
 impl TextureFrame {
     pub fn placeholder() -> Self {
         return Self {
-            size: (0,0),
+            size: UWimpyPoint::ZERO,
             cache_reference: Default::default(),
         }
     }
@@ -49,40 +49,34 @@ pub trait FrameReference {
     fn get_ref(&self) -> FrameCacheReference;
 
     /// The size of the frame as requested by the user. In the case of an imported texture frame, this is its original size.
-    fn get_input_size(&self) -> (u32,u32);
+    fn get_input_size(&self) -> UWimpyPoint;
 
     /// The size of the real texture this frame renders to.
-    fn get_output_size(&self) -> (u32,u32);
+    fn get_output_size(&self) -> UWimpyPoint;
 
-    fn get_uv_scale(&self) -> (f32,f32) {
+    fn get_uv_scale(&self) -> WimpyVec {
         let input = self.get_input_size();
         let output = self.get_output_size();
 
-        (
-            input.0 as f32 / output.0 as f32,
-            input.1 as f32 / output.1 as f32,
-        )
+        WimpyVec::from(input) / WimpyVec::from(output)
     }
 
     fn width(&self) -> u32 {
-        return self.get_input_size().0;
+        return self.get_input_size().x;
     }
 
     fn height(&self) -> u32 {
-        return self.get_input_size().1;
+        return self.get_input_size().y;
     }
 
-    fn size(&self) -> (u32,u32) {
+    fn size(&self) -> UWimpyPoint {
         return self.get_input_size();
     }
 
-    fn area(&self) -> WimpyArea {
-        let size = self.get_input_size();
-        return WimpyArea {
-            x: 0.0,
-            y: 0.0,
-            width: size.0 as f32,
-            height: size.1 as f32
+    fn area(&self) -> WimpyRect {
+        WimpyRect {
+            position: WimpyVec::ZERO,
+            size: self.get_input_size().into()
         }
     }
 }
@@ -97,11 +91,11 @@ impl FrameReference for OutputFrame {
         self.cache_reference
     }
 
-    fn get_input_size(&self) -> (u32,u32) {
+    fn get_input_size(&self) -> UWimpyPoint {
         self.size
     }
 
-    fn get_output_size(&self) -> (u32,u32) {
+    fn get_output_size(&self) -> UWimpyPoint {
         self.size
     }
 }
@@ -111,11 +105,11 @@ impl FrameReference for TextureFrame {
         self.cache_reference
     }
 
-    fn get_input_size(&self) -> (u32,u32) {
+    fn get_input_size(&self) -> UWimpyPoint {
         self.size
     }
 
-    fn get_output_size(&self) -> (u32,u32) {
+    fn get_output_size(&self) -> UWimpyPoint {
         self.size
     }
 }
@@ -125,12 +119,12 @@ impl FrameReference for TempFrame {
         self.cache_reference
     }
 
-    fn get_input_size(&self) -> (u32,u32) {
+    fn get_input_size(&self) -> UWimpyPoint {
         self.size.input
     }
 
-    fn get_output_size(&self) -> (u32,u32) {
-        (self.size.output,self.size.output)
+    fn get_output_size(&self) -> UWimpyPoint {
+        self.size.output_single_dimension.into()
     }
 }
 
@@ -139,11 +133,11 @@ impl FrameReference for LongLifeFrame {
         self.cache_reference
     }
 
-    fn get_input_size(&self) -> (u32,u32) {
+    fn get_input_size(&self) -> UWimpyPoint {
         self.size.input
     }
 
-    fn get_output_size(&self) -> (u32,u32) {
+    fn get_output_size(&self) -> UWimpyPoint {
         self.size.output
     }
 }
@@ -180,7 +174,7 @@ pub struct FrameFactory;
 impl FrameFactory {
 
     pub fn create_output(
-        size: (u32,u32),
+        size: UWimpyPoint,
         cache_reference: FrameCacheReference,
         clear_color: wgpu::Color,
     ) -> OutputFrame {
@@ -192,7 +186,7 @@ impl FrameFactory {
     }
 
     pub fn create_texture(
-        size: (u32,u32),
+        size: UWimpyPoint,
         cache_reference: FrameCacheReference,
     ) -> TextureFrame {
         TextureFrame {

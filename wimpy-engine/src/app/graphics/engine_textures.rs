@@ -1,3 +1,5 @@
+use crate::UWimpyPoint;
+
 use super::*;
 use wgpu::*;
 
@@ -119,8 +121,8 @@ impl TextureData for MissingTexture {
             parameters.texture_size,
         );
     }
-    fn size(&self) -> (u32,u32) {
-        return (Self::SIZE as u32,Self::SIZE as u32);
+    fn size(&self) -> UWimpyPoint {
+        return Self::SIZE.into();
     }
     fn get_format(&self) -> TextureFormat {
         return TextureFormat::Rgba8UnormSrgb;
@@ -178,8 +180,8 @@ impl<T: GetColor> TextureData for T {
             parameters.texture_size,
         )
     }
-    fn size(&self) -> (u32,u32) {
-        return (1,1);
+    fn size(&self) -> UWimpyPoint {
+        return [1,1].into()
     }
     fn get_format(&self) -> TextureFormat {
         return TextureFormat::Rgba8Unorm;

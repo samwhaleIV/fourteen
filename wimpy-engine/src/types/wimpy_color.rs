@@ -8,37 +8,14 @@ pub struct WimpyColor {
 
 impl Default for WimpyColor {
     fn default() -> Self {
-        Self {
-            r: u8::MAX,
-            g: u8::MAX,
-            b: u8::MAX,
-            a: u8::MAX
-        }
+        Self::WHITE
     }
 }
 
 impl WimpyColor {
 
-    pub fn get(r: u8,g: u8, b: u8,a: u8) -> WimpyColor {
-        return WimpyColor { r, g, b, a };
-    }
-
-    pub fn decompose_float(self) -> [f32;4] {
-        return [
-            self.r as f32 / 255.0,
-            self.g as f32 / 255.0,
-            self.b as f32 / 255.0,
-            self.a as f32 / 255.0,
-        ];
-    }
-
-    pub fn decompose(self) -> [u8;4] {
-        return [
-            self.r,
-            self.g,
-            self.b,
-            self.a
-        ]
+    pub fn new(r: u8,g: u8,b: u8,a: u8) -> Self {
+        Self { r, g, b, a }
     }
 
     pub const BLACK: Self = Self {
@@ -97,11 +74,33 @@ impl WimpyColor {
 
 impl From<WimpyColor> for wgpu::Color {
     fn from(value: WimpyColor) -> Self {
-        return Self {
+        Self {
             r: value.r as f64 / u8::MAX as f64,
             g: value.g as f64 / u8::MAX as f64,
             b: value.b as f64 / u8::MAX as f64,
             a: value.a as f64 / u8::MAX as f64
         }
+    }
+}
+
+impl From<WimpyColor> for [f32;4] {
+    fn from(value: WimpyColor) -> Self {
+        [
+            value.r as f32 / 255.0,
+            value.g as f32 / 255.0,
+            value.b as f32 / 255.0,
+            value.a as f32 / 255.0,
+        ]
+    }
+}
+
+impl From<WimpyColor> for [u8;4] {
+    fn from(value: WimpyColor) -> Self {
+        [
+            value.r,
+            value.g,
+            value.b,
+            value.a,
+        ]
     }
 }

@@ -3,7 +3,7 @@ use std::path::Path;
 use wasm_bindgen::prelude::*;
 use web_sys::{ImageBitmap, js_sys::{Object, Reflect, Uint8Array}};
 use wgpu::{CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, Origin2d};
-use wimpy_engine::app::{FileError, WimpyIO, graphics::{TextureData, TextureDataWriteParameters}};
+use wimpy_engine::{UWimpyPoint, app::{FileError, WimpyIO, graphics::{TextureData, TextureDataWriteParameters}}};
 
 pub struct WimpyWebIO;
 
@@ -106,8 +106,8 @@ struct ExternalImageSourceWrapper {
 }
 
 impl TextureData for ExternalImageSourceWrapper {
-    fn size(&self) -> (u32,u32) {
-        return (self.value.width(),self.value.height());
+    fn size(&self) -> UWimpyPoint {
+        return [self.value.width(),self.value.height()].into();
     }
 
     fn write_to_queue(self,parameters: &TextureDataWriteParameters) {

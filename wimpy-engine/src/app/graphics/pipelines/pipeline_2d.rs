@@ -2,8 +2,8 @@ use wgpu::*;
 use wgpu::util::{BufferInitDescriptor,DeviceExt};
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
+use crate::{WimpyColor, WimpyRect};
 use crate::app::graphics::{*,constants::*};
-use crate::shared::*;
 use super::core::*;
 
 pub struct Pipeline2D {
@@ -129,8 +129,8 @@ pub struct Pipeline2DPass<'a,'frame> {
 }
 
 pub struct DrawData2D {
-    pub destination: WimpyArea,
-    pub source: WimpyArea,
+    pub destination: WimpyRect,
+    pub source: WimpyRect,
     pub color: WimpyColor,
     pub rotation: f32
 }
@@ -138,8 +138,8 @@ pub struct DrawData2D {
 impl Default for DrawData2D {
     fn default() -> Self {
         Self {
-            destination: WimpyArea::default(),
-            source: WimpyArea::default(),
+            destination: WimpyRect::ONE,
+            source: WimpyRect::ONE,
             color: WimpyColor::WHITE,
             rotation: 0.0
         }
@@ -240,14 +240,14 @@ impl Pipeline2DPass<'_,'_> {
         let uv_scale = frame_reference.get_uv_scale();
 
         let range = self.context.get_2d_pipeline_mut().instance_buffer.push_set(draw_data.iter().map(|value|{
-            let area = value.destination.to_center_encoded();
-            let source = value.source.multiply_2d(uv_scale);
+            let dst = value.destination.origin_top_left_to_center();
+            let src = value.source * uv_scale;
             QuadInstance {
-                position: [area.x,area.y],
-                size: [area.width,area.height],
-                uv_position: [source.x,source.y],
-                uv_size: [source.width,source.height],
-                color: value.color.decompose(),
+                position: dst.position.into(),
+                size: dst.size.into(),
+                uv_position: src.position.into(),
+                uv_size: src.size.into(),
+                color: value.color.into(),
                 rotation: value.rotation
             }
         }));

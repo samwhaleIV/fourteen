@@ -2,8 +2,8 @@ use wgpu::*;
 use wgpu::util::{BufferInitDescriptor,DeviceExt};
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
+use crate::{WimpyColor, WimpyRect, WimpyVec};
 use crate::app::graphics::{*,constants::*};
-use crate::shared::*;
 use super::core::*;
 
 pub struct TextPipeline {
@@ -142,7 +142,7 @@ pub struct PipelineTextPass<'a,'frame> {
     context: &'a mut RenderPassContext<'frame>,
     render_pass: &'a mut RenderPass<'frame>,
     tex: TextureFrame,
-    uv_scalar: (f32,f32),
+    uv_scalar: WimpyVec,
 }
 
 pub enum TextRenderBehavior {
@@ -170,7 +170,7 @@ pub struct TextLine<'a> {
 }
 
 pub struct TextRenderConfig {
-    pub position: (f32,f32),
+    pub position: WimpyVec,
     pub behavior: TextRenderBehavior,
     pub color: WimpyColor,
     pub scale: f32,
@@ -179,7 +179,7 @@ pub struct TextRenderConfig {
 }
 
 pub struct TextRenderLinesConfig {
-    pub position: (f32,f32),
+    pub position: WimpyVec,
     pub flow: TextLinesFlow,
     pub direction: TextLinesDirection,
     pub color: WimpyColor,
@@ -249,7 +249,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame> {
         let tex = context.textures.transparent_black.clone();
 
         return Self {
-            uv_scalar: (1.0,1.0),
+            uv_scalar: WimpyVec::ONE,
             tex,
             context,
             render_pass,
@@ -281,10 +281,7 @@ impl PipelineTextPass<'_,'_> {
             };
             self.tex = target_texture;
             let scale = self.tex.get_uv_scale();
-            self.uv_scalar = (
-                (1.0 / self.tex.width() as f32) * scale.0,
-                (1.0 / self.tex.height() as f32) * scale.1,
-            );
+            self.uv_scalar = WimpyVec::ONE / WimpyVec::from(self.tex.size()) * scale;
         }
 
         return true;
@@ -300,31 +297,31 @@ impl PipelineTextPass<'_,'_> {
         let width = glyph.width as f32;
         let height = glyph.height as f32;
 
-        let source = WimpyArea {
-            x: (glyph.x as f32),
-            y: glyph.y as f32,
+        let src = WimpyRect::from([
+            glyph.x as f32,
+            glyph.y as f32,
             width,
-            height,
-        }.multiply_2d(self.uv_scalar);
+            height
+        ]) * self.uv_scalar;
 
-        let destination = WimpyArea {
-            x: x,
-            y: y,
-            width: width * scale,
-            height: height * scale,
-        }.to_center_encoded();
+        let dst = WimpyRect::from([
+            x,
+            y,
+            width * scale,
+            height * scale
+        ]).origin_top_left_to_center();
 
         let glyph_instance = GlyphInstance {
-            position: [destination.x,destination.y],
-            size: [destination.width,destination.height],
-            uv_position: [source.x,source.y],
-            uv_size: [source.width,source.height],
-            color: color.decompose(),
+            position: dst.position.into(),
+            size: dst.size.into(),
+            uv_position: src.position.into(),
+            uv_size: src.size.into(),
+            color: color.clone().into(),
         };
 
         self.context.pipelines.get_unique_mut().text_pipeline.instance_buffer.push(glyph_instance);
 
-        return destination.width;
+        return dst.width();
     }
 
     fn draw_text_line_breaking_ltr<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig,max_width: f32) {
@@ -333,11 +330,11 @@ impl PipelineTextPass<'_,'_> {
         let letter_spacing = TFont::get_letter_spacing(scale);
         let line_height = TFont::get_line_height(scale * config.line_height);
 
-        let x_start = config.position.0.round();
+        let x_start = config.position.x.round();
         let max_x = x_start + max_width;
 
         let mut x = x_start;
-        let mut y = config.position.1.round();
+        let mut y = config.position.y.round();
 
         let color = &config.color;
         for word in text.split(config.word_seperator) {
@@ -357,8 +354,8 @@ impl PipelineTextPass<'_,'_> {
         let word_spacing = TFont::get_word_spacing(scale);
         let letter_spacing = TFont::get_letter_spacing(scale);
 
-        let mut x = config.position.0.round();
-        let y = config.position.1.round();
+        let mut x = config.position.x.round();
+        let y = config.position.y.round();
 
         let color = &config.color;
         for word in text.split(config.word_seperator) {
@@ -381,8 +378,8 @@ impl PipelineTextPass<'_,'_> {
         }
         total_width -= word_spacing;
 
-        let mut x = (config.position.0 - total_width).round();
-        let y = config.position.1.round();
+        let mut x = (config.position.x - total_width).round();
+        let y = config.position.y.round();
 
         let color = &config.color;
         for word in text.split(config.word_seperator) {
@@ -404,8 +401,8 @@ impl PipelineTextPass<'_,'_> {
             total_width += width + word_spacing;
         }
 
-        let mut x = config.position.0 - ((total_width - word_spacing) * 0.5).round();
-        let y = config.position.1 - (TFont::get_line_height(scale * config.line_height) * 0.5).round();
+        let mut x = config.position.x - ((total_width - word_spacing) * 0.5).round();
+        let y = config.position.y - (TFont::get_line_height(scale * config.line_height) * 0.5).round();
 
         let color = &config.color;
         for word in text.split(config.word_seperator) {

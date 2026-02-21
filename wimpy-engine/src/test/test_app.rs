@@ -1,4 +1,4 @@
-use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *}, shared::*};
+use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *},*};
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
@@ -139,7 +139,7 @@ where
 
             pipeline_pass_2d.draw(&texture,&[DrawData2D {
                 destination,
-                source: WimpyArea::ONE,
+                source: WimpyRect::ONE,
                 color: WimpyColor::WHITE,
                 rotation: 0.0,
             }]);

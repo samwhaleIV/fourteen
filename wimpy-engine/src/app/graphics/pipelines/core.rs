@@ -1,5 +1,6 @@
 use wgpu::*;
 use bytemuck::{Pod,Zeroable};
+use crate::UWimpyPoint;
 use crate::app::graphics::{*,constants::*};
 
 use super::pipeline_2d::*;
@@ -126,13 +127,11 @@ impl Default for TransformUniform {
 }
 
 impl TransformUniform {
-    pub fn create_ortho(size: (u32,u32)) -> Self {
-        let (width,height) = size;
-
+    pub fn create_ortho(size: UWimpyPoint) -> Self {
         let view_projection = cgmath::ortho(
             0.0, //Left
-            width as f32, //Right
-            height as f32, //Bottom
+            size.x as f32, //Right
+            size.y as f32, //Bottom
             0.0, //Top
             -1.0, //Near
             1.0, //Far
@@ -253,7 +252,7 @@ impl SharedPipeline {
 
         let device = graphics_provider.get_device();
 
-        let chunk_size = std::num::NonZeroU64::new(UNIFORM_BUFFER_ALIGNMENT as BufferAddress).expect("valid chunk size");
+        let chunk_size = std::num::NonZero::new(UNIFORM_BUFFER_ALIGNMENT as BufferAddress).expect("valid chunk size");
 
         let uniform_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             entries: &[

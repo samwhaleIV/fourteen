@@ -7,7 +7,7 @@ use web_sys::js_sys::Float32Array;
 use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, Window};
 use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
 
-use wimpy_engine::app::*;
+use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::*};
 use wimpy_engine::app::graphics::*;
 use wimpy_engine::app::input::*;
 use wimpy_engine::shared::WimpyArea;
@@ -15,8 +15,7 @@ use wimpy_engine::shared::WimpyArea;
 const CANVAS_ID: &'static str = "main-canvas";
 
 /* Must match 'html/style.css @ div#virtual-cursor' */
-const EMULATED_CURSOR_WIDTH: u32 = 12;
-const EMULATED_CURSOR_HEIGHT: u32 = 16;
+const EMULATED_CURSOR_SIZE: UWimpyPoint = [12,16].into();
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -37,7 +36,7 @@ pub struct WebApp<TWimpyApp> {
     last_frame_time: f64,
     current_frame_time: f64,
     gamepad_manager: GamepadManager,
-    size: (u32,u32),
+    size: UWimpyPoint,
     wimpy_app: TWimpyApp,
     wimpy_context: WimpyContext,
 }
@@ -62,18 +61,18 @@ fn poll_mouse() -> MouseInput {
     let src = poll_mouse_js();
     let mut buffer = [0.0f32;6];
     src.copy_to(&mut buffer);
-    return MouseInput {
-        position: Position {
+    MouseInput {
+        position: WimpyVec {
             x: buffer[0],
             y: buffer[1],
         },
-        delta: Delta {
+        delta: WimpyVec {
             x: buffer[2],
             y: buffer[3],
         },
         left_pressed: buffer[4] != 0.0,
         right_pressed: buffer[5] != 0.0
-    };
+    }
 }
 
 impl<TWimpyApp> WebApp<TWimpyApp>
@@ -122,7 +121,7 @@ where
         return Ok(Rc::new(RefCell::new(Self {
             last_frame_time: 0.0,
             current_frame_time: 0.0,
-            size: (0,0),
+            size: UWimpyPoint::ZERO,
             wimpy_context,
             wimpy_app,
             gamepad_manager,
@@ -171,11 +170,9 @@ where
             mouse_input,
             gamepad_state,
             delta_time,
-            WimpyArea {
-                x: 0.0,
-                y: 0.0,
-                width: (self.size.0 - EMULATED_CURSOR_WIDTH) as f32,
-                height: (self.size.1 - EMULATED_CURSOR_HEIGHT) as f32
+            WimpyRect {
+                position: WimpyVec::ZERO,
+                size: WimpyVec::from(self.size) - WimpyVec::from(EMULATED_CURSOR_SIZE)
             },
             false
         );
@@ -227,12 +224,12 @@ where
             inner_height
         );
 
-        let (width,height) = graphics_provider.get_size();
+        let size = graphics_provider.get_size();
 
-        canvas.set_width(width);
-        canvas.set_height(height);
+        canvas.set_width(size.x);
+        canvas.set_height(size.y);
 
-        self.size = (inner_width,inner_height);
+        self.size = size;
     }
 
     fn setup_events(app: &Rc<RefCell<Self>>,resize_config: ResizeConfig) -> Result<(),WebAppError> {

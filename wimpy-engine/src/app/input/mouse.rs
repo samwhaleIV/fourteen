@@ -1,27 +1,7 @@
-use crate::shared::WimpyArea;
+use crate::{WimpyRect,WimpyVec};
 use super::prelude::*;
 
 const JOYSTICK_CURSOR_PIXELS_PER_SECOND: f32 = 1500.0;
-
-#[derive(Default,Copy,Clone,PartialEq,Debug)]
-pub struct Position {
-    pub x: f32,
-    pub y: f32
-}
-
-impl Position {
-    fn add_delta(mut self,delta: &Delta) -> Self {
-        self.x += delta.x;
-        self.y += delta.y;
-        self
-    }
-    fn clip(mut self,bounds: WimpyArea) -> Self {
-        let point = bounds.get_point_contained(self.x,self.y);
-        self.x = point.0;
-        self.y = point.1;
-        self
-    }
-}
 
 #[derive(Default,Copy,Clone,PartialEq,Debug)]
 pub struct Delta {
@@ -31,8 +11,8 @@ pub struct Delta {
 
 #[derive(Default,PartialEq,Copy,Clone)]
 pub struct MouseInput {
-    pub position: Position,
-    pub delta: Delta,
+    pub position: WimpyVec,
+    pub delta: WimpyVec,
     pub left_pressed: bool,
     pub right_pressed: bool,
 }
@@ -46,19 +26,16 @@ pub enum MouseModeSwitchCommand {
 impl MouseInput {
     fn from_gamepad(
         gamepad: &GamepadCache,
-        position: Position,
+        position: WimpyVec,
         retain_position: bool,
-        emulation_bounds: WimpyArea,
+        emulation_bounds: WimpyRect,
         delta_seconds: f32
     ) -> Self {
         let max_pixels = JOYSTICK_CURSOR_PIXELS_PER_SECOND * delta_seconds;
-        let delta = Delta {
-            x: gamepad.right_axes().get_x_f32() * max_pixels,
-            y: gamepad.right_axes().get_y_f32() * max_pixels
-        };
+        let delta = WimpyVec::from(gamepad.right_axes()) * max_pixels;
         let position = match retain_position {
             true => position,
-            false => position.add_delta(&delta).clip(emulation_bounds),
+            false => emulation_bounds.clip(position + delta),
         };
         return Self {
             position,
@@ -172,7 +149,7 @@ impl From<InteractionState> for CursorGlyph {
 
 pub struct VirtualMouseShellState {
     pub cursor_glyph: CursorGlyph,
-    pub position: Position,
+    pub position: WimpyVec,
     pub likely_active_device: LikelyActiveDevice,
     pub mouse_mode: MouseMode,
     pub should_reposition_hardware_cursor: bool
@@ -199,7 +176,7 @@ impl VirtualMouse {
         new_mouse_state: MouseInput,
         gamepad: &GamepadCache,
         delta_seconds: f32,
-        emulation_bounds: WimpyArea,
+        emulation_bounds: WimpyRect,
         context_can_reposition_hardware_cursor: bool
     ) -> VirtualMouseShellState {
 
@@ -217,17 +194,13 @@ impl VirtualMouse {
         self.mouse_state = new_mouse_state;
 
         if let Some(new_mode) = self.future_mode.take() && new_mode != self.current_mode {
-            self.mouse_state.delta = Delta::default();
-            self.gamepad_state.delta = Delta::default();
+            self.mouse_state.delta = WimpyVec::ZERO;
+            self.gamepad_state.delta = WimpyVec::ZERO;
             if self.current_mode == MouseMode::Interface {
                 let center = emulation_bounds.center();
-                let center_pos = Position {
-                    x: center.0,
-                    y: center.1
-                };
-                self.gamepad_state.position = center_pos;
+                self.gamepad_state.position = center;
                 if context_can_reposition_hardware_cursor {
-                    self.mouse_state.position = center_pos;
+                    self.mouse_state.position = center;
                     should_reposition_hardware_cursor = true;
                 }
             }
@@ -287,11 +260,7 @@ impl VirtualMouse {
                 /* First position fix - start in center screen if the mouse was never activated */
                 if !self.gamepad_position_init {
                     self.gamepad_position_init = true;
-                    let center = emulation_bounds.center();
-                    self.gamepad_state.position = Position {
-                        x: center.0,
-                        y: center.1
-                    };
+                    self.gamepad_state.position = emulation_bounds.center();
                     if context_can_reposition_hardware_cursor {
                         should_reposition_hardware_cursor = true;
                     }
@@ -383,31 +352,48 @@ impl VirtualMouse {
         self.right_press_state.into()
     }
 
-    /// Relative mouse motion bewteen the last frame. These are not stable over position. The changes will not add up to the current position. If the inetraction mode became the camera mode this frame, delta will be zero.
-    pub fn delta(&self) -> Delta {
+    /// Relative mouse motion between the last frame.
+    /// 
+    /// These deltas are not stable over position.
+    /// The changes will not add up to the current position.
+    /// 
+    /// If the inetraction mode became the camera mode this frame, delta will be zero.
+    pub fn delta(&self) -> WimpyVec {
         self.fused_state.delta
     }
 
-    pub fn position(&self) -> Position {
+    pub fn position(&self) -> WimpyVec {
         self.fused_state.position
     }
 
-    /// A hint to the UI shell for which cursor glyph to use. This does not change the behavior of input processing, it is purely cosmetic. Interaction states have to be conceptualized by the caller.
+    /// A hint to the UI shell for which cursor glyph to use.
+    /// 
+    /// This does not change the behavior of input processing, it is purely cosmetic.
+    /// Interaction states have to be conceptualized by the caller.
     pub fn set_interaction_state(&mut self,interaction_state: InteractionState) {
         self.interaction_state = interaction_state;
     }
 
-    /// Does not take immediate effect. Schedules interaction mouse mode, i.e. UI mode to begin on the next frame. Will override another queued mouse mode.
+    /// Schedules interaction mouse mode, i.e. UI mode to begin on the next frame.
+    /// 
+    /// Does not take immediate effect.
+    /// 
+    /// Will override another queued mouse mode.
     pub fn queue_interaction_mode(&mut self) {
         self.future_mode = Some(MouseMode::Interface);
     }
 
-    /// Does not take immediate effect. Schedules relative mouse mode, i.e. camera mode to begin on the next frame. Will override another queued mouse mode.
+    /// Does not take immediate effect.
+    /// 
+    /// Schedules relative mouse mode, i.e. camera mode to begin on the next frame.
+    /// 
+    /// Will override another queued mouse mode.
     pub fn queue_camera_mode(&mut self) {
         self.future_mode = Some(MouseMode::Camera);
     }
 
-    /// Since the real hardware mode can only change at the beginning of the next frame, this will only return the mode that is active for the duration of the current frame.
+    /// Since the real hardware mode can only change at the beginning of the next frame,
+    /// this will only return the mode that is active for the duration of the current frame.
     pub fn get_active_mode(&mut self) -> MouseMode {
         self.current_mode
     }

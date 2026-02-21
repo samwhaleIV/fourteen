@@ -145,10 +145,10 @@ pub struct GamepadJoystick {
 
 impl GamepadJoystick {
     fn get_interpretive_axes(&self) -> InterpretiveAxes {
-        InterpretiveAxes::create(
-            InterpretiveAxis::from_f32_with_deadzone(self.x),
-            InterpretiveAxis::from_f32_with_deadzone(self.y),
-        )
+        InterpretiveAxes {
+            x: InterpretiveAxis::from_f32_with_deadzone(self.x),
+            y: InterpretiveAxis::from_f32_with_deadzone(self.y),
+        }
     }
 }
 
@@ -178,16 +178,16 @@ impl GamepadInput {
     }
 
     fn get_dpad_interpretive_axes(&self) -> InterpretiveAxes {
-        return InterpretiveAxes::create(
-            InterpretiveAxis::from_bool(
+        InterpretiveAxes {
+            x: InterpretiveAxis::from_bool(
                 self.buttons.bool(GamepadButtons::DPAD_LEFT),
                 self.buttons.bool(GamepadButtons::DPAD_RIGHT),
             ),
-            InterpretiveAxis::from_bool(
+            y: InterpretiveAxis::from_bool(
                 self.buttons.bool(GamepadButtons::DPAD_UP),
                 self.buttons.bool(GamepadButtons::DPAD_DOWN),
             ),
-        )
+        }
     }
 
     fn get_impulse_set(&self,axes: &InterpretiveAxes) -> ImpulseSet {

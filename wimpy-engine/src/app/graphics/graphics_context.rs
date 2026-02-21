@@ -1,8 +1,8 @@
 use super::{*,pipelines::core::*};
 use wgpu::*;
 
+use crate::{UWimpyPoint, WimpyColor};
 use crate::app::{wam::AssetManager,WimpyIO};
-use crate::shared::WimpyColor;
 
 use pipelines::{
     pipeline_2d::*,
@@ -205,7 +205,7 @@ impl GraphicsContext {
     }
 
     pub fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
-        let size = cache_size.output;
+        let size = cache_size.output_single_dimension;
         let cache_reference = match self.frame_cache.start_lease(size) {
             Ok(value) => value, 
             Err(error) => {
@@ -214,7 +214,7 @@ impl GraphicsContext {
                 self.frame_cache.insert_with_lease(size,TextureContainer::create_render_target(
                     &self.graphics_provider,
                     texture_id,
-                    (size,size)
+                    size.into()
                 ))
             },
         };
@@ -231,7 +231,7 @@ impl GraphicsContext {
         Ok(())
     }
 
-    pub fn get_long_life_frame(&mut self,size: (u32,u32)) -> LongLifeFrame {
+    pub fn get_long_life_frame(&mut self,size: UWimpyPoint) -> LongLifeFrame {
         let output = self.graphics_provider.get_safe_texture_size(size);
         let texture_id = self.texture_id_generator.next();
         return FrameFactory::create_long_life(
@@ -253,19 +253,19 @@ impl GraphicsContext {
         Ok(())
     }
 
-    pub fn get_cache_safe_size(&self,size: (u32,u32)) -> CacheSize {
-        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.0.max(size.1).checked_next_power_of_two() {
+    pub fn get_cache_safe_size(&self,size: UWimpyPoint) -> CacheSize {
+        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.max().checked_next_power_of_two() {
             Some(value) => value,
             None => u32::MAX,
         });
         CacheSize {
             input: size,
-            output
+            output_single_dimension: output
         }
     }
 
     pub fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
-        let size = cache_size.output;
+        let size = cache_size.output_single_dimension;
         if self.frame_cache.has_available_items(size) {
             return;
         }
@@ -273,7 +273,7 @@ impl GraphicsContext {
         self.frame_cache.insert(size,TextureContainer::create_render_target(
             &self.graphics_provider,
             texture_id,
-            (size,size)
+            size.into()
         ));
     }
 
@@ -297,7 +297,7 @@ impl GraphicsContext {
         let surface = self.graphics_provider.get_output_surface()?;
 
         // Note: size is already validated by the graphics provider
-        let size = (surface.texture.width(),surface.texture.height());
+        let size: UWimpyPoint = [surface.texture.width(),surface.texture.height()].into();
 
         let texture_container = TextureContainer::create_output(&surface,size);
         let cache_reference = self.frame_cache.insert_keyless(texture_container);

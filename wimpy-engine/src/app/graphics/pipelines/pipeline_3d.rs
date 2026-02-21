@@ -2,8 +2,7 @@ use cgmath::{Matrix4,SquareMatrix};
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::app::{graphics::{*,constants::*},wam::ModelData};
-use crate::shared::*;
+use crate::{WimpyColor, app::{graphics::{constants::*, *},wam::ModelData}};
 use super::core::*;
 
 pub struct Pipeline3D {
@@ -339,8 +338,8 @@ impl<'a> From<&'a DrawData3D> for ModelInstance {
             transform_1: value.transform.y.into(),
             transform_2: value.transform.z.into(),
             transform_3: value.transform.w.into(),
-            diffuse_color: value.diffuse_color.decompose(),
-            lightmap_color: value.lightmap_color.decompose(),
+            diffuse_color: value.diffuse_color.into(),
+            lightmap_color: value.lightmap_color.into(),
         }
     }
 }

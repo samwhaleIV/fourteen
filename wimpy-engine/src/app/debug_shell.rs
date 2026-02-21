@@ -2,10 +2,10 @@ use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::fmt::{self,Write};
 
+use crate::WimpyColor;
 use crate::app::graphics::fonts::*;
 use crate::app::graphics::{MutableFrame, RenderPassBuilder, TextRenderBehavior, TextRenderConfig};
 use crate::collections::StringPool;
-use crate::shared::WimpyColor;
 
 const LOG_LINE_SIZE: usize = 64;
 const LOG_LINE_COUNT: usize = 8;
@@ -263,7 +263,7 @@ impl DebugShell {
                         let mut text_pass = render_pass.set_pipeline_text();
                         let label = self.labels.get(*channel);
                         text_pass.draw_text::<FontMonoElf>(label,TextRenderConfig {
-                            position: ((size.0 - 5) as f32,5.0),
+                            position: [(size.x - 5) as f32,5.0].into(),
                             scale: 2.0,
                             color: WimpyColor::WHITE,
                             line_height: 1.0,

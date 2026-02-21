@@ -1,3 +1,4 @@
+use crate::WimpyVec;
 use super::prelude::*;
 
 pub enum CardinalDirection {
@@ -37,26 +38,18 @@ impl Default for Direction {
     }
 }
 
-#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+#[derive(Default,Clone,Copy,PartialEq,Eq,Debug)]
 pub enum AxisSign {
-    Negative,
+    #[default]
     Zero,
+    Negative,
     Positive,
 }
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Default,Clone,Copy,Debug)]
 pub struct InterpretiveAxis {
     sign: AxisSign,
     value: f32
-}
-
-impl Default for InterpretiveAxis {
-    fn default() -> Self {
-        Self {
-            sign: AxisSign::Zero,
-            value: 0.0
-        }
-    }
 }
 
 fn get_axis_sign(value: f32) -> AxisSign {
@@ -119,54 +112,46 @@ impl InterpretiveAxis {
             }
         }
     }
-    pub fn get_i32(&self) -> i32 {
-        match self.sign {
+}
+
+impl From<InterpretiveAxis> for i32 {
+    fn from(value: InterpretiveAxis) -> Self {
+        match value.sign {
             AxisSign::Negative => -1,
             AxisSign::Zero => 0,
             AxisSign::Positive => 1,
         }
     }
-    pub fn get_f32(&self) -> f32 {
-        self.value
+}
+
+impl From<InterpretiveAxis> for f32 {
+    fn from(value: InterpretiveAxis) -> Self {
+        value.value
+    }
+}
+
+impl From<InterpretiveAxes> for WimpyVec {
+    fn from(value: InterpretiveAxes) -> Self {
+        Self {
+            x: value.x.value,
+            y: value.y.value,
+        }
     }
 }
 
 #[derive(Default,Copy,Clone,Debug)]
 pub struct InterpretiveAxes {
-    x: InterpretiveAxis,
-    y: InterpretiveAxis
+    pub x: InterpretiveAxis,
+    pub y: InterpretiveAxis
 }
 
 impl InterpretiveAxes {
-    pub fn create(x: InterpretiveAxis,y: InterpretiveAxis) -> Self {
-        return Self {
-            x,
-            y,
-        }
+    pub fn x(&self) -> f32 {
+        self.x.value
     }
 
-    pub fn get_f32(&self) -> (f32,f32) {
-        return (self.x.get_f32(),self.y.get_f32());
-    }
-
-    pub fn get_x_f32(&self) -> f32 {
-        return self.x.get_f32();
-    }
-
-    pub fn get_y_f32(&self) -> f32 {
-        return self.y.get_f32();
-    }
-
-    pub fn get_x_i32(&self) -> i32 {
-        return self.x.get_i32();
-    }
-
-    pub fn get_y_i32(&self) -> i32 {
-        return self.y.get_i32();
-    }
-
-    pub fn get_i32(&self) -> (i32,i32) {
-        return (self.x.get_i32(),self.y.get_i32());
+    pub fn y(&self) -> f32 {
+        self.y.value
     }
 
     pub fn is_zero(&self) -> bool {

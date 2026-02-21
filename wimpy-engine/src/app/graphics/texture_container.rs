@@ -1,3 +1,5 @@
+use crate::UWimpyPoint;
+
 use super::*;
 use wgpu::*;
 use std::num::NonZeroU32;
@@ -44,7 +46,7 @@ impl TextureIdentityGenerator {
 }
 
 struct TextureCreationParameters {
-    size: (u32,u32),
+    size: UWimpyPoint,
     identity: TextureContainerIdentity,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     render_target: bool,
@@ -64,7 +66,7 @@ pub struct TextureDataWriteParameters<'a> {
 
 pub trait TextureData {
     fn write_to_queue(self,parameters: &TextureDataWriteParameters);
-    fn size(&self) -> (u32,u32);
+    fn size(&self) -> UWimpyPoint;
     fn get_format(&self) -> TextureFormat;
 }
 
@@ -76,8 +78,8 @@ impl TextureContainer {
     ) -> Self {
 
         let size = wgpu::Extent3d {
-            width: parameters.size.0,
-            height: parameters.size.1,
+            width: parameters.size.x,
+            height: parameters.size.y,
             depth_or_array_layers: 1,
         };
 
@@ -132,7 +134,7 @@ impl TextureContainer {
     pub fn create_render_target(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
-        size: (u32,u32) // Externally validated (in graphics context)
+        size: UWimpyPoint // Externally validated (in graphics context)
     ) -> TextureContainer {
         Self::create(graphics_provider,TextureCreationParameters {
             size,
@@ -182,7 +184,7 @@ impl TextureContainer {
 
     pub fn create_output(
         surface: &SurfaceTexture,
-        size: (u32,u32) // Externally validated (in graphics provider)
+        size: UWimpyPoint // Externally validated (in graphics provider)
     ) -> TextureContainer {
         let view = surface.texture.create_view(
             &wgpu::TextureViewDescriptor::default()
@@ -190,15 +192,15 @@ impl TextureContainer {
         return TextureContainer {
             identity: TextureContainerIdentity::Anonymous,
             size: Extent3d {
-                width: size.0,
-                height: size.1,
+                width: size.x,
+                height: size.y,
                 depth_or_array_layers: 1,
             },
             view
         };
     }
 
-    pub fn size(&self) -> (u32,u32) {
-        (self.size.width,self.size.height)
+    pub fn size(&self) -> UWimpyPoint {
+        [self.size.width,self.size.height].into()
     }
 }

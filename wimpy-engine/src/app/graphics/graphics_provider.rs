@@ -1,5 +1,7 @@
 use wgpu::*;
 
+use crate::UWimpyPoint;
+
 pub struct GraphicsProvider {
     surface: Surface<'static>,
     device: Device,
@@ -114,8 +116,8 @@ impl GraphicsProvider {
         self.surface.configure(&self.device,&self.config);
     }
 
-    pub fn get_size(&self) -> (u32,u32) {
-       return (self.config.width,self.config.height);
+    pub fn get_size(&self) -> UWimpyPoint {
+       return [self.config.width,self.config.height].into();
     }
 
     pub fn get_device(&self) -> &Device {
@@ -142,11 +144,11 @@ impl GraphicsProvider {
         return value.max(1).min(self.max_texture_power_of_two);
     }
 
-    pub fn get_safe_texture_size(&self,value: (u32,u32)) -> (u32,u32) {
-        return (
-            self.get_safe_texture_dimension_value(value.0),
-            self.get_safe_texture_dimension_value(value.1)
-        );
+    pub fn get_safe_texture_size(&self,value: UWimpyPoint) -> UWimpyPoint {
+        return [
+            self.get_safe_texture_dimension_value(value.x),
+            self.get_safe_texture_dimension_value(value.y)
+        ].into();
     }
 
     pub fn max_texture_dimension_value(&self) -> u32 {
@@ -157,15 +159,15 @@ impl GraphicsProvider {
         return self.max_texture_power_of_two
     }
 
-    pub fn test_size(&self,size: (u32,u32)) -> Result<(),TextureError> {
-        if size.0 < 1 || size.1 < 1 {
+    pub fn test_size(&self,size: UWimpyPoint) -> Result<(),TextureError> {
+        if size.x < 1 || size.y < 1 {
             return Err(TextureError::ZeroSizeDimension);
         }
-        if size.0 > self.max_texture_dimension {
-            return Err(TextureError::TooBig(size.0));
+        if size.x > self.max_texture_dimension {
+            return Err(TextureError::TooBig(size.x));
         }
-        if size.1 > self.max_texture_dimension {
-            return Err(TextureError::TooBig(size.1));
+        if size.y > self.max_texture_dimension {
+            return Err(TextureError::TooBig(size.y));
         }
         return Ok(());
     }

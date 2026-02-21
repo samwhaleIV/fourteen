@@ -125,7 +125,7 @@ pub mod key_rebind_controller {
 }
 
 pub mod app_shell_controller {
-    use crate::shared::WimpyArea;
+    use crate::WimpyRect;
 
     use super::*;
     impl InputManager {
@@ -149,7 +149,7 @@ pub mod app_shell_controller {
             mouse_input: MouseInput,
             gamepad_input: GamepadInput,
             delta_seconds: f32,
-            mouse_emulation_bounds: WimpyArea,
+            mouse_emulation_bounds: WimpyRect,
             context_can_reposition_hardware_cursor: bool,
         ) -> VirtualMouseShellState {
             let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);

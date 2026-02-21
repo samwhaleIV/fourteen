@@ -1,8 +1,7 @@
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::app::graphics::{*,constants::*};
-use crate::shared::*;
+use crate::{WimpyColor, WimpyVec, app::graphics::{constants::*, *}};
 use super::core::*;
 
 pub struct LinesPipeline {
@@ -126,8 +125,8 @@ impl LinesPipelinePass<'_,'_> {
         let start = buffer.len();
         for line in line_points {
             buffer.push(LineVertex {
-                position: [line.x,line.y],
-                color: line.color.decompose()
+                position: line.point.into(),
+                color: line.color.into()
             });
         }
         let end = buffer.len();
@@ -142,8 +141,7 @@ impl LinesPipelinePass<'_,'_> {
 }
 
 pub struct LinePoint {
-    pub x: f32,
-    pub y: f32,
+    pub point: WimpyVec,
     pub color: WimpyColor
 }
 
