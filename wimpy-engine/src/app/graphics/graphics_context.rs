@@ -362,6 +362,10 @@ where
     pub fn set_pipeline_lines<'a>(&'a mut self) -> LinesPipelinePass<'a,'frame> {
         self.set_pipeline()
     }
+
+    pub fn frame(&self) -> &TFrame {
+        return self.frame;
+    }
 }
 
 impl OutputBuilder<'_> {

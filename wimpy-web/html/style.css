@@ -25,7 +25,7 @@ body.cursor-hidden {
 }
 
 body.click-me {
-    cursor: url("clickme.png") 52 42, auto;
+    cursor: url("clickme.png") 26 21, auto;
 }
 
 canvas#main-canvas {

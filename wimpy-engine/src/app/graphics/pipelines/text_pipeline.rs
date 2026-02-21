@@ -154,13 +154,25 @@ pub enum TextRenderBehavior {
     }
 }
 
-pub struct TextRenderConfig {
+pub enum TextLinesDirection {
+    LTR,
+    RTL
+}
+
+pub enum TextLinesFlow {
+    TopDown,
+    BottomUp
+}
+
+pub struct TextLine<'a> {
+    pub text: &'a str,
+    pub color: WimpyColor
+}
+
+pub struct TextLinesConfig {
     pub position: (f32,f32),
-    pub scale: f32,
-    pub color: WimpyColor,
-    pub line_height: f32,
-    pub word_seperator: char,
-    pub behavior: TextRenderBehavior
+    pub flow: TextLinesFlow,
+    pub direction: TextLinesDirection
 }
 
 fn validate_scale(scale: f32) -> f32 {
@@ -414,6 +426,34 @@ impl PipelineTextPass<'_,'_> {
             },
             TextRenderBehavior::LineBreakingLTR { line_width: max_width } => {
                 self.draw_text_line_breaking_ltr::<TFont>(text,config,max_width)
+            }
+        }
+
+        let range_end = self.get_instance_buffer_len();
+
+        if range_start == range_end {
+            return;
+        }
+
+        self.render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,Range {
+            start: range_start as u32,
+            end: range_end as u32
+        });
+    }
+
+    pub fn draw_lines<TFont: FontDefinition>(&mut self,lines: &[TextLine],config: TextLinesConfig) {
+        if !self.validate_texture::<TFont>() {
+            return;
+        }
+
+        let range_start = self.get_instance_buffer_len();
+
+        match config.flow {
+            TextLinesFlow::TopDown => {
+                todo!();
+            },
+            TextLinesFlow::BottomUp => {
+                todo!();
             }
         }
 

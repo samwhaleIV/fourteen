@@ -1,9 +1,30 @@
-use crate::{app::{graphics::*, input::MousePressState, *}, shared::*};
+use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *}, shared::*};
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
     line_start: Option<(f32,f32)>,
-    lines: Vec<[LinePoint;2]>
+    lines: Vec<[LinePoint;2]>,
+    offset: (f32,f32),
+    in_movement_mode: bool
+}
+
+impl PlaceholderApp {
+    fn pressed_enter(&mut self,context: &mut WimpyContext) -> bool {
+        let mut toggle = false;
+        for event in context.input.iter_recent_events() {
+            match event {
+                ImpulseEvent {
+                    impulse: Impulse::Confirm,
+                    state: ImpulseState::Pressed,
+                } => {
+                    toggle = true;
+                    break;
+                },
+                _ => {}
+            }
+        }
+        return toggle;
+    }
 }
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
@@ -17,47 +38,68 @@ where
         });
 
         return Self {
+            in_movement_mode: false,
             lines: Vec::with_capacity(64),
             test_texture: context.load_image_or_default::<IO>("test-namespace/test").await,
             line_start: None,
+            offset: (0.0,0.0)
         };
     }
 
     fn update(&mut self,context: &mut WimpyContext) {
 
-        // Start render ...
+        let pressed_enter = self.pressed_enter(context);
 
-        let mouse = context.input.get_virtual_mouse();
+        let mouse = context.input.get_virtual_mouse_mut();
+        
+        // Start render ...
+        if pressed_enter {
+            self.in_movement_mode = !self.in_movement_mode;
+            if self.in_movement_mode {
+                mouse.queue_camera_mode();
+            } else {
+                mouse.queue_interaction_mode();
+            }
+        }
+
         context.debug.set_label_text_fmt(
             LabelChannel::One,
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
-        match mouse.left_press_state() {
-            MousePressState::JustPressed | MousePressState::Pressed => {
-                if self.line_start.is_none() {
-                    let start = mouse.position();
-                    self.line_start = Some((start.x,start.y))
-                }
-            },
-            MousePressState::JustReleased | MousePressState::Released => {
-                if let Some(start) = self.line_start.take() {
-                    let end = mouse.position();
-                    self.lines.push([
-                        LinePoint {
-                            x: start.0,
-                            y: start.1,
-                            color: WimpyColor::RED,
-                        },
-                        LinePoint {
-                            x: end.x,
-                            y: end.y,
-                            color: WimpyColor::GREEN,
+        match mouse.get_active_mode() {
+            input::MouseMode::Interface => {
+                match mouse.left_press_state() {
+                    MousePressState::JustPressed | MousePressState::Pressed => {
+                        if self.line_start.is_none() {
+                            let start = mouse.position();
+                            self.line_start = Some((start.x,start.y))
                         }
-                    ])
+                    },
+                    MousePressState::JustReleased | MousePressState::Released => {
+                        if let Some(start) = self.line_start.take() {
+                            let end = mouse.position();
+                            self.lines.push([
+                                LinePoint {
+                                    x: start.0,
+                                    y: start.1,
+                                    color: WimpyColor::RED,
+                                },
+                                LinePoint {
+                                    x: end.x,
+                                    y: end.y,
+                                    color: WimpyColor::GREEN,
+                                }
+                            ])
+                        }
+                    },
                 }
             },
-        }
+            input::MouseMode::Camera => {
+                self.offset.0 += mouse.delta().x;
+                self.offset.1 += mouse.delta().y;
+            },
+        };
 
         let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
             Ok(value) => value,
@@ -90,7 +132,10 @@ where
 
             pipeline_pass_2d.set_sampler_mode(SamplerMode::NearestClamp);
 
-            let destination = layout.compute(output.frame.area());
+            let mut destination = layout.compute(output.frame.area());
+
+            destination.x += self.offset.0;
+            destination.y += self.offset.1;
 
             pipeline_pass_2d.draw(&texture,&[DrawData2D {
                 destination,

@@ -250,6 +250,8 @@ impl DebugShell {
     where
         TFrame: MutableFrame
     {
+        let size = render_pass.frame().size();
+
         match &self.render_config.top_left {
             PaneLayout::None => {},
             PaneLayout::One { items } => {
@@ -261,12 +263,12 @@ impl DebugShell {
                         let mut text_pass = render_pass.set_pipeline_text();
                         let label = self.labels.get(*channel);
                         text_pass.draw_text::<FontMonoElf>(label,TextRenderConfig {
-                            position: (5.0,5.0),
+                            position: ((size.0 - 5) as f32,5.0),
                             scale: 2.0,
                             color: WimpyColor::WHITE,
                             line_height: 1.0,
                             word_seperator: ' ',
-                            behavior: TextRenderBehavior::LTR,
+                            behavior: TextRenderBehavior::RTL,
                         });
                     },
                 }

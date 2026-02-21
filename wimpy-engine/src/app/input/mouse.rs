@@ -94,17 +94,16 @@ pub struct VirtualMouse {
     left_press_state: MousePressState,
     right_press_state: MousePressState,
 
-    previous_mode: MouseMode,
     current_mode: MouseMode,
+    future_mode: Option<MouseMode>,
 
     interaction_state: InteractionState,
     emulation_active: bool,
 
-    hide_emulated_cursor_over_ui: bool,
     hide_camera_center_crosshair: bool,
 
     gamepad_position_init: bool,
-    initialized: bool
+    initialized: bool,
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
@@ -217,7 +216,7 @@ impl VirtualMouse {
         let previous_mouse_state = self.mouse_state;
         self.mouse_state = new_mouse_state;
 
-        if self.previous_mode != self.current_mode {
+        if let Some(new_mode) = self.future_mode.take() && new_mode != self.current_mode {
             self.mouse_state.delta = Delta::default();
             self.gamepad_state.delta = Delta::default();
             if self.current_mode == MouseMode::Interface {
@@ -240,8 +239,8 @@ impl VirtualMouse {
                     self.emulation_active = true;
                 },
             };
+            self.current_mode = new_mode;
         }
-        self.previous_mode = self.current_mode;
 
         let has_mouse_activity_right_now = self.mouse_state.position_differs(&previous_mouse_state);
 
@@ -347,10 +346,7 @@ impl VirtualMouse {
                 match self.emulation_active {
                     // UI mode with virtual mouse
                     true => {
-                        glyph = match self.hide_emulated_cursor_over_ui {
-                            false => self.interaction_state.into(),
-                            true => CursorGlyph::None,
-                        };
+                        glyph = self.interaction_state.into();
                         device = LikelyActiveDevice::Gamepad;
                     },
                     // UI mode with real mouse
@@ -372,46 +368,51 @@ impl VirtualMouse {
     }
 
     pub fn left_press_state(&self) -> MousePressState {
-        return self.left_press_state;
+        self.left_press_state
     }
 
     pub fn right_press_state(&self) -> MousePressState {
-        return self.right_press_state;
+        self.right_press_state
     }
 
     pub fn left_is_pressed(&self) -> bool {
-        return self.left_press_state.into();
+        self.left_press_state.into()
     }
 
     pub fn right_is_pressed(&self) -> bool {
-        return self.right_press_state.into();
+        self.right_press_state.into()
     }
 
+    /// Relative mouse motion bewteen the last frame. These are not stable over position. The changes will not add up to the current position. If the inetraction mode became the camera mode this frame, delta will be zero.
     pub fn delta(&self) -> Delta {
-        return self.fused_state.delta;
+        self.fused_state.delta
     }
 
     pub fn position(&self) -> Position {
-        return self.fused_state.position;
+        self.fused_state.position
     }
 
+    /// A hint to the UI shell for which cursor glyph to use. This does not change the behavior of input processing, it is purely cosmetic. Interaction states have to be conceptualized by the caller.
     pub fn set_interaction_state(&mut self,interaction_state: InteractionState) {
         self.interaction_state = interaction_state;
     }
 
-    pub fn set_mouse_mode(&mut self,new_mode: MouseMode) {
-        self.current_mode = new_mode;
+    /// Does not take immediate effect. Schedules interaction mouse mode, i.e. UI mode to begin on the next frame. Will override another queued mouse mode.
+    pub fn queue_interaction_mode(&mut self) {
+        self.future_mode = Some(MouseMode::Interface);
     }
 
-    pub fn get_mouse_mode(&self) -> MouseMode {
-        return self.current_mode;
+    /// Does not take immediate effect. Schedules relative mouse mode, i.e. camera mode to begin on the next frame. Will override another queued mouse mode.
+    pub fn queue_camera_mode(&mut self) {
+        self.future_mode = Some(MouseMode::Camera);
     }
 
-    pub fn set_camera_center_crosshair(&mut self,show_crosshair: bool) {
-        self.hide_camera_center_crosshair = !show_crosshair;
+    /// Since the real hardware mode can only change at the beginning of the next frame, this will only return the mode that is active for the duration of the current frame.
+    pub fn get_active_mode(&mut self) -> MouseMode {
+        self.current_mode
     }
 
-    pub fn set_emulated_cursor_over_ui(&mut self,show_pointer: bool) {
-        self.hide_emulated_cursor_over_ui = !show_pointer;
+    pub fn set_camera_crosshair_visibility(&mut self,visible: bool) {
+        self.hide_camera_center_crosshair = !visible;
     }
 }
