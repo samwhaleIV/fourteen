@@ -169,10 +169,23 @@ pub struct TextLine<'a> {
     pub color: WimpyColor
 }
 
-pub struct TextLinesConfig {
+pub struct TextRenderConfig {
+    pub position: (f32,f32),
+    pub behavior: TextRenderBehavior,
+    pub color: WimpyColor,
+    pub scale: f32,
+    pub line_height: f32,
+    pub word_seperator: char,
+}
+
+pub struct TextRenderLinesConfig {
     pub position: (f32,f32),
     pub flow: TextLinesFlow,
-    pub direction: TextLinesDirection
+    pub direction: TextLinesDirection,
+    pub color: WimpyColor,
+    pub scale: f32,
+    pub line_height: f32,
+    pub word_seperator: char,
 }
 
 fn validate_scale(scale: f32) -> f32 {
@@ -441,7 +454,7 @@ impl PipelineTextPass<'_,'_> {
         });
     }
 
-    pub fn draw_lines<TFont: FontDefinition>(&mut self,lines: &[TextLine],config: TextLinesConfig) {
+    pub fn draw_lines<TFont: FontDefinition>(&mut self,lines: &[TextLine],config: TextRenderLinesConfig) {
         if !self.validate_texture::<TFont>() {
             return;
         }
