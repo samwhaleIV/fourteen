@@ -1,8 +1,9 @@
-use crate::{shared::*,app::{*,graphics::{*,fonts::*},}};
-use std::fmt::Write;
+use crate::{app::{graphics::*, input::MousePressState, *}, shared::*};
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
+    line_start: Option<(f32,f32)>,
+    lines: Vec<[LinePoint;2]>
 }
 
 impl<IO> WimpyApp<IO> for PlaceholderApp
@@ -12,11 +13,13 @@ where
     async fn load(context: &mut WimpyContext) -> Self {
 
         context.debug.set_render_config_top_left(PaneLayout::One {
-            items: [PaneItem::Label { channel: LabelChannel::One, color: WimpyColor::WHITE }]
+            items: [PaneItem::Label { channel: LabelChannel::One }]
         });
 
         return Self {
-            test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
+            lines: Vec::with_capacity(64),
+            test_texture: context.load_image_or_default::<IO>("test-namespace/test").await,
+            line_start: None,
         };
     }
 
@@ -27,8 +30,34 @@ where
         let mouse = context.input.get_virtual_mouse();
         context.debug.set_label_text_fmt(
             LabelChannel::One,
-            format_args!("x: {:.0} y: {:.0}",mouse.position().x,mouse.position().y)
+            format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
+
+        match mouse.left_press_state() {
+            MousePressState::JustPressed | MousePressState::Pressed => {
+                if self.line_start.is_none() {
+                    let start = mouse.position();
+                    self.line_start = Some((start.x,start.y))
+                }
+            },
+            MousePressState::JustReleased | MousePressState::Released => {
+                if let Some(start) = self.line_start.take() {
+                    let end = mouse.position();
+                    self.lines.push([
+                        LinePoint {
+                            x: start.0,
+                            y: start.1,
+                            color: WimpyColor::RED,
+                        },
+                        LinePoint {
+                            x: end.x,
+                            y: end.y,
+                            color: WimpyColor::GREEN,
+                        }
+                    ])
+                }
+            },
+        }
 
         let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
             Ok(value) => value,
@@ -71,6 +100,11 @@ where
             }]);
 
             context.debug.render(&mut render_pass);
+
+            let mut lines_pass = render_pass.set_pipeline_lines();
+            for line_set in &self.lines {
+                lines_pass.draw(line_set);
+            }
         }
 
         output.present_output_surface();
@@ -79,20 +113,13 @@ where
 
 pub struct PlaceholderConfig;
 
-const fn mb_to_b(value: usize) -> usize {
-    value * 1000000
-}
-
 impl GraphicsContextConfig for PlaceholderConfig {
     // If a vertex is 32 bytes, there is 31,250 vertices per megabyte.
-
-    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = mb_to_b(1);
-    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = mb_to_b(1);
-
+    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = 16384;
+    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = 16384;
     const UNIFORM_BUFFER_SIZE: usize = 16384;
-
-    const INSTANCE_BUFFER_SIZE_2D: usize = mb_to_b(1);
-    const INSTANCE_BUFFER_SIZE_3D: usize = mb_to_b(1);
-    
-    const TEXT_PIPELINE_BUFFER_SIZE: usize = mb_to_b(1);
+    const INSTANCE_BUFFER_SIZE_2D: usize = 16384;
+    const INSTANCE_BUFFER_SIZE_3D: usize = 16384;
+    const TEXT_PIPELINE_BUFFER_SIZE: usize = 16384;
+    const LINE_BUFFER_SIZE: usize = 16384;
 }

@@ -7,7 +7,8 @@ use crate::shared::WimpyColor;
 use pipelines::{
     pipeline_2d::*,
     pipeline_3d::*,
-    text_pipeline::*
+    text_pipeline::*,
+    lines_pipeline::*,
 };
 
 pub struct OutputBuilder<'a> {
@@ -40,32 +41,38 @@ pub struct RenderPassContext<'a> {
 
 impl RenderPassContext<'_> {
     pub fn get_shared(&self) -> &SharedPipeline {
-        return self.pipelines.get_shared();
+        self.pipelines.get_shared()
     }
     pub fn get_shared_mut(&mut self) -> &mut SharedPipeline {
-        return self.pipelines.get_shared_mut();
+        self.pipelines.get_shared_mut()
     }
     pub fn get_3d_pipeline(&self) -> &Pipeline3D {
-        return &self.pipelines.get_unique().pipeline_3d;
+        &self.pipelines.get_unique().pipeline_3d
     }
     pub fn get_3d_pipeline_mut(&mut self) -> &mut Pipeline3D {
-        return &mut self.pipelines.get_unique_mut().pipeline_3d;
+        &mut self.pipelines.get_unique_mut().pipeline_3d
     }
     pub fn get_2d_pipeline(&self) -> &Pipeline2D {
-        return &self.pipelines.get_unique().pipeline_2d;
+        &self.pipelines.get_unique().pipeline_2d
     }
     pub fn get_2d_pipeline_mut(&mut self) -> &mut Pipeline2D {
-        return &mut self.pipelines.get_unique_mut().pipeline_2d;
+        &mut self.pipelines.get_unique_mut().pipeline_2d
     }
     pub fn get_text_pipeline(&self) -> &TextPipeline {
-        return &self.pipelines.get_unique().text_pipeline;
+        &self.pipelines.get_unique().text_pipeline
     }
     pub fn get_text_pipeline_mut(&mut self) -> &mut TextPipeline {
-        return &mut self.pipelines.get_unique_mut().text_pipeline;
+        &mut self.pipelines.get_unique_mut().text_pipeline
     }
-    pub fn set_texture_bind_group(&mut self,render_pass: &mut RenderPass,bind_group_identity: &BindGroupCacheIdentity) {
+    pub fn get_line_pipeline(&self) -> &LinesPipeline {
+        &self.pipelines.get_unique().lines_pipeline
+    }
+    pub fn get_line_pipeline_mut(&mut self) -> &mut LinesPipeline {
+        &mut self.pipelines.get_unique_mut().lines_pipeline
+    }
+    pub fn set_texture_bind_group(&mut self,index: u32,render_pass: &mut RenderPass,bind_group_identity: &BindGroupCacheIdentity) {
         let bind_group = self.bind_groups.get(self.graphics_provider.get_device(),bind_group_identity);
-        render_pass.set_bind_group(super::constants::TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
+        render_pass.set_bind_group(index,bind_group,&[]);
     }
 }
 
@@ -106,6 +113,7 @@ pub trait GraphicsContextConfig {
     const MODEL_CACHE_INDEX_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_3D: usize;
     const TEXT_PIPELINE_BUFFER_SIZE: usize;
+    const LINE_BUFFER_SIZE: usize;
 }
 
 impl GraphicsContext {
@@ -350,9 +358,12 @@ where
     pub fn set_pipeline_text<'a>(&'a mut self) -> PipelineTextPass<'a,'frame> {
         self.set_pipeline()
     }
+
+    pub fn set_pipeline_lines<'a>(&'a mut self) -> LinesPipelinePass<'a,'frame> {
+        self.set_pipeline()
+    }
 }
 
-//experiment where we put 'a
 impl OutputBuilder<'_> {
 
     pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>

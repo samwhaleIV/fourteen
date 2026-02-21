@@ -56,7 +56,7 @@ fn linear_to_srgb(linear: vec4<f32>) -> vec4<f32> {
     let color_linear = linear.rgb;
     let selector = ceil(color_linear - vec3<f32>(0.0031308));
     let under = 12.92 * color_linear;
-    let over = 1.055 * pow(color_linear,vec3<f32>(0.41666)) - 0.055;
+    let over = 1.055 * pow(color_linear,vec3<f32>(1.0/2.4)) - 0.055;
     let result = mix(under,over,selector);
     return vec4<f32>(result,linear.a);
 }

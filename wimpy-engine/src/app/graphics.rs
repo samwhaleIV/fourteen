@@ -25,3 +25,4 @@ pub use engine_textures::*;
 pub use pipelines::pipeline_2d::DrawData2D;
 pub use pipelines::pipeline_3d::DrawData3D;
 pub use pipelines::text_pipeline::{TextRenderConfig,TextRenderBehavior};
+pub use pipelines::lines_pipeline::LinePoint;

@@ -11,9 +11,12 @@ pub struct Pipeline3D {
     instance_buffer: DoubleBuffer<ModelInstance>,
 }
 
+const VERTEX_BUFFER_INDEX: u32 = 0;
+const INSTANCE_BUFFER_INDEX: u32 = 1;
+const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+
 impl Pipeline3D {
-    pub const VERTEX_BUFFER_INDEX: u32 = 0;
-    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
@@ -63,7 +66,7 @@ impl Pipeline3D {
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
                 label: Some("Pipeline 3D Instance Buffer"),
-                size: TConfig::INSTANCE_BUFFER_SIZE_3D as u64,
+                size: TConfig::INSTANCE_BUFFER_SIZE_3D as BufferAddress,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             })
@@ -113,12 +116,12 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
         );
 
         render_pass.set_vertex_buffer(
-            Pipeline3D::VERTEX_BUFFER_INDEX,
+            VERTEX_BUFFER_INDEX,
             context.model_cache.get_vertex_buffer_slice()
         );
 
         render_pass.set_vertex_buffer(
-            Pipeline3D::INSTANCE_BUFFER_INDEX,
+            INSTANCE_BUFFER_INDEX,
             pipeline_3d.instance_buffer.get_output_buffer().slice(..)
         );
 
@@ -230,7 +233,10 @@ impl Pipeline3DPass<'_,'_> {
             (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
         };
 
-        self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::DualChannel {
+        self.context.set_texture_bind_group(
+            TEXTURE_BIND_GROUP_INDEX,
+            &mut self.render_pass,
+            &BindGroupCacheIdentity::DualChannel {
             ch_0: BindGroupChannelConfig {
                 mode: texture_data.diffuse_sampler,
                 texture: match self.context.frame_cache.get(diffuse.get_ref()) {

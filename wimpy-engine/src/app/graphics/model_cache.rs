@@ -69,8 +69,8 @@ where
         let stride = length * size_of::<T>();
         match queue.write_buffer_with(
             &self.value,
-            (self.length * size_of::<T>()) as u64,
-            match NonZero::new(stride as u64) {
+            (self.length * size_of::<T>()) as BufferAddress,
+            match NonZero::new(stride as BufferAddress) {
                 Some(value) => value,
                 None => return None
             }
@@ -318,14 +318,14 @@ impl ModelCache {
         let index_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Index Buffer"),
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            size: index_buffer_size as u64,
+            size: index_buffer_size as BufferAddress,
             mapped_at_creation: false,
         }));
 
         let vertex_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Vertex Buffer"),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: vertex_buffer_size as u64,
+            size: vertex_buffer_size as BufferAddress,
             mapped_at_creation: false,
         }));
 

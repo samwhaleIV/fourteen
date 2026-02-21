@@ -263,7 +263,7 @@ impl DebugShell {
                         text_pass.draw_text::<FontMonoElf>(label,TextRenderConfig {
                             position: (5.0,5.0),
                             scale: 2.0,
-                            color: *color,
+                            color: WimpyColor::WHITE,
                             line_height: 1.0,
                             word_seperator: ' ',
                             behavior: TextRenderBehavior::LTR,

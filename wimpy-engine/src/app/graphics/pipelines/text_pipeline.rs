@@ -34,6 +34,12 @@ pub trait FontDefinition {
     }
 }
 
+const VERTEX_BUFFER_INDEX: u32 = 0;
+const INSTANCE_BUFFER_INDEX: u32 = 1;
+const INDEX_BUFFER_SIZE: u32 = 6;
+const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+
 #[derive(Default)]
 pub struct GlyphArea {
     pub x: u16,
@@ -44,9 +50,6 @@ pub struct GlyphArea {
 }
 
 impl TextPipeline {
-    pub const VERTEX_BUFFER_INDEX: u32 = 0;
-    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
-    pub const INDEX_BUFFER_SIZE: u32 = 6;
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
@@ -100,7 +103,7 @@ impl TextPipeline {
             GlyphVertex { position: [0.5, 0.5] }
         ];
 
-        let indices: [u32;Self::INDEX_BUFFER_SIZE as usize] = [
+        let indices: [u32;INDEX_BUFFER_SIZE as usize] = [
             0,1,2,
             2,1,3
         ];
@@ -120,7 +123,7 @@ impl TextPipeline {
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
                 label: Some("Text Pipeline Instance Buffer"),
-                size: TConfig::TEXT_PIPELINE_BUFFER_SIZE as u64,
+                size: TConfig::TEXT_PIPELINE_BUFFER_SIZE as BufferAddress,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             })
@@ -199,12 +202,12 @@ impl<'a,'frame> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame> {
         );
 
         render_pass.set_vertex_buffer(
-            TextPipeline::VERTEX_BUFFER_INDEX,
+            VERTEX_BUFFER_INDEX,
             text_pipeline.vertex_buffer.slice(..)
         );
 
         render_pass.set_vertex_buffer(
-            TextPipeline::INSTANCE_BUFFER_INDEX,
+            INSTANCE_BUFFER_INDEX,
             text_pipeline.instance_buffer.get_output_buffer().slice(..)
         );
 
@@ -237,7 +240,10 @@ impl PipelineTextPass<'_,'_> {
 
         if current_texture.get_ref() != target_texture.get_ref() {
             match self.context.frame_cache.get(target_texture_ref) {
-                Ok(texture_container) => self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::SingleChannel {
+                Ok(texture_container) => self.context.set_texture_bind_group(
+                    TEXTURE_BIND_GROUP_INDEX,
+                    &mut self.render_pass,
+                    &BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: SamplerMode::NearestClamp,
                         texture: texture_container,
@@ -417,7 +423,7 @@ impl PipelineTextPass<'_,'_> {
             return;
         }
 
-        self.render_pass.draw_indexed(0..TextPipeline::INDEX_BUFFER_SIZE,0,Range {
+        self.render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,Range {
             start: range_start as u32,
             end: range_end as u32
         });

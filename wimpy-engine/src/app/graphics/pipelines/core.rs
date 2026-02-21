@@ -5,11 +5,13 @@ use crate::app::graphics::{*,constants::*};
 use super::pipeline_2d::*;
 use super::pipeline_3d::*;
 use super::text_pipeline::*;
+use super::lines_pipeline::*;
 
 pub struct UniquePipelines {
     pub pipeline_2d: Pipeline2D,
     pub pipeline_3d: Pipeline3D,
-    pub text_pipeline: TextPipeline
+    pub text_pipeline: TextPipeline,
+    pub lines_pipeline: LinesPipeline
 }
 
 pub struct RenderPipelines {
@@ -51,11 +53,18 @@ impl RenderPipelines {
             uniform_bind_group_layout
         );
 
+        let lines_pipeline = LinesPipeline::create::<TConfig>(
+            graphics_provider,
+            texture_bind_group_layout,
+            uniform_bind_group_layout
+        );
+
         return Self {
             pipelines_unique: UniquePipelines {
                 pipeline_2d,
                 pipeline_3d,
                 text_pipeline,
+                lines_pipeline,
             },
             pipeline_shared,
         }
@@ -66,7 +75,7 @@ impl RenderPipelines {
         self.pipelines_unique.pipeline_2d.write_dynamic_buffers(queue);
         self.pipelines_unique.pipeline_3d.write_dynamic_buffers(queue);
         self.pipelines_unique.text_pipeline.write_dynamic_buffers(queue);
-
+        self.pipelines_unique.lines_pipeline.write_dynamic_buffers(queue);
         // We always write the shared buffers
         self.pipeline_shared.write_uniform_buffer(queue);
     }
@@ -75,6 +84,7 @@ impl RenderPipelines {
         self.pipelines_unique.pipeline_2d.reset_pipeline_state();
         self.pipelines_unique.pipeline_3d.reset_pipeline_state();
         self.pipelines_unique.text_pipeline.reset_pipeline_state();
+        self.pipelines_unique.lines_pipeline.reset_pipeline_state();
         
         self.pipeline_shared.reset_uniform_buffer();
     }
@@ -243,7 +253,7 @@ impl SharedPipeline {
 
         let device = graphics_provider.get_device();
 
-        let chunk_size = std::num::NonZeroU64::new(UNIFORM_BUFFER_ALIGNMENT as u64).expect("valid chunk size");
+        let chunk_size = std::num::NonZeroU64::new(UNIFORM_BUFFER_ALIGNMENT as BufferAddress).expect("valid chunk size");
 
         let uniform_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             entries: &[
@@ -264,7 +274,7 @@ impl SharedPipeline {
         let uniform_buffer = DoubleBuffer::new(device.create_buffer(&BufferDescriptor {
             label: Some("Uniform Buffer"),
             //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
-            size: TConfig::UNIFORM_BUFFER_SIZE as u64,
+            size: TConfig::UNIFORM_BUFFER_SIZE as BufferAddress,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false
         }));

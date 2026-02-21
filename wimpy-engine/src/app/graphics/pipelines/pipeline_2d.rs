@@ -13,10 +13,13 @@ pub struct Pipeline2D {
     instance_buffer: DoubleBuffer<QuadInstance>,
 }
 
+const VERTEX_BUFFER_INDEX: u32 = 0;
+const INSTANCE_BUFFER_INDEX: u32 = 1;
+const INDEX_BUFFER_SIZE: u32 = 6;
+const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
+const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+
 impl Pipeline2D {
-    pub const VERTEX_BUFFER_INDEX: u32 = 0;
-    pub const INSTANCE_BUFFER_INDEX: u32 = 1;
-    pub const INDEX_BUFFER_SIZE: u32 = 6;
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
@@ -81,7 +84,7 @@ impl Pipeline2D {
             QuadVertex { position: [0.5, 0.5] }   // Bottom Right 3
         ];
 
-        let indices: [u32;Self::INDEX_BUFFER_SIZE as usize] = [
+        let indices: [u32;INDEX_BUFFER_SIZE as usize] = [
             0,1,2,
             2,1,3
         ];
@@ -102,7 +105,7 @@ impl Pipeline2D {
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
                 label: Some("Pipeline 2D Instance Buffer"),
-                size: TConfig::INSTANCE_BUFFER_SIZE_2D as u64,
+                size: TConfig::INSTANCE_BUFFER_SIZE_2D as BufferAddress,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             })
@@ -168,12 +171,12 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
         ); // Index Buffer
 
         render_pass.set_vertex_buffer(
-            Pipeline2D::VERTEX_BUFFER_INDEX,
+            VERTEX_BUFFER_INDEX,
             pipeline_2d.vertex_buffer.slice(..)
         ); // Vertex Buffer
 
         render_pass.set_vertex_buffer(
-            Pipeline2D::INSTANCE_BUFFER_INDEX,
+            INSTANCE_BUFFER_INDEX,
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
 
@@ -210,7 +213,10 @@ impl Pipeline2DPass<'_,'_> {
 
         return match self.context.frame_cache.get(reference) {
             Ok(texture_container) => {
-                self.context.set_texture_bind_group(&mut self.render_pass,&BindGroupCacheIdentity::SingleChannel {
+                self.context.set_texture_bind_group(
+                    TEXTURE_BIND_GROUP_INDEX,
+                    &mut self.render_pass,
+                    &BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: self.sampler_mode,
                         texture: texture_container,
@@ -246,7 +252,7 @@ impl Pipeline2DPass<'_,'_> {
             }
         }));
 
-        self.render_pass.draw_indexed(0..Pipeline2D::INDEX_BUFFER_SIZE,0,Range {
+        self.render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,Range {
             start: range.start as u32,
             end: range.end as u32,
         });

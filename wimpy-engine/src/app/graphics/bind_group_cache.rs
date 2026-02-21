@@ -102,19 +102,19 @@ fn create_single_channel_bind_group(
         layout,
         entries: &[
             BindGroupEntry {
-                binding: BG0_CH0_TEXTURE_INDEX,
+                binding: CH0_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel.texture),
             },
             BindGroupEntry {
-                binding: BG0_CH0_SAMPLER_INDEX,
+                binding: CH0_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel.sampler),
             },
             BindGroupEntry {
-                binding: BG0_CH1_TEXTURE_INDEX,
+                binding: CH1_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel.texture),
             },
             BindGroupEntry {
-                binding: BG0_CH1_SAMPLER_INDEX,
+                binding: CH1_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel.sampler),
             }
         ],
@@ -132,19 +132,19 @@ fn create_dual_channel_bind_group(
         layout,
         entries: &[
             BindGroupEntry {
-                binding: BG0_CH0_TEXTURE_INDEX,
+                binding: CH0_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel_0.texture),
             },
             BindGroupEntry {
-                binding: BG0_CH0_SAMPLER_INDEX,
+                binding: CH0_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel_0.sampler),
             },
             BindGroupEntry {
-                binding: BG0_CH1_TEXTURE_INDEX,
+                binding: CH1_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel_1.texture),
             },
             BindGroupEntry {
-                binding: BG0_CH1_SAMPLER_INDEX,
+                binding: CH1_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel_1.sampler),
             }
         ],
@@ -221,7 +221,7 @@ impl BindGroupCache {
             label: Some("Texture Bind Group Layout"),
             entries: &[
                 BindGroupLayoutEntry {
-                    binding: BG0_CH0_TEXTURE_INDEX,
+                    binding: CH0_TEXTURE_INDEX,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
                         multisampled: false, /* Must remain false to use STORAGE_BINDING texture usage */
@@ -233,13 +233,13 @@ impl BindGroupCache {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: BG0_CH0_SAMPLER_INDEX,
+                    binding: CH0_SAMPLER_INDEX,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: BG0_CH1_TEXTURE_INDEX,
+                    binding: CH1_TEXTURE_INDEX,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
                         multisampled: false,
@@ -251,7 +251,7 @@ impl BindGroupCache {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: BG0_CH1_SAMPLER_INDEX,
+                    binding: CH1_SAMPLER_INDEX,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,

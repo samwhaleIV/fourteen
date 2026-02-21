@@ -6,7 +6,7 @@ const RIGHT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 8;
 
 use std::{
     collections::HashMap,
-    path::Path
+    path::Path,
 };
 
 use sdl2::{
@@ -45,6 +45,7 @@ struct InnerApp<TWimpyApp> {
     now: u64,
     wimpy_app: TWimpyApp,
     wimpy_context: WimpyContext,
+    has_focus: bool
 }
 
 struct SDLSystems {
@@ -58,8 +59,8 @@ async fn async_load<TWimpyApp,TConfig>(
     manifest_path: Option<&Path>,
     instance: Instance,
     surface: Surface<'static>,
-    mut window: Window,
-    sdl_systems: SDLSystems
+    window: Window,
+    sdl_systems: SDLSystems,
 ) -> Option<InnerApp<TWimpyApp>>
 where
     TConfig: GraphicsContextConfig,
@@ -92,6 +93,7 @@ where
     let now = sdl_systems.timer.performance_counter();
 
     return Some(InnerApp {
+        has_focus: window.has_input_focus(),
         sdl: sdl_systems,
         active_gamepad: None,
         unused_gamepads: Default::default(),
@@ -165,12 +167,12 @@ where
     TWimpyApp: WimpyApp<DekstopAppIO>
 {
     fn start_loop(&mut self) {
-        let mut event_pump = self.sdl.main.event_pump().expect("sdl event pump creation");
+        let event_pump = &mut self.sdl.main.event_pump().expect("sdl event pump creation");
         self.window.show();
         'event_loop: loop {
-            match self.poll_events(&mut event_pump) {
+            match self.poll_events(event_pump) {
                 EventLoopOperation::Continue => {
-                    self.update();
+                    self.update(event_pump);
                 },
                 EventLoopOperation::Terminate => {
                     break 'event_loop;
@@ -179,12 +181,33 @@ where
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self,event_pump: &mut EventPump) {
         let last = self.now;
         self.now = self.sdl.timer.performance_counter();
-
         let delta_seconds = ((self.now - last) as f64 / self.sdl.timer.performance_frequency() as f64) as f32;
 
+        let had_focus = self.has_focus;
+        let has_focus = self.window.has_input_focus();
+        self.has_focus = has_focus;
+
+        // match (had_focus,has_focus) {
+        //     (true, true) | (false,false) => {},
+        //     (false, true) | (true, false) => { // Gained focus
+        //         let mouse_state = event_pump.mouse_state();
+        //         self.mouse_cache.left_pressed = mouse_state.left();
+        //         self.mouse_cache.right_pressed = mouse_state.right();
+        //         self.mouse_cache.position.x = mouse_state.x() as f32;
+        //         self.mouse_cache.position.y = mouse_state.y() as f32;
+        //         self.mouse_cache.delta.x = 0.0;
+        //         self.mouse_cache.delta.y = 0.0;
+        //     },
+        //     (true, false) => {
+        //         self.mouse_cache.delta.x = 0.0;
+        //         self.mouse_cache.delta.y = 0.0;
+        //     } // Lost focus
+        // };
+
+        //todo: how does gamepad handle focus loss?
         let gamepad_state = match &self.active_gamepad {
             Some(gamepad) => get_gamepad_state(gamepad),
             None => Default::default(),
@@ -209,28 +232,28 @@ where
 
         let sdl_mouse = self.sdl.main.mouse();
 
-        match shell_state.mouse_mode {
-            MouseMode::Interface => {
-                if sdl_mouse.relative_mouse_mode() {
-                    sdl_mouse.set_relative_mouse_mode(false);
-                }
-            },
-            MouseMode::Camera => {
-                if !sdl_mouse.relative_mouse_mode() {
-                    sdl_mouse.set_relative_mouse_mode(true);
-                }
-            },
-        };
-
-        if
-            shell_state.should_reposition_hardware_cursor &&
-            self.window.has_input_focus()
-        {
-            sdl_mouse.warp_mouse_in_window(
-                &self.window,
-                shell_state.position.x as i32, 
-                shell_state.position.y as i32
-            );
+        if has_focus {
+            match shell_state.mouse_mode {
+                MouseMode::Interface => {
+                    if sdl_mouse.relative_mouse_mode() {
+                        sdl_mouse.set_relative_mouse_mode(false);
+                    }
+                },
+                MouseMode::Camera => {
+                    if !sdl_mouse.relative_mouse_mode() {
+                        sdl_mouse.set_relative_mouse_mode(true);
+                    }
+                },
+            };
+            if shell_state.should_reposition_hardware_cursor {
+                sdl_mouse.warp_mouse_in_window(
+                    &self.window,
+                    shell_state.position.x as i32, 
+                    shell_state.position.y as i32
+                );
+            }
+        } else if sdl_mouse.relative_mouse_mode() {
+            sdl_mouse.set_relative_mouse_mode(false);
         }
 
         self.wimpy_app.update(&mut self.wimpy_context);
@@ -239,16 +262,6 @@ where
     fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {
         for event in event_pump.poll_iter() {
             match event {
-                Event::Window {
-                    window_id,
-                    win_event: WindowEvent::FocusLost,
-                    ..
-                } if window_id == self.window.id() => {
-                    let sdl_mouse = self.sdl.main.mouse();
-                    if sdl_mouse.relative_mouse_mode() {
-                        sdl_mouse.set_relative_mouse_mode(false);
-                    }
-                }
                 Event::Window {
                     window_id,
                     win_event: WindowEvent::SizeChanged(width, height),

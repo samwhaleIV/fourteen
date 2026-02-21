@@ -52,7 +52,7 @@ where
 {
     pub fn write_out(&self,queue: &Queue) {
         if
-            let Some(size) = NonZero::new((self.input_buffer.len() * size_of::<TItem>()) as u64) &&
+            let Some(size) = NonZero::new((self.input_buffer.len() * size_of::<TItem>()) as BufferAddress) &&
             let Some(mut buffer_view) = queue.write_buffer_with(&self.output_buffer,0,size)
         {
             buffer_view.copy_from_slice(bytemuck::cast_slice(&self.input_buffer));
@@ -60,7 +60,7 @@ where
     }
     pub fn write_out_with_padding(&self,queue: &Queue,padding: usize) {
         for (i,item) in self.input_buffer.iter().enumerate() {
-            queue.write_buffer(&self.output_buffer,(i * padding) as u64,bytemuck::bytes_of(item));
+            queue.write_buffer(&self.output_buffer,(i * padding) as BufferAddress,bytemuck::bytes_of(item));
         }
     }
 }
