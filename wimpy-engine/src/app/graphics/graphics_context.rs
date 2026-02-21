@@ -79,6 +79,7 @@ pub struct EngineTextures {
     pub font_classic_outline: Option<TextureFrame>,
     pub font_twelven: Option<TextureFrame>,
     pub font_twelven_shaded: Option<TextureFrame>,
+    pub font_mono_elf: Option<TextureFrame>,
 
     pub missing: TextureFrame,
     pub opaque_white: TextureFrame,
@@ -163,6 +164,7 @@ impl GraphicsContext {
         self.engine_textures.font_classic_outline = self.load_texture::<IO>(asset_manager,FONT_CLASSIC_OUTLINE).await;
         self.engine_textures.font_twelven =         self.load_texture::<IO>(asset_manager,FONT_TWELVEN).await;
         self.engine_textures.font_twelven_shaded =  self.load_texture::<IO>(asset_manager,FONT_TWELVEN_SHADED).await;
+        self.engine_textures.font_mono_elf =        self.load_texture::<IO>(asset_manager,FONT_MONO_ELF).await;
     }
 
     async fn load_texture<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager,asset_name: &str) -> Option<TextureFrame> {

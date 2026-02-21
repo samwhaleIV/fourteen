@@ -58,7 +58,7 @@ async fn async_load<TWimpyApp,TConfig>(
     manifest_path: Option<&Path>,
     instance: Instance,
     surface: Surface<'static>,
-    window: Window,
+    mut window: Window,
     sdl_systems: SDLSystems
 ) -> Option<InnerApp<TWimpyApp>>
 where
@@ -166,6 +166,7 @@ where
 {
     fn start_loop(&mut self) {
         let mut event_pump = self.sdl.main.event_pump().expect("sdl event pump creation");
+        self.window.show();
         'event_loop: loop {
             match self.poll_events(&mut event_pump) {
                 EventLoopOperation::Continue => {

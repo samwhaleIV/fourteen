@@ -21,4 +21,5 @@ pub mod assets {
     pub const FONT_CLASSIC_OUTLINE:     &'static str = "wimpy/font/classic-outline";
     pub const FONT_TWELVEN:             &'static str = "wimpy/font/twelven";
     pub const FONT_TWELVEN_SHADED:      &'static str = "wimpy/font/twelven-shaded";
+    pub const FONT_MONO_ELF:            &'static str = "wimpy/font/mono-elf";
 }

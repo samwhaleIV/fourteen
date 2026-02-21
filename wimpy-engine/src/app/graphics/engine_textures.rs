@@ -46,6 +46,7 @@ impl EngineTextures {
             font_classic_outline: None,
             font_twelven: None,
             font_twelven_shaded: None,
+            font_mono_elf: None,
         }
     }
 }

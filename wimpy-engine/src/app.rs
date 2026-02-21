@@ -3,6 +3,8 @@ pub mod wam;
 pub mod input;
 
 mod debug_shell;
+pub use debug_shell::*;
+
 mod kvs;
 
 pub use kvs::*;

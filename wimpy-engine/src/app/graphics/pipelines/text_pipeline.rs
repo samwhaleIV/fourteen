@@ -29,8 +29,8 @@ pub trait FontDefinition {
         (Self::LETTER_SPACING * scale).round().max(1.0)
     }
 
-    fn get_line_height(scale: f32,line_height: f32) -> f32 {
-        (Self::LINE_HEIGHT * line_height * scale).round().max(Self::LINE_HEIGHT + 1.0)
+    fn get_line_height(scale: f32) -> f32 {
+        (Self::LINE_HEIGHT * scale).round().max(1.0)
     }
 }
 
@@ -147,7 +147,7 @@ pub enum TextRenderBehavior {
     RTL,
     Centered,
     LineBreakingLTR {
-        max_width: u32
+        line_width: f32
     }
 }
 
@@ -292,29 +292,78 @@ impl PipelineTextPass<'_,'_> {
         };
 
         self.context.pipelines.get_unique_mut().text_pipeline.instance_buffer.push(glyph_instance);
-        log::info!("{:?}",glyph_instance);
 
         return destination.width;
     }
 
-    fn draw_text_line_breaking_ltr<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig,max_width: u32) {
+    fn draw_text_line_breaking_ltr<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig,max_width: f32) {
         let scale = validate_scale(config.scale);
-        todo!();
+        let word_spacing = TFont::get_word_spacing(scale);
+        let letter_spacing = TFont::get_letter_spacing(scale);
+        let line_height = TFont::get_line_height(scale * config.line_height);
+
+        let x_start = config.position.0.round();
+        let max_x = x_start + max_width;
+
+        let mut x = x_start;
+        let mut y = config.position.1.round();
+
+        let color = &config.color;
+        for word in text.split(config.word_seperator) {
+            if x + measure_word_width::<TFont>(word,scale,letter_spacing) > max_x {
+                x = x_start;
+                y += line_height;
+            }
+            for character in word.chars() {
+                x += self.draw_glyph::<TFont>(character,x,y,scale,color) + letter_spacing;
+            }
+            x += word_spacing - letter_spacing;
+        }
     }
 
     fn draw_text_ltr<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
         let scale = validate_scale(config.scale);
-        todo!();
+        let word_spacing = TFont::get_word_spacing(scale);
+        let letter_spacing = TFont::get_letter_spacing(scale);
+
+        let mut x = config.position.0.round();
+        let y = config.position.1.round();
+
+        let color = &config.color;
+        for word in text.split(config.word_seperator) {
+            for character in word.chars() {
+                x += self.draw_glyph::<TFont>(character,x,y,scale,color) + letter_spacing;
+            }
+            x += word_spacing - letter_spacing;
+        }
     }
 
     fn draw_text_rtl<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
         let scale = validate_scale(config.scale);
-        todo!();
+        let word_spacing = TFont::get_word_spacing(scale);
+        let letter_spacing = TFont::get_letter_spacing(scale);
+ 
+        let mut total_width = 0.0_f32;
+        for word in text.split(config.word_seperator) {
+            let width = measure_word_width::<TFont>(word,scale,letter_spacing);
+            total_width += width + word_spacing;
+        }
+        total_width -= word_spacing;
+
+        let mut x = (config.position.0 - total_width).round();
+        let y = config.position.1.round();
+
+        let color = &config.color;
+        for word in text.split(config.word_seperator) {
+            for character in word.chars() {
+                x += self.draw_glyph::<TFont>(character,x,y,scale,color) + letter_spacing;
+            }
+            x += word_spacing - letter_spacing;
+        }
     }
 
     fn draw_text_centered<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
         let scale = validate_scale(config.scale);
-
         let word_spacing = TFont::get_word_spacing(scale);
         let letter_spacing = TFont::get_letter_spacing(scale);
 
@@ -325,12 +374,12 @@ impl PipelineTextPass<'_,'_> {
         }
 
         let mut x = config.position.0 - ((total_width - word_spacing) * 0.5).round();
-        let y = config.position.1 - (TFont::get_line_height(scale,config.line_height) * 0.5).round();
+        let y = config.position.1 - (TFont::get_line_height(scale * config.line_height) * 0.5).round();
 
         let color = &config.color;
         for word in text.split(config.word_seperator) {
             for character in word.chars() {
-                x += self.draw_glyph::<TFont>(character,x,y,scale,color);
+                x += self.draw_glyph::<TFont>(character,x,y,scale,color) + letter_spacing;
             }
             x += word_spacing - letter_spacing;
         }
@@ -341,9 +390,6 @@ impl PipelineTextPass<'_,'_> {
     }
 
     pub fn draw_text<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
-
-        log::info!("START TEXT");
-
         if !self.validate_texture::<TFont>() {
             return;
         }
@@ -351,9 +397,7 @@ impl PipelineTextPass<'_,'_> {
         let range_start = self.get_instance_buffer_len();
 
         match config.behavior {
-            TextRenderBehavior::LTR | TextRenderBehavior::LineBreakingLTR {
-                max_width: 0
-            } => {
+            TextRenderBehavior::LTR => {
                 self.draw_text_ltr::<TFont>(text,config)
             },
             TextRenderBehavior::Centered => {
@@ -362,7 +406,7 @@ impl PipelineTextPass<'_,'_> {
             TextRenderBehavior::RTL => {
                 self.draw_text_rtl::<TFont>(text,config)
             },
-            TextRenderBehavior::LineBreakingLTR { max_width } => {
+            TextRenderBehavior::LineBreakingLTR { line_width: max_width } => {
                 self.draw_text_line_breaking_ltr::<TFont>(text,config,max_width)
             }
         }
@@ -377,8 +421,6 @@ impl PipelineTextPass<'_,'_> {
             start: range_start as u32,
             end: range_end as u32
         });
-
-        log::info!("END TEXT");
     }
 }
 

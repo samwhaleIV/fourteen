@@ -1,4 +1,5 @@
 use crate::{shared::*,app::{*,graphics::{*,fonts::*},}};
+use std::fmt::Write;
 
 pub struct PlaceholderApp {
     test_texture: TextureFrame,
@@ -9,6 +10,11 @@ where
     IO: WimpyIO
 {
     async fn load(context: &mut WimpyContext) -> Self {
+
+        context.debug.set_render_config_top_left(PaneLayout::One {
+            items: [PaneItem::Label { channel: LabelChannel::One, color: WimpyColor::WHITE }]
+        });
+
         return Self {
             test_texture: context.load_image_or_default::<IO>("test-namespace/test").await
         };
@@ -17,6 +23,12 @@ where
     fn update(&mut self,context: &mut WimpyContext) {
 
         // Start render ...
+
+        let mouse = context.input.get_virtual_mouse();
+        context.debug.set_label_text_fmt(
+            LabelChannel::One,
+            format_args!("x: {:.0} y: {:.0}",mouse.position().x,mouse.position().y)
+        );
 
         let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
             Ok(value) => value,
@@ -58,15 +70,7 @@ where
                 rotation: 0.0,
             }]);
 
-            let mut text_pipeline_pass = render_pass.set_pipeline_text();
-            text_pipeline_pass.draw_text::<FontClassic>("abcdefghijkl",TextRenderConfig {
-                position: destination.center(),
-                scale: 4.0,
-                color: WimpyColor::WHITE,
-                line_height: 1.0,
-                word_seperator: ' ',
-                behavior: TextRenderBehavior::Centered,
-            });
+            context.debug.render(&mut render_pass);
         }
 
         output.present_output_surface();

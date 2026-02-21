@@ -1,8 +1,11 @@
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::fmt::{self,Write};
 
-use crate::app::WimpyContext;
+use crate::app::graphics::fonts::*;
+use crate::app::graphics::{MutableFrame, RenderPassBuilder, TextRenderBehavior, TextRenderConfig};
 use crate::collections::StringPool;
+use crate::shared::WimpyColor;
 
 const LOG_LINE_SIZE: usize = 64;
 const LOG_LINE_COUNT: usize = 8;
@@ -45,13 +48,16 @@ where
     [T;SIZE]: Default,
     TChannel: Into<usize>
 {
-    fn get(&mut self,channel: TChannel) -> &mut T {
+    fn get(&self,channel: TChannel) -> &T {
+        return &self.buffers[channel.into()];
+    }
+    fn get_mut(&mut self,channel: TChannel) -> &mut T {
         return &mut self.buffers[channel.into()];
     }
 }
 
 type GraphBufferSet = BufferSet<GRAPH_CHANNEL_COUNT,GraphBuffer,GraphChannel>;
-#[derive(Default)]
+#[derive(Default,Copy,Clone)]
 pub enum GraphChannel {
     #[default]
     One = 0,
@@ -68,7 +74,7 @@ impl From<GraphChannel> for usize {
 }
 
 type LabelSet = BufferSet<LABEL_CHANNEL_COUNT,String,LabelChannel>;
-#[derive(Default)]
+#[derive(Default,Copy,Clone)]
 pub enum LabelChannel {
     #[default]
     One = 0,
@@ -88,7 +94,7 @@ impl From<LabelChannel> for usize {
 
 
 type LogBufferSet = BufferSet<LOG_CHANNEL_COUNT,LogBuffer,LogChannel>;
-#[derive(Default)]
+#[derive(Default,Copy,Clone)]
 pub enum LogChannel {
     Trace = 0,
     Debug = 1,
@@ -156,13 +162,13 @@ pub enum PaneItem {
     None,
     Graph {
         channel: GraphChannel,
-        width: GraphWidth
+        width: GraphWidth,
     },
     Log {
-        channel: LogChannel
+        channel: LogChannel,
     },
     Label {
-        channel: LabelChannel
+        channel: LabelChannel,
     }
 }
 
@@ -197,23 +203,77 @@ impl DebugShell {
         self.render_config = config;
     }
 
+    pub fn set_render_config_top_left(&mut self,layout: PaneLayout) {
+        self.render_config.top_left = layout;
+    }
+
+    pub fn set_render_config_top_right(&mut self,layout: PaneLayout) {
+        self.render_config.top_right = layout;
+    }
+
+    pub fn set_render_config_bottom_left(&mut self,layout: PaneLayout) {
+        self.render_config.bottom_left = layout;
+    }
+
+    pub fn set_render_config_bottom_right(&mut self,layout: PaneLayout) {
+        self.render_config.bottom_right = layout;
+    }
+
     pub fn log(&mut self,channel: LogChannel,text: &str) {
-        let log_buffer = self.log_buffers.get(channel);
+        let log_buffer = self.log_buffers.get_mut(channel);
         log_buffer.push(&mut self.string_pool,text);
     }
 
     pub fn set_graph_value(&mut self,channel: GraphChannel,value: u8) {
-        let graph_buffer = self.graph_buffers.get(channel);
+        let graph_buffer = self.graph_buffers.get_mut(channel);
         graph_buffer.push(value);
     }
 
-    pub fn set_label(&mut self,channel: LabelChannel,value: &str) {
-        let label = self.labels.get(channel);
+    pub fn set_label_text(&mut self,channel: LabelChannel,value: &str) {
+        let label = self.labels.get_mut(channel);
         label.clear();
         label.push_str(value);
     }
 
-    pub fn render(&self,context: &mut WimpyContext) {
+    pub fn set_label_text_fmt<'a>(&'a mut self,channel: LabelChannel,args: fmt::Arguments){
+        let label = self.labels.get_mut(channel);
+        label.clear();
+        let _ = label.write_fmt(args);
+    }
 
+    pub fn clear_label(&mut self,channel: LabelChannel) {
+        let label = self.labels.get_mut(channel);
+        label.clear();
+    }
+
+    pub fn render<TFrame>(&self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
+    where
+        TFrame: MutableFrame
+    {
+        match &self.render_config.top_left {
+            PaneLayout::None => {},
+            PaneLayout::One { items } => {
+                match &items[0] {
+                    PaneItem::None => todo!(),
+                    PaneItem::Graph { channel, width } => todo!(),
+                    PaneItem::Log { channel} => todo!(),
+                    PaneItem::Label { channel } => {
+                        let mut text_pass = render_pass.set_pipeline_text();
+                        let label = self.labels.get(*channel);
+                        text_pass.draw_text::<FontMonoElf>(label,TextRenderConfig {
+                            position: (5.0,5.0),
+                            scale: 2.0,
+                            color: *color,
+                            line_height: 1.0,
+                            word_seperator: ' ',
+                            behavior: TextRenderBehavior::LTR,
+                        });
+                    },
+                }
+            },
+            PaneLayout::Two { items } => todo!(),
+            PaneLayout::Three { items } => todo!(),
+            PaneLayout::Four { items } => todo!(),
+        }
     }
 }
