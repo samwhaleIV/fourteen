@@ -27,12 +27,12 @@ impl IWimpyPoint {
     };
 
     /// Gets the smaller of the two dimensions.
-    pub fn min(&self) -> i32 {
+    pub fn smallest(&self) -> i32 {
         self.x.min(self.y)
     }
 
     /// Gets the larger of the two dimensions.
-    pub fn max(&self) -> i32 {
+    pub fn largest(&self) -> i32 {
         self.x.max(self.y)
     }
 }
@@ -49,12 +49,12 @@ impl UWimpyPoint {
     };
 
     /// Gets the smaller of the two dimensions.
-    pub fn min(&self) -> u32 {
+    pub fn smallest(&self) -> u32 {
         self.x.min(self.y)
     }
 
     /// Gets the larger of the two dimensions.
-    pub fn max(&self) -> u32 {
+    pub fn largest(&self) -> u32 {
         self.x.max(self.y)
     }
 }

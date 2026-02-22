@@ -254,7 +254,7 @@ impl GraphicsContext {
     }
 
     pub fn get_cache_safe_size(&self,size: UWimpyPoint) -> CacheSize {
-        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.max().checked_next_power_of_two() {
+        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.largest().checked_next_power_of_two() {
             Some(value) => value,
             None => u32::MAX,
         });

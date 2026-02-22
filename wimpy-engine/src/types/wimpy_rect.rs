@@ -58,8 +58,8 @@ impl WimpyRect  {
 
     pub fn clip(&self,vec: WimpyVec) -> WimpyVec {
         WimpyVec {
-            x: vec.x.max(self.left()).min(self.right()),
-            y: vec.y.max(self.left()).min(self.bottom())
+            x: vec.x.clamp(self.left(),self.right()),
+            y: vec.y.clamp(self.top(),self.bottom()),
         }
     }
 

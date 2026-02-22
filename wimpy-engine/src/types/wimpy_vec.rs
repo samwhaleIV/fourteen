@@ -40,6 +40,44 @@ impl WimpyVec {
             y: self.y.mul_add(a,b.y)
         }
     }
+
+    pub fn floor(self) -> Self {
+        Self {
+            x: self.x.floor(),
+            y: self.y.floor()
+        }
+    }
+
+    pub fn ceil(self) -> Self {
+        Self {
+            x: self.x.ceil(),
+            y: self.y.ceil()
+        }
+    }
+
+    pub fn round(self) -> Self {
+        Self {
+            x: self.x.round(),
+            y: self.y.round()
+        }
+    }
+
+    pub fn clamp(self,min: f32,max: f32) -> Self {
+        Self {
+            x: self.x.clamp(min,max),
+            y: self.y.clamp(min,max)
+        }
+    }
+
+    /// Gets the smaller of the two dimensions.
+    pub fn smallest(self) -> f32 {
+        self.x.min(self.y)
+    }
+
+    /// Gets the larger of the two dimensions.
+    pub fn largest(self) -> f32 {
+        self.x.max(self.y)
+    }
 }
 
 impl Mul<f32> for WimpyVec {
@@ -199,6 +237,24 @@ impl From<[i32;2]> for WimpyVec {
 
 impl From<[u32;2]> for WimpyVec {
     fn from(value: [u32;2]) -> Self {
+        Self {
+            x: value[0] as f32,
+            y: value[1] as f32
+        }
+    }
+}
+
+impl From<[u16;2]> for WimpyVec {
+    fn from(value: [u16;2]) -> Self {
+        Self {
+            x: value[0] as f32,
+            y: value[1] as f32
+        }
+    }
+}
+
+impl From<[u8;2]> for WimpyVec {
+    fn from(value: [u8;2]) -> Self {
         Self {
             x: value[0] as f32,
             y: value[1] as f32

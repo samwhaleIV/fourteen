@@ -137,11 +137,11 @@ impl GraphicsProvider {
     }
 
     pub fn get_safe_texture_dimension_value(&self,value: u32) -> u32 {
-        return value.max(1).min(self.max_texture_dimension);
+        value.clamp(1,self.max_texture_dimension)
     }
 
     pub fn get_safe_texture_power_of_two(&self,value: u32) -> u32 {
-        return value.max(1).min(self.max_texture_power_of_two);
+        value.clamp(1,self.max_texture_power_of_two)
     }
 
     pub fn get_safe_texture_size(&self,value: UWimpyPoint) -> UWimpyPoint {

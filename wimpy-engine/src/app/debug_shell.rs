@@ -4,7 +4,7 @@ use std::fmt::{self,Write};
 
 use crate::WimpyColor;
 use crate::app::graphics::fonts::*;
-use crate::app::graphics::{MutableFrame, RenderPassBuilder, TextRenderBehavior, TextRenderConfig};
+use crate::app::graphics::{MutableFrame,RenderPassBuilder,TextDirection,TextRenderConfig};
 use crate::collections::StringPool;
 
 const LOG_LINE_SIZE: usize = 64;
@@ -261,14 +261,14 @@ impl DebugShell {
                     PaneItem::Log { channel} => todo!(),
                     PaneItem::Label { channel } => {
                         let mut text_pass = render_pass.set_pipeline_text();
-                        let label = self.labels.get(*channel);
-                        text_pass.draw_text::<FontMonoElf>(label,TextRenderConfig {
+                        let label1 = self.labels.get(LabelChannel::One);
+                        let label2 = self.labels.get(LabelChannel::Two);
+                        text_pass.draw_text::<FontMonoElf>(&[label1,label2],TextDirection::RightToLeft,TextRenderConfig {
                             position: [(size.x - 5) as f32,5.0].into(),
                             scale: 2.0,
                             color: WimpyColor::WHITE,
-                            line_height: 1.0,
+                            line_height_scale: 1.0,
                             word_seperator: ' ',
-                            behavior: TextRenderBehavior::RTL,
                         });
                     },
                 }

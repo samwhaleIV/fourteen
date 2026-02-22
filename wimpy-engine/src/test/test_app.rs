@@ -67,6 +67,11 @@ where
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
+        context.debug.set_label_text_fmt(
+            LabelChannel::Two,
+            format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
+        );
+
         match mouse.get_active_mode() {
             input::MouseMode::Interface => {
                 match mouse.left_press_state() {

@@ -23,11 +23,11 @@ fn to_bool(value: f32) -> bool {
 }
 
 fn axis_clamp(value: f32) -> f32 {
-    value.min(1.0).max(-1.0)
+    value.clamp(-1.0,1.0)
 }
 
 fn trigger_clamp(value: f32) -> f32 {
-    value.min(1.0).max(0.0)
+    value.clamp(0.0,1.0)
 }
 
 pub fn create_gamepad_state(src: Float32Array) -> GamepadInput {
