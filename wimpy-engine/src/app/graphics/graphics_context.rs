@@ -355,7 +355,7 @@ where
         self.set_pipeline()
     }
 
-    pub fn set_pipeline_text<'a>(&'a mut self) -> PipelineTextPass<'a,'frame> {
+    pub fn set_pipeline_text<'a,TFont: FontDefinition>(&'a mut self) -> PipelineTextPass<'a,'frame,TFont> {
         self.set_pipeline()
     }
 

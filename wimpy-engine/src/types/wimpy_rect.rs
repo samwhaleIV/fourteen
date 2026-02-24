@@ -1,5 +1,7 @@
 use std::ops::Mul;
 
+use crate::WimpyVecAxis;
+
 use super::WimpyVec;
 
 #[derive(Debug,Copy,Clone,Default,PartialEq)]
@@ -56,6 +58,14 @@ impl WimpyRect  {
         self.size.mul_add(0.5,self.position)
     }
 
+    pub fn center_x(&self) -> f32 {
+        self.size.x.mul_add(0.5,self.position.x)
+    }
+
+    pub fn center_y(&self) -> f32 {
+        self.size.y.mul_add(0.5,self.position.y)
+    }
+
     pub fn clip(&self,vec: WimpyVec) -> WimpyVec {
         WimpyVec {
             x: vec.x.clamp(self.left(),self.right()),
@@ -74,6 +84,28 @@ impl WimpyRect  {
         Self {
             position: self.size.mul_add(-0.5,self.position),
             size: self.size,
+        }
+    }
+
+    pub fn quadrant(&self,quadrant: WimpyRectQuadrant) -> Self {
+        let size = self.size * 0.25;
+        match quadrant {
+            WimpyRectQuadrant::TopLeft => Self {
+                position: self.position,
+                size,
+            },
+            WimpyRectQuadrant::TopRight => Self {
+                position: self.position + size.axis(WimpyVecAxis::X),
+                size,
+            },
+            WimpyRectQuadrant::BottomLeft => Self {
+                position: self.position + size.axis(WimpyVecAxis::Y),
+                size,
+            },
+            WimpyRectQuadrant::BottomRight => Self {
+                position: self.position + size,
+                size,
+            },
         }
     }
 }
@@ -96,4 +128,13 @@ impl Mul<WimpyVec> for WimpyRect {
             size: self.size * rhs,
         }
     }
+}
+
+#[derive(Default,Clone,Copy)]
+pub enum WimpyRectQuadrant {
+    #[default]
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight
 }

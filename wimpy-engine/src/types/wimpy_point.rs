@@ -3,6 +3,17 @@ use std::ops::{Add,Sub,AddAssign,SubAssign};
 pub type IWimpyPoint = WimpyPoint<i32>;
 pub type UWimpyPoint = WimpyPoint<u32>;
 
+impl Default for IWimpyPoint {
+    fn default() -> Self {
+        Self { x: 0, y: 0 }
+    }
+}
+
+impl Default for UWimpyPoint {
+    fn default() -> Self {
+        Self { x: 0, y: 0 }
+    }
+}
 
 #[derive(Debug,Copy,Clone,Eq,PartialEq)]
 pub struct WimpyPoint<T> {

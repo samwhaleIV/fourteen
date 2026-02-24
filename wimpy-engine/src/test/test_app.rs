@@ -34,7 +34,19 @@ where
     async fn load(context: &mut WimpyContext) -> Self {
 
         context.debug.set_render_config_top_left(PaneLayout::One {
-            items: [PaneItem::Label { channel: LabelChannel::One }]
+            items: [
+                PaneItem::Graph {
+                    width: GraphWidth::Full,
+                    layers: GraphLayers::SingleLayer {
+                        layers: [
+                            GraphLayer {
+                                color: WimpyNamedColor::Red,
+                                id: GraphChannelID::One,
+                            }
+                        ],
+                    }
+                }
+            ]
         });
 
         return Self {
@@ -63,12 +75,12 @@ where
         }
 
         context.debug.set_label_text_fmt(
-            LabelChannel::One,
+            LabelChannelID::One,
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
         context.debug.set_label_text_fmt(
-            LabelChannel::Two,
+            LabelChannelID::Two,
             format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
         );
 

@@ -1,5 +1,5 @@
 use wgpu::*;
-use std::ops::Range;
+use std::{borrow::Borrow, ops::Range};
 use bytemuck::{Pod,Zeroable};
 use crate::{WimpyColor, WimpyVec, app::graphics::{constants::*, *}};
 use super::core::*;
@@ -120,10 +120,15 @@ impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
 }
 
 impl LinesPipelinePass<'_,'_> {
-    pub fn draw(&mut self,line_points: &[LinePoint]) {
+    pub fn draw<I>(&mut self,line_points: I)
+    where
+        I: IntoIterator,
+        I::Item: Borrow<LinePoint>
+    {
         let buffer = &mut self.context.pipelines.get_unique_mut().lines_pipeline.line_point_buffer;
         let start = buffer.len();
         for line in line_points {
+            let line = line.borrow();
             buffer.push(LineVertex {
                 position: line.point.into(),
                 color: line.color.into()

@@ -1,5 +1,6 @@
 use wgpu::*;
 use wgpu::util::{BufferInitDescriptor,DeviceExt};
+use std::borrow::Borrow;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
 use crate::{WimpyColor, WimpyRect};
@@ -231,7 +232,11 @@ impl Pipeline2DPass<'_,'_> {
         };
     }
 
-    pub fn draw(&mut self,frame_reference: &impl FrameReference,draw_data: &[DrawData2D]) {
+    pub fn draw<'a,I>(&mut self,frame_reference: &impl FrameReference,draw_data: I)
+    where
+        I: IntoIterator,
+        I::Item: Borrow<DrawData2D>
+    {
         let reference = frame_reference.get_ref();
         if let Err(()) = self.update_sampler_if_needed(reference) {
             return;
@@ -239,16 +244,19 @@ impl Pipeline2DPass<'_,'_> {
 
         let uv_scale = frame_reference.get_uv_scale();
 
-        let range = self.context.get_2d_pipeline_mut().instance_buffer.push_set(draw_data.iter().map(|value|{
-            let dst = value.destination.origin_top_left_to_center();
-            let src = value.source * uv_scale;
+        let range = self.context.get_2d_pipeline_mut().instance_buffer.push_set(draw_data.into_iter().map(|item|{
+            let item = item.borrow();
+
+            let dst = item.destination.origin_top_left_to_center();
+            let src = item.source * uv_scale;
+
             QuadInstance {
                 position: dst.position.into(),
                 size: dst.size.into(),
                 uv_position: src.position.into(),
                 uv_size: src.size.into(),
-                color: value.color.into(),
-                rotation: value.rotation
+                color: item.color.into(),
+                rotation: item.rotation
             }
         }));
 
@@ -256,6 +264,14 @@ impl Pipeline2DPass<'_,'_> {
             start: range.start as u32,
             end: range.end as u32,
         });
+    }
+
+    pub fn draw_untextured<'a,I>(&mut self,draw_data: I)
+    where
+        I: IntoIterator,
+        I::Item: Borrow<DrawData2D>
+    {
+        self.draw(&self.context.textures.opaque_white,draw_data);
     }
 
     pub fn set_sampler_mode(&mut self,sampler_mode: SamplerMode) {

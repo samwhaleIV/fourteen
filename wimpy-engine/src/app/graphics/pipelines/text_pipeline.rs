@@ -37,7 +37,7 @@ pub trait FontDefinition {
     }
 
     fn get_line_height(scale: f32) -> f32 {
-        (Self::LINE_HEIGHT * scale).round().max(1.0)
+        (Self::LINE_HEIGHT * scale).round().max(Self::LINE_HEIGHT + 1.0)
     }
 }
 
@@ -139,11 +139,13 @@ impl TextPipeline {
     }
 }
 
-pub struct PipelineTextPass<'a,'frame> {
+pub struct PipelineTextPass<'a,'frame,TFont> {
     context: &'a mut RenderPassContext<'frame>,
     render_pass: &'a mut RenderPass<'frame>,
-    tex: TextureFrame,
+    texture_valid: bool,
+    range_start: usize,
     uv_scalar: WimpyVec,
+    _phantom: PhantomData<TFont>
 }
 
 pub struct TextLine<'a> {
@@ -187,7 +189,10 @@ impl PipelineController for TextPipeline {
     }
 }
 
-impl<'a,'frame> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame> {
+impl<'a,'frame,TFont> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame,TFont>
+where
+    TFont: FontDefinition
+{
     fn create(
         frame: &'frame impl MutableFrame,
         render_pass: &'a mut RenderPass<'frame>,
@@ -222,13 +227,40 @@ impl<'a,'frame> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame> {
             &[dynamic_offset as u32]
         );
 
-        let tex = context.textures.transparent_black.clone();
+        let target_texture = TFont::get_texture(context.textures);
+        let target_texture_ref = target_texture.get_ref();
+
+        let mut texture_valid = false;
+
+        match context.frame_cache.get(target_texture_ref) {
+            Ok(texture_container) => {
+                context.set_texture_bind_group(
+                    TEXTURE_BIND_GROUP_INDEX,
+                    render_pass,
+                    &BindGroupCacheIdentity::SingleChannel {
+                    ch_0: BindGroupChannelConfig {
+                        mode: SamplerMode::NearestClamp,
+                        texture: texture_container,
+                    }
+                });
+                texture_valid = true;
+            },
+            Err(error) => {
+                log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
+            }
+        };
+
+        let uv_scalar = WimpyVec::from(target_texture.size()).reciprocal() * target_texture.get_uv_scale();
+
+        let range_start = context.pipelines.get_unique().text_pipeline.instance_buffer.len();
 
         Self {
-            uv_scalar: WimpyVec::ONE,
-            tex,
+            uv_scalar,
+            texture_valid,
             context,
             render_pass,
+            _phantom: PhantomData,
+            range_start
         }
     }
 }
@@ -378,83 +410,43 @@ where
     }
 }
 
-impl PipelineTextPass<'_,'_> {
-    fn validate_texture<TFont: FontDefinition>(&mut self) -> bool {
-        let current_texture = self.tex;
-        let target_texture = TFont::get_texture(self.context.textures);
-        let target_texture_ref = target_texture.get_ref();
-
-        if current_texture.get_ref() != target_texture.get_ref() {
-            match self.context.frame_cache.get(target_texture_ref) {
-                Ok(texture_container) => self.context.set_texture_bind_group(
-                    TEXTURE_BIND_GROUP_INDEX,
-                    &mut self.render_pass,
-                    &BindGroupCacheIdentity::SingleChannel {
-                    ch_0: BindGroupChannelConfig {
-                        mode: SamplerMode::NearestClamp,
-                        texture: texture_container,
-                    }
-                }),
-                Err(error) => {
-                    log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
-                    return false;
-                }
-            };
-            self.tex = target_texture;
-            let scale = self.tex.get_uv_scale();
-            self.uv_scalar = WimpyVec::ONE / WimpyVec::from(self.tex.size()) * scale;
-        }
-
-        return true;
+impl<TFont> PipelineTextPass<'_,'_,TFont>
+where
+    TFont: FontDefinition
+{
+    fn get_renderer(&mut self,config: TextRenderConfig) -> TextRenderer<'_, TFont> {
+        TextRenderer::<TFont>::new(config,self.uv_scalar,&mut self.context.get_text_pipeline_mut().instance_buffer)
     }
 
-    fn draw_text_internal<TFont,F>(
-        &mut self,
-        config: TextRenderConfig,
-        f_renderer: F
-    )
-    where
-        TFont: FontDefinition,
-        F: FnOnce(&mut TextRenderer<'_,TFont>)
-    {
-        if !self.validate_texture::<TFont>() {
+    pub fn batch_text(&mut self,lines: &[&str],direction: TextDirection,config: TextRenderConfig) {
+        let mut r = self.get_renderer(config);
+        let ltr = direction.is_ltr();
+        for (i,&line) in lines.iter().enumerate() {
+            r.draw_text(line,i,ltr);
+        }
+    }
+
+    pub fn batch_text_wrapping(&mut self,text: &str,max_width: f32,config: TextRenderConfig) {
+        let mut r = self.get_renderer(config);
+        r.draw_text_line_breaking_ltr(text,max_width);
+    }
+
+    pub fn batch_text_centered(&mut self,text: &str,config: TextRenderConfig) {
+        let mut r = self.get_renderer(config);
+        r.draw_text_centered(text);
+    }
+
+    pub fn submit(self) {
+        if !self.texture_valid {
             return;
         }
-
-        let pipeline = &mut self.context.get_text_pipeline_mut();
-        let range_start = pipeline.instance_buffer.len();
-
-        let mut renderer = TextRenderer::<TFont>::new(config,self.uv_scalar,&mut pipeline.instance_buffer);
-        f_renderer(&mut renderer);
-
         let range_end = self.context.get_text_pipeline().instance_buffer.len();
-        if range_start == range_end {
+        if self.range_start == range_end {
             return;
         }
         self.render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,Range {
-            start: range_start as u32,
+            start: self.range_start as u32,
             end: range_end as u32
-        });
-    }
-
-    pub fn draw_text<TFont: FontDefinition>(&mut self,lines: &[&str],direction: TextDirection,config: TextRenderConfig) {
-        self.draw_text_internal::<TFont,_>(config,|r|{
-            let ltr = direction.is_ltr();
-            for (i,&line) in lines.iter().enumerate() {
-                r.draw_text(line,i,ltr);
-            }
-        });
-    }
-
-    pub fn draw_text_wrapping<TFont: FontDefinition>(&mut self,text: &str,max_width: f32,config: TextRenderConfig) {
-        self.draw_text_internal::<TFont,_>(config,|r|{
-            r.draw_text_line_breaking_ltr(text,max_width)
-        });
-    }
-
-    pub fn draw_text_centered<TFont: FontDefinition>(&mut self,text: &str,config: TextRenderConfig) {
-        self.draw_text_internal::<TFont,_>(config,|r|{
-            r.draw_text_centered(text);
         });
     }
 }

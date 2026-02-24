@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 use super::*;
 
 #[derive(Debug,Copy,Clone,Default,PartialEq)]
@@ -33,8 +33,34 @@ impl WimpyVec {
         y: -0.5
     };
 
+    pub fn from_axis(axis: WimpyVecAxis,value: f32) -> Self {
+        match axis {
+            WimpyVecAxis::X => Self {
+                x: value,
+                y: 0.0,
+            },
+            WimpyVecAxis::Y => Self {
+                x: 0.0,
+                y: value,
+            },
+        }
+    }
+
+    pub fn axis(self,axis: WimpyVecAxis) -> Self {
+        match axis {
+            WimpyVecAxis::X => Self {
+                x: self.x,
+                y: 0.0,
+            },
+            WimpyVecAxis::Y => Self {
+                x: 0.0,
+                y: self.y,
+            },
+        }
+    }
+
     /// (self * a) + b
-    pub fn mul_add(self, a: f32, b: Self) -> Self {
+    pub fn mul_add(self,a: f32,b: Self) -> Self {
         Self {
             x: self.x.mul_add(a,b.x),
             y: self.y.mul_add(a,b.y)
@@ -66,6 +92,13 @@ impl WimpyVec {
         Self {
             x: self.x.clamp(min,max),
             y: self.y.clamp(min,max)
+        }
+    }
+
+    pub fn reciprocal(self) -> Self {
+        Self {
+            x: 1.0 / self.x,
+            y: 1.0 / self.y
         }
     }
 
@@ -312,6 +345,32 @@ impl From<i32> for WimpyVec {
         Self {
             x: value as f32,
             y: value as f32,
+        }
+    }
+}
+
+#[derive(Default,Copy,Clone)]
+pub enum WimpyVecAxis {
+    #[default]
+    X,
+    Y
+}
+
+impl Index<WimpyVecAxis> for WimpyVec {
+    type Output = f32;
+    fn index(&self,index: WimpyVecAxis) -> &f32 {
+        match index {
+            WimpyVecAxis::X => &self.x,
+            WimpyVecAxis::Y => &self.y,
+        }
+    }
+}
+
+impl IndexMut<WimpyVecAxis> for WimpyVec {
+    fn index_mut(&mut self,index: WimpyVecAxis) -> &mut f32 {
+        match index {
+            WimpyVecAxis::X => &mut self.x,
+            WimpyVecAxis::Y => &mut self.y,
         }
     }
 }
