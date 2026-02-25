@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *},*};
 
 pub struct PlaceholderApp {
@@ -27,32 +29,44 @@ impl PlaceholderApp {
     }
 }
 
+fn map_mouse_delta_for_graph(value: f32) -> i8 {
+    const MAX_DELTA: f32 = 25.0;
+    const SCALE: f32 = 127.0 / MAX_DELTA;
+    (value.clamp(-MAX_DELTA,MAX_DELTA) * SCALE).round() as i8
+}
+
 impl<IO> WimpyApp<IO> for PlaceholderApp
 where
     IO: WimpyIO
 {
     async fn load(context: &mut WimpyContext) -> Self {
 
-        context.debug.set_render_config_top_left(PaneLayout::One {
-            items: [
-                PaneItem::Graph {
-                    width: GraphWidth::Full,
-                    layers: GraphLayers::SingleLayer {
-                        layers: [
-                            GraphLayer {
-                                color: WimpyNamedColor::Red,
-                                id: GraphChannelID::One,
-                            }
-                        ],
-                    }
-                }
-            ]
-        });
+        let render_config = context.debug.get_render_config();
+        render_config.top_left = Pane {
+            size: WimpyVec::new(500.0,160.0),
+            layout: PaneLayout::single(SubPane {
+                item: PaneItem::Graph {
+                    width: GraphWidth::Half,
+                    layers: GraphLayers::Dual { layers: [
+                        GraphLayer {
+                            id: GraphID::One,
+                            color: WimpyNamedColor::Red
+                        },
+                        GraphLayer {
+                            id: GraphID::Two,
+                            color: WimpyNamedColor::Blue
+                        },
+                    ] }
+                },
+                background_color: WimpyNamedColor::Black,
+                background_opacity: WimpyOpacity::Percent95,
+            })
+        };
 
         return Self {
             in_movement_mode: false,
             lines: Vec::with_capacity(64),
-            test_texture: context.load_image_or_default::<IO>("test-namespace/test").await,
+            test_texture: context.load_image_or_default::<IO>("wimpy/color-test").await,
             line_start: None,
             offset: WimpyVec::ZERO
         };
@@ -75,14 +89,17 @@ where
         }
 
         context.debug.set_label_text_fmt(
-            LabelChannelID::One,
+            LabelID::One,
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
         context.debug.set_label_text_fmt(
-            LabelChannelID::Two,
+            LabelID::Two,
             format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
         );
+
+        context.debug.set_graph_value(GraphID::One,map_mouse_delta_for_graph(mouse.delta().x));
+        context.debug.set_graph_value(GraphID::Two,map_mouse_delta_for_graph(mouse.delta().y));
 
         match mouse.get_active_mode() {
             input::MouseMode::Interface => {

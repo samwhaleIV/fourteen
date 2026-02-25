@@ -195,7 +195,18 @@ impl PipelineCreator<'_> {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState {
+                        color: BlendComponent {
+                            src_factor: BlendFactor::SrcAlpha,
+                            dst_factor: BlendFactor::OneMinusSrcAlpha,
+                            operation: BlendOperation::Add,
+                        },
+                        alpha: BlendComponent {
+                            src_factor: BlendFactor::One,
+                            dst_factor: BlendFactor::OneMinusSrcAlpha,
+                            operation: BlendOperation::Add,
+                        },
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })]
             }),

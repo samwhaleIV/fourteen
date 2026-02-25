@@ -127,13 +127,13 @@ impl LinesPipelinePass<'_,'_> {
     {
         let buffer = &mut self.context.pipelines.get_unique_mut().lines_pipeline.line_point_buffer;
         let start = buffer.len();
-        for line in line_points {
-            let line = line.borrow();
-            buffer.push(LineVertex {
-                position: line.point.into(),
-                color: line.color.into()
-            });
-        }
+        buffer.push_set(line_points.into_iter().map(|item|{
+            let item = item.borrow();
+            LineVertex {
+                position: item.point.into(),
+                color: item.color.into()
+            }
+        }));
         let end = buffer.len();
         if start == end {
             return;

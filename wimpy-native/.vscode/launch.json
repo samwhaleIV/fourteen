@@ -5,7 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Build Debug",
+            "name": "Debug (MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\..\\target\\debug\\wimpy-native.exe",
+            "cwd": "${workspaceFolder}\\..\\target\\debug\\",
+            "preLaunchTask": "cargo build",
+            "stopAtEntry": false,
+            "environment": [
+                {
+                    "name": "RUST_LOG",
+                    "value": "wimpy_engine,wimpy_native=TRACE"
+                }
+            ]
+        },
+        {
+            "name": "Debug (LLDB)",
             "type": "lldb",
             "request": "launch",
             "cargo": {
@@ -18,23 +33,6 @@
             "args": [],
             "env": {
                 "RUST_LOG": "wimpy_engine,wimpy_native=TRACE"
-            }
-        },
-        {
-            "name": "Build Release",
-            "type": "lldb",
-            "request": "launch",
-            "cargo": {
-                "args": [
-                    "run",
-                    "--release",
-                    "--bin=wimpy-native",
-                    "--package=wimpy-native"
-                ]
-            },
-            "args": [],
-            "env": {
-                "RUST_LOG": "wimpy_engine,wimpy_native=INFO"
             }
         },
         {

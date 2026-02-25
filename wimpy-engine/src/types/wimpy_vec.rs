@@ -8,6 +8,10 @@ pub struct WimpyVec {
 }
 
 impl WimpyVec {
+    pub fn new(x: f32,y: f32) -> Self {
+        Self { x, y }
+    }
+
     pub const ZERO: Self = Self {
         x: 0.0,
         y: 0.0
