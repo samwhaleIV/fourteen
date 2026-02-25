@@ -63,14 +63,15 @@ impl GraphicsProvider {
         log::info!("LIMITS INFO: max_uniform_buffer_size: {}",adapter.limits().max_uniform_buffer_binding_size);
 
         let surface_capabilities = config.surface.get_capabilities(&adapter);
+        log::info!("Available surface formats: {:?}",surface_capabilities.formats);
 
         /* Due to inconsistency of surface availability between WebGl and WebGPU, sRGB must be applied by our own pipelines. */
         let surface_format = surface_capabilities.formats.iter()
             .find(|f| f.is_srgb())
             .copied()
-            .unwrap_or(surface_capabilities.formats[0]);
+            .expect("srgb surface");
 
-        log::info!("Selected surface format: {:?} (Available formats: {:?})",surface_format,surface_capabilities.formats);
+        log::info!("Selected surface format: {:?}",surface_format);
 
         // if surface_format != TextureFormat::Rgba8Unorm {
         //     log::warn!("Output surface format is not Rgba8Unorm")

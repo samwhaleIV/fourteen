@@ -18,8 +18,6 @@ const LOG_CHANNEL_COUNT: usize = 5;
 const GRAPH_CHANNEL_COUNT: usize = 6;
 const LABEL_CHANNEL_COUNT: usize = 8;
 
-const RECIP_255: f32 = 1.0 / 255.0;
-
 type LogStringPool = StringPool<LOG_LINE_SIZE>;
 
 #[derive(Default)]
@@ -376,8 +374,8 @@ impl DebugShell {
 
                 let sample_count: usize = graph.width.into();
 
-                let x_step = graph.area.width() / sample_count as f32;
-                let y_step = RECIP_255 * graph.area.height();
+                let x_step = graph.area.width() / (sample_count - 1) as f32;
+                let y_step =  graph.area.height() / 255.0;
 
                 let color = channel_config.color.into();
                 let right_edge = graph.area.right();
@@ -386,7 +384,7 @@ impl DebugShell {
                     LinePoint {
                         point: WimpyVec {
                             x: (index as f32).mul_add(-x_step,right_edge),
-                            y: (*value as f32 + 128.0).mul_add(y_step,graph.area.y())
+                            y: (*value as f32 + 127.5).mul_add(y_step,graph.area.y())
                         },
                         color,
                     }
@@ -428,7 +426,7 @@ impl DebugShell {
         {
             let tl_size = self.render_config.top_left.size;
             self.buffers.queue_pane(self.render_config.top_left.layout,TextDirection::LeftToRight,WimpyRect {
-                position: WimpyVec::ZERO,
+                position: WimpyVec::from(10.0),
                 size: tl_size,
             });
         }

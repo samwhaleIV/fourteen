@@ -43,7 +43,7 @@ where
 
         let render_config = context.debug.get_render_config();
         render_config.top_left = Pane {
-            size: WimpyVec::new(500.0,160.0),
+            size: WimpyVec::new(400.0,400.0),
             layout: PaneLayout::single(SubPane {
                 item: PaneItem::Graph {
                     width: GraphWidth::Half,
@@ -58,8 +58,8 @@ where
                         },
                     ] }
                 },
-                background_color: WimpyNamedColor::Black,
-                background_opacity: WimpyOpacity::Percent95,
+                background_color: WimpyNamedColor::Gray,
+                background_opacity: WimpyOpacity::Percent90,
             })
         };
 
