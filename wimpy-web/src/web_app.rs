@@ -86,13 +86,17 @@ where
         let gamepad_manager = GamepadManager::new();
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
-            backends: wgpu::Backends::BROWSER_WEBGPU, // | wgpu::Backends::GL
+            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
             ..InstanceDescriptor::default()
         });
+
         let surface_target = SurfaceTarget::Canvas(canvas);
         let surface = match instance.create_surface(surface_target) {
             Ok(surface) => surface,
-            Err(_) => return Err(WebAppError::SurfaceCreationFailure),
+            Err(error) => {
+                log::error!("{:?}",error);
+                return Err(WebAppError::SurfaceCreationFailure)
+            },
         };
 
         let graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {

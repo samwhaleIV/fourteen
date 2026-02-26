@@ -27,10 +27,10 @@ impl GenericTestApp {
     }
 }
 
-fn map_mouse_delta_for_graph(value: f32) -> i8 {
-    const MAX_DELTA: f32 = 25.0;
-    const SCALE: f32 = 127.0 / MAX_DELTA;
-    (value.clamp(-MAX_DELTA,MAX_DELTA) * SCALE).round() as i8
+const MAX_DELTA_INV: f32 = 1.0 / 25.0;
+
+fn delta_norm(value: f32) -> f32 {
+    (value * MAX_DELTA_INV).clamp(-1.0,1.0)
 }
 
 impl<IO> WimpyApp<IO> for GenericTestApp
@@ -41,7 +41,7 @@ where
 
         let render_config = context.debug.get_render_config();
         render_config.top_right = Pane {
-            size: WimpyVec::new(175.0,75.0),
+            size: WimpyVec::new(300.0,240.0),
             layout: PaneLayout::single(SubPane {
                 item: PaneItem::Graph {
                     width: GraphWidth::Quarter,
@@ -56,8 +56,8 @@ where
                         },
                     ] }
                 },
-                background_color: WimpyNamedColor::Gray,
-                background_opacity: WimpyOpacity::Opaque,
+                background_color: WimpyNamedColor::Black,
+                background_opacity: WimpyOpacity::Percent95,
             })
         };
 
@@ -96,8 +96,8 @@ where
             format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
         );
 
-        context.debug.set_graph_value(GraphID::One,map_mouse_delta_for_graph(mouse.delta().x));
-        context.debug.set_graph_value(GraphID::Two,map_mouse_delta_for_graph(mouse.delta().y));
+        context.debug.set_graph_value(GraphID::One,delta_norm(mouse.delta().x));
+        context.debug.set_graph_value(GraphID::Two,delta_norm(mouse.delta().y));
 
         match mouse.get_active_mode() {
             input::MouseMode::Interface => {
@@ -129,7 +129,7 @@ where
             },
         };
 
-        let Some(mut output) = context.graphics.create_output_builder(WimpyNamedColor::Black) else {
+        let Some(mut output) = context.graphics.create_output_builder(WimpyColorSrgb { r: 240, g: 240, b: 240, a: 255 }) else {
             return;
         };
 

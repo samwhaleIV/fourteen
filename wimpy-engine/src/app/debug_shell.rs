@@ -18,6 +18,12 @@ const LOG_CHANNEL_COUNT: usize = 5;
 const GRAPH_CHANNEL_COUNT: usize = 6;
 const LABEL_CHANNEL_COUNT: usize = 8;
 
+const INV_255: f32 = 1.0 / 255.0;
+
+fn norm_to_i8(value: f32) -> i8 {
+    (value * 127.5 - 0.5).round() as i8
+}
+
 type LogStringPool = StringPool<LOG_LINE_SIZE>;
 
 #[derive(Default)]
@@ -341,9 +347,10 @@ impl DebugShell {
         log_buffer.push(&mut self.string_pool,text);
     }
 
-    pub fn set_graph_value(&mut self,channel: GraphID,value: i8) {
+    /// Expected value is in range: -1.0 to 1.0
+    pub fn set_graph_value(&mut self,channel: GraphID,value: f32) {
         let graph_buffer = self.graph_buffers.get_mut(channel);
-        graph_buffer.push(value);
+        graph_buffer.push(norm_to_i8(value));
     }
 
     pub fn set_label_text(&mut self,channel: LabelID,value: &str) {
@@ -371,20 +378,20 @@ impl DebugShell {
         for graph in &self.buffers.graph_commands {
             for channel_config in graph.layers.channels() {
                 let buffer = &self.graph_buffers.get(channel_config.id).value;
-
                 let sample_count: usize = graph.width.into();
-
-                let x_step = graph.area.width() / (sample_count - 1) as f32;
-                let y_step =  graph.area.height() / 255.0;
-
                 let color = channel_config.color.into();
-                let right_edge = graph.area.right();
+
+                let x_scale = graph.area.width() / (sample_count - 1) as f32;
+                let x_offset = graph.area.right();
+
+                let y_scale = (graph.area.height() - 1.0) * INV_255;
+                let y_offset = graph.area.y() + 0.5 + 127.0 * y_scale;
 
                 line_pass.draw(buffer.iter().take(sample_count).enumerate().map(|(index,value)|{
                     LinePoint {
                         point: WimpyVec {
-                            x: (index as f32).mul_add(-x_step,right_edge),
-                            y: (*value as f32 + 127.5).mul_add(y_step,graph.area.y())
+                            x: (index as f32).mul_add(-x_scale,x_offset),
+                            y: (*value as f32).mul_add(-y_scale,y_offset)
                         },
                         color,
                     }

@@ -23,8 +23,6 @@ use input::{
 
 use wam::*;
 
-use debug_shell::DebugShell;
-
 use crate::app::graphics::{
     GraphicsContextConfig,
     GraphicsProvider,
