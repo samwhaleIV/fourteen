@@ -1,6 +1,6 @@
 use wgpu::*;
 
-use crate::UWimpyPoint;
+use crate::{UWimpyPoint, app::graphics::constants::PREFER_SRGB_OUTPUT_SURFACE};
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,
@@ -8,6 +8,7 @@ pub struct GraphicsProvider {
     queue: Queue,
     config: SurfaceConfiguration,
     max_texture_dimension: u32,
+    output_view_format: TextureFormat,
     max_texture_power_of_two: u32
 }
 
@@ -65,27 +66,44 @@ impl GraphicsProvider {
         let surface_capabilities = config.surface.get_capabilities(&adapter);
         log::info!("Available surface formats: {:?}",surface_capabilities.formats);
 
-        /* Due to inconsistency of surface availability between WebGl and WebGPU, sRGB must be applied by our own pipelines. */
-        let surface_format = surface_capabilities.formats.iter()
-            .find(|f| f.is_srgb())
+        let primary_format = surface_capabilities.formats.iter()
+            .find(|f| f.is_srgb() == PREFER_SRGB_OUTPUT_SURFACE)
             .copied()
-            .expect("srgb surface");
+            .unwrap_or(surface_capabilities.formats[0]);
 
-        log::info!("Selected surface format: {:?}",surface_format);
+        log::info!("Selected surface format: {:?}",primary_format);
 
-        // if surface_format != TextureFormat::Rgba8Unorm {
-        //     log::warn!("Output surface format is not Rgba8Unorm")
-        // }
+        let mut view_formats = Vec::with_capacity(1);
+
+        let desired_format: TextureFormat = {
+            if PREFER_SRGB_OUTPUT_SURFACE {
+                if primary_format.is_srgb() {
+                    primary_format
+                } else {
+                    let desired_format = primary_format.add_srgb_suffix();
+                    view_formats.push(desired_format);
+                    desired_format
+                }
+            } else {
+                if !primary_format.is_srgb() {
+                    primary_format
+                } else {
+                    let desired_format = primary_format.remove_srgb_suffix();
+                    view_formats.push(desired_format);
+                    desired_format
+                }
+            }
+        };
 
         let surface_config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
+            format: primary_format,
             width: 0,
             height: 0,
             present_mode: PresentMode::AutoVsync,
             alpha_mode: CompositeAlphaMode::Opaque,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 3
+            view_formats,
+            desired_maximum_frame_latency: 2
         };
 
         let max_texture_power_of_two = prev_power_of_two(max_texture_dimension);
@@ -96,7 +114,8 @@ impl GraphicsProvider {
             queue,
             config: surface_config,
             max_texture_dimension,
-            max_texture_power_of_two
+            max_texture_power_of_two,
+            output_view_format: desired_format,
         });
     }
 
@@ -128,11 +147,14 @@ impl GraphicsProvider {
     pub fn get_queue(&self) -> &Queue {
         return &self.queue;
     }
-
-    pub fn get_output_format(&self) -> TextureFormat {
-        return self.config.format;
-    }
     
+    /// Not the format of the surface itself, but rather, a view of it.
+    /// 
+    /// On most platforms, these will be the same. However, in WebGPU, concessions may take place.
+    pub fn get_output_view_format(&self) -> TextureFormat {
+        return self.output_view_format;
+    }
+
     pub fn get_output_surface(&self) -> Result<SurfaceTexture,SurfaceError> {
        self.surface.get_current_texture()
     }

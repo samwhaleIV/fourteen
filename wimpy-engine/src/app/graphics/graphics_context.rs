@@ -39,43 +39,6 @@ pub struct RenderPassContext<'a> {
     pub graphics_provider: &'a GraphicsProvider
 }
 
-impl RenderPassContext<'_> {
-    pub fn get_shared(&self) -> &SharedPipeline {
-        self.pipelines.get_shared()
-    }
-    pub fn get_shared_mut(&mut self) -> &mut SharedPipeline {
-        self.pipelines.get_shared_mut()
-    }
-    pub fn get_3d_pipeline(&self) -> &Pipeline3D {
-        &self.pipelines.get_unique().pipeline_3d
-    }
-    pub fn get_3d_pipeline_mut(&mut self) -> &mut Pipeline3D {
-        &mut self.pipelines.get_unique_mut().pipeline_3d
-    }
-    pub fn get_2d_pipeline(&self) -> &Pipeline2D {
-        &self.pipelines.get_unique().pipeline_2d
-    }
-    pub fn get_2d_pipeline_mut(&mut self) -> &mut Pipeline2D {
-        &mut self.pipelines.get_unique_mut().pipeline_2d
-    }
-    pub fn get_text_pipeline(&self) -> &TextPipeline {
-        &self.pipelines.get_unique().text_pipeline
-    }
-    pub fn get_text_pipeline_mut(&mut self) -> &mut TextPipeline {
-        &mut self.pipelines.get_unique_mut().text_pipeline
-    }
-    pub fn get_line_pipeline(&self) -> &LinesPipeline {
-        &self.pipelines.get_unique().lines_pipeline
-    }
-    pub fn get_line_pipeline_mut(&mut self) -> &mut LinesPipeline {
-        &mut self.pipelines.get_unique_mut().lines_pipeline
-    }
-    pub fn set_texture_bind_group(&mut self,index: u32,render_pass: &mut RenderPass,bind_group_identity: &BindGroupCacheIdentity) {
-        let bind_group = self.bind_groups.get(self.graphics_provider.get_device(),bind_group_identity);
-        render_pass.set_bind_group(index,bind_group,&[]);
-    }
-}
-
 pub enum AvailableControls {
     StartOutputFrame,
     RenderPassCreation
@@ -96,13 +59,13 @@ pub struct EngineTextures {
 }
 
 pub struct GraphicsContext {
-    graphics_provider: GraphicsProvider,
-    pipelines: RenderPipelines,
-    frame_cache: FrameCache,
-    model_cache: ModelCache,
-    bind_group_cache: BindGroupCache,
-    texture_id_generator: TextureIdentityGenerator,
-    engine_textures: EngineTextures
+    pub graphics_provider: GraphicsProvider,
+    pub pipelines: RenderPipelines,
+    pub frame_cache: FrameCache,
+    pub model_cache: ModelCache,
+    pub bind_groups: BindGroupCache,
+    pub texture_id_generator: TextureIdentityGenerator,
+    pub engine_textures: EngineTextures
 }
 
 pub trait GraphicsContextConfig {
@@ -158,7 +121,7 @@ impl GraphicsContext {
             model_cache,
             frame_cache,
             engine_textures,
-            bind_group_cache,
+            bind_groups: bind_group_cache,
         };
 
         graphics_context.load_engine_textures::<IO>(asset_manager).await;
@@ -293,35 +256,46 @@ impl GraphicsContext {
         return self.engine_textures.missing.clone();
     }
 
-    pub fn create_output_builder<'a>(&'a mut self,clear_color: WimpyColor) -> Result<OutputBuilderContext<'a>,SurfaceError> {
-        let surface = self.graphics_provider.get_output_surface()?;
+    pub fn create_output_builder<'a>(&'a mut self,color: impl WimpyColor) -> Option<OutputBuilderContext<'a>> {
+        let output_surface = match self.graphics_provider.get_output_surface() {
+            Ok(value) => value,
+            Err(error) => {
+                log::error!("Could not create output surface: {:?}",error);
+                return None;
+            },
+        };
 
         // Note: size is already validated by the graphics provider
-        let size: UWimpyPoint = [surface.texture.width(),surface.texture.height()].into();
+        let size: UWimpyPoint = [output_surface.texture.width(),output_surface.texture.height()].into();
 
-        let texture_container = TextureContainer::create_output(&surface,size);
-        let cache_reference = self.frame_cache.insert_keyless(texture_container);
-
-        let output_frame = FrameFactory::create_output(
-            size,
-            cache_reference,
-            clear_color.into()
+        let texture_container = TextureContainer::create_output(
+            &output_surface,
+            self.graphics_provider.get_output_view_format(),
+            size
         );
+
+        let cache_reference = self.frame_cache.insert_keyless(texture_container);
 
         let encoder = self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
             label: Some("Render Encoder")
         });
 
+        let frame = FrameFactory::create_output(
+            size,
+            cache_reference,
+            color.into_linear().into()
+        );
+
         let output_builder = OutputBuilderContext {
-            frame: output_frame,
             builder: OutputBuilder {
-                output_surface: surface,
                 graphics_context: self,
-                encoder
+                encoder,
+                output_surface
             },
+            frame,
         };
 
-        return Ok(output_builder);
+        return Some(output_builder);
     }
 }
 
@@ -400,7 +374,7 @@ impl OutputBuilder<'_> {
             frame_cache: &self.graphics_context.frame_cache,
             pipelines: &mut self.graphics_context.pipelines,
             textures: &self.graphics_context.engine_textures,
-            bind_groups: &mut self.graphics_context.bind_group_cache,
+            bind_groups: &mut self.graphics_context.bind_groups,
             graphics_provider: &self.graphics_context.graphics_provider,
         };
 

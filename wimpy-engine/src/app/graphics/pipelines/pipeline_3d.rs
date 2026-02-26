@@ -2,11 +2,11 @@ use cgmath::{Matrix4,SquareMatrix};
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor, app::{graphics::{constants::*, *},wam::ModelData}};
+use crate::{WimpyColorLinear, app::{graphics::{constants::*, *},wam::ModelData}};
 use super::core::*;
 
 pub struct Pipeline3D {
-    pipelines: PipelineVariants,
+    pipelines: PipelineSet,
     instance_buffer: DoubleBuffer<ModelInstance>,
 }
 
@@ -60,7 +60,7 @@ impl Pipeline3D {
             },
             label: "Pipeline 3D",
         };
-        let pipelines = pipeline_creator.create_variants();
+        let pipelines = pipeline_creator.create_pipeline_set();
 
         let instance_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
@@ -107,7 +107,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
         context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let pipeline_3d = context.get_3d_pipeline();
-        render_pass.set_pipeline(pipeline_3d.pipelines.select(frame));
+        render_pass.set_pipeline(&pipeline_3d.pipelines.select(frame));
 
         render_pass.set_index_buffer(
             context.model_cache.get_index_buffer_slice(),
@@ -136,16 +136,16 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
 #[derive(Copy,Clone)]
 pub struct DrawData3D {
     pub transform: Matrix4<f32>,
-    pub diffuse_color: WimpyColor,
-    pub lightmap_color: WimpyColor,
+    pub diffuse_color: WimpyColorLinear,
+    pub lightmap_color: WimpyColorLinear,
 }
 
 impl Default for DrawData3D {
     fn default() -> Self {
         Self {
             transform: Matrix4::identity(),
-            diffuse_color: WimpyColor::WHITE,
-            lightmap_color: WimpyColor::WHITE,
+            diffuse_color: WimpyColorLinear::WHITE,
+            lightmap_color: WimpyColorLinear::WHITE,
         }
     }
 }
@@ -277,8 +277,8 @@ pub struct ModelInstance {
     pub transform_1: [f32;4],
     pub transform_2: [f32;4],
     pub transform_3: [f32;4],
-    pub diffuse_color: [u8;4],
-    pub lightmap_color: [u8;4]
+    pub diffuse_color: [f32;4],
+    pub lightmap_color: [f32;4]
 }
 
 #[non_exhaustive]
@@ -318,8 +318,8 @@ impl ModelInstance {
         ATTR::TRANSFORM_1 => Float32x4,
         ATTR::TRANSFORM_2 => Float32x4,
         ATTR::TRANSFORM_3 => Float32x4,
-        ATTR::DIFFUSE_COLOR => Unorm8x4,
-        ATTR::LIGHTMAP_COLOR => Unorm8x4,
+        ATTR::DIFFUSE_COLOR => Float32x4,
+        ATTR::LIGHTMAP_COLOR => Float32x4,
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {

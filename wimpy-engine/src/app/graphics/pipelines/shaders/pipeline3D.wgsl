@@ -77,12 +77,7 @@ fn get_fragment_color(fragment: VertexOutput) -> vec4<f32> {
     return diffuse_sample * lightmap_sampler;
 }
 
-@fragment fn fs_no_srgb(fragment: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
     let color = get_fragment_color(fragment);
     return color;
-}
-
-@fragment fn fs_to_srgb(fragment: VertexOutput) -> @location(0) vec4<f32> {
-    let color = get_fragment_color(fragment);
-    return linear_to_srgb(color);
 }

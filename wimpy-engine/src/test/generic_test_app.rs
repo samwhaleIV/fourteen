@@ -1,8 +1,6 @@
-use std::ops::Mul;
-
 use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *},*};
 
-pub struct PlaceholderApp {
+pub struct GenericTestApp {
     test_texture: TextureFrame,
     line_start: Option<WimpyVec>,
     lines: Vec<[LinePoint;2]>,
@@ -10,7 +8,7 @@ pub struct PlaceholderApp {
     in_movement_mode: bool
 }
 
-impl PlaceholderApp {
+impl GenericTestApp {
     fn pressed_enter(&mut self,context: &mut WimpyContext) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
@@ -35,18 +33,18 @@ fn map_mouse_delta_for_graph(value: f32) -> i8 {
     (value.clamp(-MAX_DELTA,MAX_DELTA) * SCALE).round() as i8
 }
 
-impl<IO> WimpyApp<IO> for PlaceholderApp
+impl<IO> WimpyApp<IO> for GenericTestApp
 where
     IO: WimpyIO
 {
     async fn load(context: &mut WimpyContext) -> Self {
 
         let render_config = context.debug.get_render_config();
-        render_config.top_left = Pane {
-            size: WimpyVec::new(400.0,400.0),
+        render_config.top_right = Pane {
+            size: WimpyVec::new(175.0,75.0),
             layout: PaneLayout::single(SubPane {
                 item: PaneItem::Graph {
-                    width: GraphWidth::Half,
+                    width: GraphWidth::Quarter,
                     layers: GraphLayers::Dual { layers: [
                         GraphLayer {
                             id: GraphID::One,
@@ -59,7 +57,7 @@ where
                     ] }
                 },
                 background_color: WimpyNamedColor::Gray,
-                background_opacity: WimpyOpacity::Percent90,
+                background_opacity: WimpyOpacity::Opaque,
             })
         };
 
@@ -115,11 +113,11 @@ where
                             self.lines.push([
                                 LinePoint {
                                     point: start,
-                                    color: WimpyColor::RED,
+                                    color: WimpyNamedColor::Red,
                                 },
                                 LinePoint {
                                     point: end,
-                                    color: WimpyColor::GREEN,
+                                    color: WimpyNamedColor::Green,
                                 }
                             ])
                         }
@@ -131,12 +129,8 @@ where
             },
         };
 
-        let mut output = match context.graphics.create_output_builder(WimpyColor::BLACK) {
-            Ok(value) => value,
-            Err(surface_error) => {
-                log::error!("Could not create output surface: {:?}",surface_error);
-                return;
-            },
+        let Some(mut output) = context.graphics.create_output_builder(WimpyNamedColor::Black) else {
+            return;
         };
 
         'output_pass: {
@@ -149,12 +143,12 @@ where
 
             let layout = WimpyLayout {
                 x: LayoutDimension {
-                    position: Position::center_of_parent(),
+                    position: 5.into(),
                     size: texture.width().into(),
                     size_offset: Size::from(0),
                 },
                 y: LayoutDimension {
-                    position: Position::center_of_parent(),
+                    position: 5.into(),
                     size: texture.height().into(),
                     size_offset: Size::from(0),
                 },
@@ -168,9 +162,16 @@ where
             pipeline_pass_2d.draw(&texture,&[DrawData2D {
                 destination,
                 source: WimpyRect::ONE,
-                color: WimpyColor::WHITE,
+                color: WimpyColorLinear::WHITE,
                 rotation: 0.0,
             }]);
+
+            // pipeline_pass_2d.draw_untextured(&[DrawData2D {
+            //     destination,
+            //     source: WimpyRect::ONE,
+            //     color: WimpyColor::from((WimpyNamedColor::Red,WimpyOpacity::Percent50)),
+            //     rotation: 0.0,
+            // }]);
 
             context.debug.render(&mut render_pass);
 
@@ -182,17 +183,4 @@ where
 
         output.present_output_surface();
     }
-}
-
-pub struct PlaceholderConfig;
-
-impl GraphicsContextConfig for PlaceholderConfig {
-    // If a vertex is 32 bytes, there is 31,250 vertices per megabyte.
-    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize = 16384;
-    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize = 16384;
-    const UNIFORM_BUFFER_SIZE: usize = 16384;
-    const INSTANCE_BUFFER_SIZE_2D: usize = 16384;
-    const INSTANCE_BUFFER_SIZE_3D: usize = 16384;
-    const TEXT_PIPELINE_BUFFER_SIZE: usize = 16384;
-    const LINE_BUFFER_SIZE: usize = 16384;
 }

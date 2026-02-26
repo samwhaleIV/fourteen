@@ -11,7 +11,8 @@ pub const UNIFORM_BIND_GROUP_ENTRY_INDEX: u32 =  0;
 pub const DEFAULT_DOUBLE_BUFFER_SIZE: usize = 1024;
 pub const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
 
-pub const INTERNAL_RENDER_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub const PREFER_SRGB_OUTPUT_SURFACE: bool = true;
+pub const INTERNAL_RENDER_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb; // We can bump this up in the future
 
 pub mod assets {
     pub const FONT_CLASSIC:             &'static str = "wimpy/font/classic";

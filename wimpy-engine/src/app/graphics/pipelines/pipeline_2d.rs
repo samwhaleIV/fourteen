@@ -3,12 +3,12 @@ use wgpu::util::{BufferInitDescriptor,DeviceExt};
 use std::borrow::Borrow;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor, WimpyRect};
+use crate::{WimpyColorLinear,WimpyRect};
 use crate::app::graphics::{*,constants::*};
 use super::core::*;
 
 pub struct Pipeline2D {
-    pipelines: PipelineVariants,
+    pipelines: PipelineSet,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<QuadInstance>,
@@ -68,7 +68,7 @@ impl Pipeline2D {
             },
             label: "Pipeline 2D",
         };
-        let pipelines = pipeline_creator.create_variants();
+        let pipelines = pipeline_creator.create_pipeline_set();
     /*
         Triangle list should generate 0-1-2 2-1-3 in CCW
 
@@ -132,7 +132,7 @@ pub struct Pipeline2DPass<'a,'frame> {
 pub struct DrawData2D {
     pub destination: WimpyRect,
     pub source: WimpyRect,
-    pub color: WimpyColor,
+    pub color: WimpyColorLinear,
     pub rotation: f32
 }
 
@@ -141,7 +141,7 @@ impl Default for DrawData2D {
         Self {
             destination: WimpyRect::ONE,
             source: WimpyRect::ONE,
-            color: WimpyColor::WHITE,
+            color: WimpyColorLinear::WHITE,
             rotation: 0.0
         }
     }
@@ -164,7 +164,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
 
-        render_pass.set_pipeline(pipeline_2d.pipelines.select(frame));
+        render_pass.set_pipeline(&pipeline_2d.pipelines.select(frame));
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),
@@ -295,7 +295,7 @@ pub struct QuadInstance {
     pub size: [f32;2],
     pub uv_position: [f32;2],
     pub uv_size: [f32;2],
-    pub color: [u8;4],
+    pub color: [f32;4],
     pub rotation: f32,
 }
 
@@ -332,7 +332,7 @@ impl QuadInstance {
         ATTR::SIZE => Float32x2,
         ATTR::UV_POS => Float32x2,
         ATTR::UV_SIZE => Float32x2,
-        ATTR::COLOR => Unorm8x4,
+        ATTR::COLOR => Float32x4,
         ATTR::ROTATION => Float32,
     ];
 

@@ -25,7 +25,7 @@ fn main() {
 
         let manifest_path = Path::new(MANIFEST_PATH);
 
-        let _ = match web_app::WebApp::<PlaceholderApp>::run::<PlaceholderConfig>(Some(manifest_path),web_app::ResizeConfig::FitWindow).await {
+        let _ = match web_app::WebApp::<AlphaCompositeTest>::run::<TestConfig>(Some(manifest_path),web_app::ResizeConfig::FitWindow).await {
             Ok(app) => app,
             Err(error) => {
                 log::error!("Could not create wimpy web app: {:?}",error);

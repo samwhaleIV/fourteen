@@ -1,11 +1,11 @@
 use wgpu::*;
 use std::{borrow::Borrow, ops::Range};
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor, WimpyVec, app::graphics::{constants::*, *}};
+use crate::{WimpyColor, WimpyNamedColor, WimpyVec, app::graphics::{constants::*, *}};
 use super::core::*;
 
 pub struct LinesPipeline {
-    pipelines: PipelineVariants,
+    pipelines: PipelineSet,
     line_point_buffer: DoubleBuffer<LineVertex>,
 }
 
@@ -55,7 +55,7 @@ impl LinesPipeline {
             },
             label: "Pipeline Lines",
         };
-        let pipelines = pipeline_creator.create_variants();
+        let pipelines = pipeline_creator.create_pipeline_set();
 
         let line_point_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
@@ -95,7 +95,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
     ) -> Self {
         let lines_pipeline = context.get_line_pipeline();
 
-        render_pass.set_pipeline(lines_pipeline.pipelines.select(frame));
+        render_pass.set_pipeline(&lines_pipeline.pipelines.select(frame));
 
         render_pass.set_vertex_buffer(
             VERTEX_BUFFER_INDEX,
@@ -131,7 +131,7 @@ impl LinesPipelinePass<'_,'_> {
             let item = item.borrow();
             LineVertex {
                 position: item.point.into(),
-                color: item.color.into()
+                color: item.color.into_linear().into()
             }
         }));
         let end = buffer.len();
@@ -147,14 +147,14 @@ impl LinesPipelinePass<'_,'_> {
 
 pub struct LinePoint {
     pub point: WimpyVec,
-    pub color: WimpyColor
+    pub color: WimpyNamedColor
 }
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct LineVertex {
     pub position: [f32;2],
-    pub color: [u8;4]
+    pub color: [f32;4]
 }
 
 #[non_exhaustive]
@@ -168,7 +168,7 @@ impl ATTR {
 impl LineVertex {
     const ATTRS: [VertexAttribute;2] = vertex_attr_array![
         ATTR::VERTEX_POSITION => Float32x2,
-        ATTR::VERTEX_COLOR => Unorm8x4
+        ATTR::VERTEX_COLOR => Float32x4
     ];
 
     pub fn get_buffer_layout<'a>() -> VertexBufferLayout<'a> {

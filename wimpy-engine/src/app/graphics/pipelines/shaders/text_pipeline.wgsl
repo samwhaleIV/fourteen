@@ -36,21 +36,7 @@ struct VertexOutput {
 @group(0) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1) var s_diffuse: sampler;
 
-fn linear_to_srgb(linear: vec4<f32>) -> vec4<f32> {
-    let color_linear = linear.rgb;
-    let selector = ceil(color_linear - vec3<f32>(0.0031308));
-    let under = 12.92 * color_linear;
-    let over = 1.055 * pow(color_linear,vec3<f32>(1.0/2.4)) - 0.055;
-    let result = mix(under,over,selector);
-    return vec4<f32>(result,linear.a);
-}
-
-@fragment fn fs_no_srgb(fragment: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(t_diffuse,s_diffuse,fragment.uv) * fragment.color;
     return color;
-}
-
-@fragment fn fs_to_srgb(fragment: VertexOutput) -> @location(0) vec4<f32> {
-    let color = textureSample(t_diffuse,s_diffuse,fragment.uv) * fragment.color;
-    return linear_to_srgb(color);
 }

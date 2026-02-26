@@ -3,7 +3,7 @@ use wgpu::util::{BufferInitDescriptor,DeviceExt};
 use std::marker::PhantomData;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor,WimpyRect,WimpyVec};
+use crate::{WimpyColor, WimpyNamedColor, WimpyRect, WimpyVec};
 use crate::app::graphics::{*,constants::*};
 use super::core::*;
 
@@ -14,7 +14,7 @@ const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 pub struct TextPipeline {
-    pipelines: PipelineVariants,
+    pipelines: PipelineSet,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<GlyphInstance>,
@@ -95,7 +95,7 @@ impl TextPipeline {
             },
             label: "Text Pipeline",
         };
-        let pipelines = pipeline_creator.create_variants();
+        let pipelines = pipeline_creator.create_pipeline_set();
 
         let vertices = [  
             GlyphVertex { position: [-0.5,-0.5] },
@@ -150,7 +150,7 @@ pub struct PipelineTextPass<'a,'frame,TFont> {
 
 pub struct TextLine<'a> {
     pub text: &'a str,
-    pub color: WimpyColor
+    pub color: WimpyNamedColor
 }
 
 #[derive(Clone,Copy)]
@@ -170,7 +170,7 @@ impl TextDirection {
 
 pub struct TextRenderConfig {
     pub position: WimpyVec,
-    pub color: WimpyColor,
+    pub color: WimpyNamedColor,
     pub scale: f32,
     pub line_height_scale: f32,
     pub word_seperator: char,
@@ -200,7 +200,7 @@ where
     ) -> Self {
         let text_pipeline = context.get_text_pipeline();
 
-        render_pass.set_pipeline(text_pipeline.pipelines.select(frame));
+        render_pass.set_pipeline(&text_pipeline.pipelines.select(frame));
 
         render_pass.set_index_buffer(
             text_pipeline.index_buffer.slice(..),
@@ -271,7 +271,7 @@ struct TextRenderer<'a,TFont> {
     letter_spacing: f32,
     line_height: f32,
     pos: WimpyVec,
-    color: WimpyColor,
+    color: WimpyNamedColor,
     word_seperator: char,
     uv_scalar: WimpyVec,
     buffer: &'a mut DoubleBuffer<GlyphInstance>,
@@ -401,7 +401,7 @@ where
             size: dst.size.into(),
             uv_position: src.position.into(),
             uv_size: src.size.into(),
-            color: self.color.into(),
+            color: self.color.into_linear().into(),
         };
 
         self.buffer.push(glyph_instance);
@@ -464,7 +464,7 @@ pub struct GlyphInstance {
     pub size: [f32;2],
     pub uv_position: [f32;2],
     pub uv_size: [f32;2],
-    pub color: [u8;4],
+    pub color: [f32;4],
 }
 
 #[non_exhaustive]
@@ -499,7 +499,7 @@ impl GlyphInstance {
         ATTR::SIZE => Float32x2,
         ATTR::UV_POS => Float32x2,
         ATTR::UV_SIZE => Float32x2,
-        ATTR::COLOR => Unorm8x4,
+        ATTR::COLOR => Float32x4,
     ];
 
     pub fn get_buffer_layout<'a>() -> VertexBufferLayout<'a> {

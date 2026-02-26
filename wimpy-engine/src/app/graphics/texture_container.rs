@@ -184,11 +184,14 @@ impl TextureContainer {
 
     pub fn create_output(
         surface: &SurfaceTexture,
-        size: UWimpyPoint // Externally validated (in graphics provider)
+        texture_view_format: TextureFormat,
+        size: UWimpyPoint // Externally validated (in graphics context)
     ) -> TextureContainer {
-        let view = surface.texture.create_view(
-            &wgpu::TextureViewDescriptor::default()
-        );
+        let view = surface.texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Output Surface Texture View"),
+            format: Some(texture_view_format),
+            ..Default::default()
+        });
         return TextureContainer {
             identity: TextureContainerIdentity::Anonymous,
             size: Extent3d {

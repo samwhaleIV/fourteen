@@ -412,7 +412,7 @@ impl DebugShell {
             DrawData2D {
                 destination: command.area,
                 source: WimpyRect::ONE,
-                color: (command.background_color,command.background_opacity).into(),
+                color: (command.background_color,command.background_opacity).into_linear(),
                 rotation: 0.0,
             }
         }));
@@ -426,7 +426,7 @@ impl DebugShell {
         {
             let tl_size = self.render_config.top_left.size;
             self.buffers.queue_pane(self.render_config.top_left.layout,TextDirection::LeftToRight,WimpyRect {
-                position: WimpyVec::from(10.0),
+                position: WimpyVec::ZERO,
                 size: tl_size,
             });
         }

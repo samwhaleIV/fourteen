@@ -72,6 +72,24 @@ impl From<u32> for Size {
     }
 }
 
+impl From<f32> for Position {
+    fn from(value: f32) -> Self {
+        Self {
+            value: value.into(),
+            alignment: Align::Absolute,
+        }
+    }
+}
+
+impl From<u32> for Position {
+    fn from(value: u32) -> Self {
+        Self {
+            value: value.into(),
+            alignment: Align::Absolute,
+        }
+    }
+}
+
 impl Size {
     pub fn of_parent_height(value: f32) -> Self {
         Self {

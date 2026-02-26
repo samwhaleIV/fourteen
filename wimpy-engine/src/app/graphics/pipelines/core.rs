@@ -143,11 +143,6 @@ impl TransformUniform {
     }
 }
 
-enum SrgbStrategy {
-    None,
-    LinearToSrgb
-}
-
 pub struct PipelineCreator<'a> {
     pub graphics_provider: &'a GraphicsProvider,
     pub render_pipeline_layout: &'a PipelineLayout,
@@ -157,24 +152,9 @@ pub struct PipelineCreator<'a> {
     pub label: &'static str,
 }
 
-pub struct PipelineVariants {
-    pub output_surface: RenderPipeline,
-    pub render_target: RenderPipeline
-}
-
-impl PipelineVariants {
-    pub fn select(&self,frame: &impl MutableFrame) -> &RenderPipeline {
-        return match frame.is_output_surface() {
-            true => &self.output_surface,
-            false => &self.render_target,
-        }
-    }
-}
-
 impl PipelineCreator<'_> {
     fn create_pipeline(
         &self,
-        srgb_strategy: SrgbStrategy,
         texture_format: TextureFormat
     ) -> RenderPipeline {
         let pipeline = self.graphics_provider.get_device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -188,13 +168,10 @@ impl PipelineCreator<'_> {
             },
             fragment: Some(wgpu::FragmentState {
                 module: self.shader,
-                entry_point: Some(match srgb_strategy {
-                    SrgbStrategy::LinearToSrgb => "fs_to_srgb",
-                    SrgbStrategy::None => "fs_no_srgb",
-                }),
+                entry_point: Some("fs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format,
+                    format: texture_format, // Match to the texture view format, not the underlying storage format of the texture/surface
                     blend: Some(wgpu::BlendState {
                         color: BlendComponent {
                             src_factor: BlendFactor::SrcAlpha,
@@ -223,25 +200,29 @@ impl PipelineCreator<'_> {
         });
         return pipeline;
     }
-    pub fn create_variants(&self) -> PipelineVariants {
-        let render_target = self.create_pipeline(
-            SrgbStrategy::None,
-            INTERNAL_RENDER_TARGET_FORMAT,
-        );
 
-        let output_surface_format = self.graphics_provider.get_output_format();
+    pub fn create_pipeline_set(&self) -> PipelineSet {
+        PipelineSet {
+            internal_target_pipeline: self.create_pipeline(
+                INTERNAL_RENDER_TARGET_FORMAT
+            ),
+            output_surface_pipeline: self.create_pipeline(
+                self.graphics_provider.get_output_view_format()
+            ),
+        }
+    }
+}
 
-        let output_surface = self.create_pipeline(
-            match output_surface_format.is_srgb() {
-                true => SrgbStrategy::None,
-                false => SrgbStrategy::LinearToSrgb,
-            },
-            output_surface_format
-        );
+pub struct PipelineSet {
+    internal_target_pipeline: RenderPipeline,
+    output_surface_pipeline: RenderPipeline
+}
 
-        return PipelineVariants {
-            output_surface,
-            render_target,
+impl PipelineSet {
+    pub fn select(&self,frame: &impl MutableFrame) -> &RenderPipeline {
+        match frame.is_output_surface() {
+            true => &self.output_surface_pipeline,
+            false => &self.internal_target_pipeline,
         }
     }
 }

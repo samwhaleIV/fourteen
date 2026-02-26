@@ -30,5 +30,5 @@ pub fn main() {
     builder.target(Target::Stdout);
     builder.init();
 
-    desktop_app::run_desktop_app::<PlaceholderApp,PlaceholderConfig>(Some(manifest_path));
+    desktop_app::run_desktop_app::<AlphaCompositeTest,TestConfig>(Some(manifest_path));
 }
