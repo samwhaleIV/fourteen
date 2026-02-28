@@ -169,8 +169,6 @@ impl TextDirection {
 }
 
 pub struct TextRenderConfig {
-    pub position: WimpyVec,
-    pub color: WimpyNamedColor,
     pub scale: f32,
     pub line_height_scale: f32,
     pub word_seperator: char,
@@ -195,11 +193,13 @@ where
 {
     fn create(
         render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>
+        context: &'a mut RenderPassContext<'frame>,
+        uniform_reference: UniformReference,
     ) -> Self {
         let text_pipeline = context.get_text_pipeline();
 
         render_pass.set_pipeline(&text_pipeline.pipelines.select(context.variant_key));
+        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             text_pipeline.index_buffer.slice(..),
@@ -272,7 +272,9 @@ where
     TFont: FontDefinition
 {
     fn new(
-        config: TextRenderConfig,
+        position: WimpyVec,
+        color: WimpyNamedColor,
+        config: &TextRenderConfig,
         uv_scalar: WimpyVec,
         buffer: &'a mut DoubleBuffer<GlyphInstance>,
     ) -> Self {
@@ -282,8 +284,8 @@ where
             word_spacing: TFont::get_word_spacing(scale),
             letter_spacing: TFont::get_letter_spacing(scale),
             line_height: TFont::get_line_height(scale * config.line_height_scale),
-            pos: config.position,
-            color: config.color,
+            pos: position,
+            color,
             word_seperator: config.word_seperator,
             uv_scalar,
             buffer,
@@ -403,25 +405,28 @@ impl<TFont> PipelineTextPass<'_,'_,TFont>
 where
     TFont: FontDefinition
 {
-    fn get_renderer(&mut self,config: TextRenderConfig) -> TextRenderer<'_, TFont> {
-        TextRenderer::<TFont>::new(config,self.uv_scalar,&mut self.context.get_text_pipeline_mut().instance_buffer)
+    // TODO: get rid of the inner crappy pass including submit. Use a push forward approach. Push config values to be used when a submit is called ?
+    fn get_renderer(&mut self,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) -> TextRenderer<'_, TFont> {
+        let uv_scalar = self.uv_scalar;
+        let instance_buffer = &mut self.context.get_text_pipeline_mut().instance_buffer;
+        TextRenderer::<TFont>::new(position,color,config,uv_scalar,instance_buffer)
     }
 
-    pub fn batch_text(&mut self,lines: &[&str],direction: TextDirection,config: TextRenderConfig) {
-        let mut r = self.get_renderer(config);
+    pub fn batch_text(&mut self,lines: &[&str],direction: TextDirection,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) {
+        let mut r = self.get_renderer(position,color,config);
         let ltr = direction.is_ltr();
         for (i,&line) in lines.iter().enumerate() {
             r.draw_text(line,i,ltr);
         }
     }
 
-    pub fn batch_text_wrapping(&mut self,text: &str,max_width: f32,config: TextRenderConfig) {
-        let mut r = self.get_renderer(config);
+    pub fn batch_text_wrapping(&mut self,text: &str,max_width: f32,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) {
+        let mut r = self.get_renderer(position,color,config);
         r.draw_text_line_breaking_ltr(text,max_width);
     }
 
-    pub fn batch_text_centered(&mut self,text: &str,config: TextRenderConfig) {
-        let mut r = self.get_renderer(config);
+    pub fn batch_text_centered(&mut self,text: &str,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) {
+        let mut r = self.get_renderer(position,color,config);
         r.draw_text_centered(text);
     }
 

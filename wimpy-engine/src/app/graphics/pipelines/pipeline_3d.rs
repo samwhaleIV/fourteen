@@ -103,10 +103,12 @@ pub struct Pipeline3DPass<'a,'frame> {
 impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
     fn create(
         render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>
+        context: &'a mut RenderPassContext<'frame>,
+        uniform_reference: UniformReference
     ) -> Self {
         let pipeline_3d = context.get_3d_pipeline();
         render_pass.set_pipeline(&pipeline_3d.pipelines.select(context.variant_key));
+        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             context.model_cache.get_index_buffer_slice(),

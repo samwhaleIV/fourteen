@@ -238,14 +238,15 @@ pub enum PaneItem {
         layers: GraphLayers
     },
     Label {
+        channel: LabelID,
         color: WimpyNamedColor,
-        channel: LabelID
     }
 }
 
 #[derive(Default,Copy,Clone)]
 pub struct SubPane {
     pub item: PaneItem,
+    // TODO: combine color and opacity into a variant with "None" option
     pub background_color: WimpyNamedColor,
     pub background_opacity: WimpyOpacity,
 }
@@ -321,11 +322,6 @@ pub enum LogDisplay {
 }
 
 impl DebugShell {
-
-    pub fn set_render_config(&mut self,config: DebugRenderConfig) {
-        self.render_config = config;
-    }
-
     pub fn get_render_config(&mut self) -> &mut DebugRenderConfig {
         &mut self.render_config
     }
@@ -348,18 +344,18 @@ impl DebugShell {
     }
 
     /// Expected value is in range: -1.0 to 1.0
-    pub fn set_graph_value(&mut self,channel: GraphID,value: f32) {
+    pub fn set_graph(&mut self,channel: GraphID,value: f32) {
         let graph_buffer = self.graph_buffers.get_mut(channel);
         graph_buffer.push(norm_to_i8(value));
     }
 
-    pub fn set_label_text(&mut self,channel: LabelID,value: &str) {
+    pub fn set_label(&mut self,channel: LabelID,value: &str) {
         let label = self.labels.get_mut(channel);
         label.clear();
         label.push_str(value);
     }
 
-    pub fn set_label_text_fmt<'a>(&'a mut self,channel: LabelID,args: fmt::Arguments){
+    pub fn set_label_fmt<'a>(&'a mut self,channel: LabelID,args: fmt::Arguments){
         let label = self.labels.get_mut(channel);
         label.clear();
         let _ = label.write_fmt(args);
@@ -374,6 +370,9 @@ impl DebugShell {
     where
         TFrame: MutableFrame
     {
+        if self.buffers.graph_commands.len() <= 0 {
+            return;
+        }
         let mut line_pass = render_pass.set_pipeline_lines_2d();
         for graph in &self.buffers.graph_commands {
             for channel_config in graph.layers.channels() {
@@ -404,7 +403,35 @@ impl DebugShell {
     where
         TFrame: MutableFrame
     {
-        //todo!();
+        if self.buffers.label_commands.len() <= 0 {
+            return;
+        }
+        let config = &TextRenderConfig {
+            scale: 2.0,
+            line_height_scale: 1.0,
+            word_seperator: ' ',
+        };
+        const TEXT_MARGIN: f32 = 5.0;
+        let mut text_pipeline = render_pass.set_pipeline_text::<FontMonoElf>();
+        for command in &self.buffers.label_commands {
+            text_pipeline.batch_text(
+                &[self.labels.get(command.channel)],
+                command.direction,
+                match command.direction {
+                    TextDirection::LeftToRight => WimpyVec {
+                        x: command.area.left() + TEXT_MARGIN,
+                        y: command.area.top() + TEXT_MARGIN
+                    },
+                    TextDirection::RightToLeft => WimpyVec {
+                        x: command.area.right() - TEXT_MARGIN,
+                        y: command.area.top() + TEXT_MARGIN
+                    },
+                },
+                command.color,
+                config
+            );
+        }
+        text_pipeline.submit();
     }
 
     fn draw_backgrounds<'a,'rp,TFrame>(&'a mut self,render_pass: &'a mut RenderPassBuilder<'rp,TFrame>)

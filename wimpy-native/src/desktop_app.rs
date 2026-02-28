@@ -1,5 +1,5 @@
 const WINDOW_TITLE: &'static str = "Wimpy Engine";
-const MINIMUM_WINDOW_SIZE: (u32,u32) = (600,400);
+const MINIMUM_WINDOW_SIZE: (u32,u32) = (1600,900);
 
 const LEFT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 2;
 const RIGHT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 8;

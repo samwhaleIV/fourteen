@@ -159,11 +159,13 @@ impl PipelineController for Pipeline2D {
 impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
     fn create(
         render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>
+        context: &'a mut RenderPassContext<'frame>,
+        uniform_reference: UniformReference
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
 
         render_pass.set_pipeline(&pipeline_2d.pipelines.select(context.variant_key));
+        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),

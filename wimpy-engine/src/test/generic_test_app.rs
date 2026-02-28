@@ -86,18 +86,18 @@ where
             }
         }
 
-        context.debug.set_label_text_fmt(
+        context.debug.set_label_fmt(
             LabelID::One,
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
-        context.debug.set_label_text_fmt(
+        context.debug.set_label_fmt(
             LabelID::Two,
             format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
         );
 
-        context.debug.set_graph_value(GraphID::One,delta_norm(mouse.delta().x));
-        context.debug.set_graph_value(GraphID::Two,delta_norm(mouse.delta().y));
+        context.debug.set_graph(GraphID::One,delta_norm(mouse.delta().x));
+        context.debug.set_graph(GraphID::Two,delta_norm(mouse.delta().y));
 
         match mouse.get_active_mode() {
             input::MouseMode::Interface => {

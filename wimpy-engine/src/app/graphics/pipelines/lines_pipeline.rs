@@ -11,8 +11,8 @@ pub struct LinesPipeline {
     line_point_buffer: DoubleBuffer<LineVertex>,
 }
 
-pub const VERTEX_BUFFER_INDEX: u32 = 0;
-pub const UNIFORM_BIND_GROUP_INDEX: u32 = 0;
+const VERTEX_BUFFER_INDEX: u32 = 0;
+const UNIFORM_BIND_GROUP_INDEX: u32 = 0;
 
 #[derive(Copy,Clone,PartialEq,Eq)]
 enum LinesMode {
@@ -104,6 +104,7 @@ pub struct LinesPipelinePass<'a,'frame> {
     context: &'a mut RenderPassContext<'frame>,
     render_pass: &'a mut RenderPass<'frame>,
     lines_mode: Option<LinesMode>,
+    uniform_reference: UniformReference,
 }
 
 impl PipelineController for LinesPipeline {
@@ -118,7 +119,8 @@ impl PipelineController for LinesPipeline {
 impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
     fn create(
         render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>
+        context: &'a mut RenderPassContext<'frame>,
+        uniform_reference: UniformReference,
     ) -> Self {
         let lines_pipeline = context.get_line_pipeline();
 
@@ -129,6 +131,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
 
         return Self {
             context,
+            uniform_reference,
             render_pass,
             lines_mode: None,
         }
@@ -165,6 +168,7 @@ impl LinesPipelinePass<'_,'_> {
                 &self.context.get_line_pipeline().list_sub_variant
             },
         }.select(self.context.variant_key));
+        self.context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(self.render_pass,self.uniform_reference);
         self.lines_mode = Some(mode);
     }
 

@@ -26,7 +26,8 @@ pub struct OutputBuilderContext<'a> {
 pub trait PipelinePass<'a,'frame> {
     fn create(
         render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>
+        context: &'a mut RenderPassContext<'frame>,
+        uniform_reference: UniformReference,
     ) -> Self;
 }
 
@@ -328,39 +329,36 @@ impl<'frame,TFrame> RenderPassBuilder<'frame,TFrame>
 where
     TFrame: MutableFrame
 {
-    fn set_pipeline<'a,TPipelinePass>(&'a mut self) -> TPipelinePass
+    fn set_pipeline<'a,TPipelinePass>(&'a mut self,uniform_reference: UniformReference) -> TPipelinePass
     where
         TPipelinePass: PipelinePass<'a,'frame>
     {
         let pipeline_render_pass = TPipelinePass::create(
             &mut self.render_pass,
-            &mut self.context
+            &mut self.context,
+            uniform_reference
         );
         return pipeline_render_pass;
     }
 
     pub fn set_pipeline_2d<'a>(&'a mut self) -> Pipeline2DPass<'a,'frame> {
-        self.set_pipeline()
+        self.set_pipeline(self.ortho_uniform)
     }
 
     pub fn set_pipeline_3d<'a>(&'a mut self,uniform_reference: UniformReference) -> Pipeline3DPass<'a,'frame> {
-        self.context.get_shared_mut().set_uniform(&mut self.render_pass,uniform_reference);
-        self.set_pipeline()
+        self.set_pipeline(uniform_reference)
     }
 
     pub fn set_pipeline_text<'a,TFont: FontDefinition>(&'a mut self) -> PipelineTextPass<'a,'frame,TFont> {
-        self.context.get_shared_mut().set_uniform(&mut self.render_pass,self.ortho_uniform);
-        self.set_pipeline()
+        self.set_pipeline(self.ortho_uniform)
     }
 
     pub fn set_pipeline_lines_2d<'a>(&'a mut self) -> LinesPipelinePass<'a,'frame> {
-        self.context.get_shared_mut().set_uniform(&mut self.render_pass,self.ortho_uniform);
-        self.set_pipeline()
+        self.set_pipeline(self.ortho_uniform)
     }
 
     pub fn set_pipeline_lines_3d<'a>(&'a mut self,uniform_reference: UniformReference) -> LinesPipelinePass<'a,'frame> {
-        self.context.get_shared_mut().set_uniform(&mut self.render_pass,uniform_reference);
-        self.set_pipeline()
+        self.set_pipeline(uniform_reference)
     }
 
     pub fn create_camera_uniform(

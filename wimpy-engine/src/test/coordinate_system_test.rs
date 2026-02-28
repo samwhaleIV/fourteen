@@ -2,20 +2,16 @@ use glam::Vec3;
 
 use crate::{app::{graphics::*, input::Impulse, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
 
-/// Test sRGB texture loading, presentation, internal color (named or 'WimpyColorSrgb') sRGB translation, and linear alpha compositing behavior
-/// 
-/// Shader expects linear texture data. OK to store in sRGB formats or linear, wgpu will convert
-/// 
-/// Linear alpha compositing is desired rather than the all-too-common but incorrect post-sRGB/gamma-on-gamma blend
 pub struct CoordinateSystemTest {
     camera: WimpyCamera,
     lines: Vec<LinePoint3D>
 }
 
-const LINE_COUNT: usize = 10;
+const LINE_COUNT: usize = 11;
 
 const BACKGROUND_COLOR: WimpyColorLinear =  WimpyColorLinear::from_srgb(64,     64,     64,     255);
 const LINE_COLOR: WimpyColorLinear =        WimpyColorLinear::from_srgb(80,     80,     80,     255);
+
 const X_AXIS_COLOR: WimpyColorLinear =      WimpyColorLinear::from_srgb(180,    0,      0,      255);
 const Y_AXIS_COLOR: WimpyColorLinear =      WimpyColorLinear::from_srgb(80,     180,    0,      255);
 const Z_AXIS_COLOR: WimpyColorLinear =      WimpyColorLinear::from_srgb(0,      0,      180,    255);
@@ -23,24 +19,15 @@ const Z_AXIS_COLOR: WimpyColorLinear =      WimpyColorLinear::from_srgb(0,      
 fn generate_lines() -> Vec<LinePoint3D> {
 
     let mut line_container = Vec::with_capacity(LINE_COUNT * 2 * 2 + 1);
-    const OFFSET: f32 = 0.0; //todo.. for centering
 
     const SIZE: f32 = LINE_COUNT as f32;
     const HALF_SIZE: f32 = SIZE * 0.5;
 
-    // Z Line
-    line_container.push(LinePoint3D {
-        point: Vec3::new(0.0,0.0,-HALF_SIZE),
-        color: Z_AXIS_COLOR,
-    });
-    line_container.push(LinePoint3D {
-        point: Vec3::new(0.0,0.0,HALF_SIZE),
-        color: Z_AXIS_COLOR,
-    });
+    const OFFSET: f32 = -HALF_SIZE + 0.5; //todo.. for centering
 
-    for i in 0..LINE_COUNT {
-        let is_middle_line: bool = false;
-        let (x_color,y_color) = match is_middle_line {
+    for i in 0..LINE_COUNT+1 {
+        let is_middle_line: bool = i == LINE_COUNT / 2;
+        let (mut x_color,mut y_color) = match is_middle_line {
             true => {
                 (X_AXIS_COLOR,Y_AXIS_COLOR)
             },
@@ -48,6 +35,11 @@ fn generate_lines() -> Vec<LinePoint3D> {
                 (LINE_COLOR,LINE_COLOR)
             },
         };
+
+        if i == 0 {
+            x_color = WimpyColorLinear::ORANGE;
+            y_color = WimpyColorLinear::ORANGE;
+        }
 
         let local_offset = i as f32;
 
@@ -72,6 +64,16 @@ fn generate_lines() -> Vec<LinePoint3D> {
         });
     }
 
+    // Z Line
+    line_container.push(LinePoint3D {
+        point: Vec3::new(0.0,0.0,-HALF_SIZE),
+        color: Z_AXIS_COLOR,
+    });
+    line_container.push(LinePoint3D {
+        point: Vec3::new(0.0,0.0,HALF_SIZE),
+        color: Z_AXIS_COLOR,
+    });
+
     line_container
 }
 
@@ -81,6 +83,29 @@ where
 {
     async fn load(context: &mut WimpyContext) -> Self {
         context.input.get_virtual_mouse_mut().queue_camera_mode();
+        let render_config = context.debug.get_render_config();
+        render_config.top_left = Pane {
+            size: WimpyVec::from(200),
+            layout: PaneLayout::single(SubPane {
+                item: PaneItem::Label {
+                    channel: LabelID::One,
+                    color: WimpyNamedColor::White,
+                },
+                background_color: WimpyNamedColor::Black,
+                background_opacity: WimpyOpacity::Transparent,
+            })
+        };
+        render_config.top_right = Pane {
+            size: WimpyVec::from(200),
+            layout: PaneLayout::single(SubPane {
+                item: PaneItem::Label {
+                    channel: LabelID::Two,
+                    color: WimpyNamedColor::White,
+                },
+                background_color: WimpyNamedColor::Black,
+                background_opacity: WimpyOpacity::Transparent,
+            })
+        };
         Self {
             camera: Default::default(),
             lines: generate_lines(),
@@ -90,11 +115,12 @@ where
     }
 
     fn update(&mut self,context: &mut WimpyContext) {
-
-        const MOVEMENT_UNITS_PER_SECOND: f32 = 2.0;
+        const MOVEMENT_UNITS_PER_SECOND: f32 = 3.0;
+        const ANGLE_PER_PIXEL: f32 = 0.15;
 
         let input = &context.input;
-        let movement_delta = WimpyVec::from(input.get_axes()) * MOVEMENT_UNITS_PER_SECOND;
+        let mut movement_delta = WimpyVec::from(input.get_axes()) * MOVEMENT_UNITS_PER_SECOND;
+        movement_delta.y *= -1.0; //Explicit, intentional inversion
 
         use input::ImpulseState::*;
         let vertical_delta = match (
@@ -106,8 +132,6 @@ where
             (Released, Pressed) => 1.0 //Fly up
         };
 
-        const ANGLE_PER_PIXEL: f32 = 0.1;
-
         let mouse = context.input.get_virtual_mouse_mut();
         let look_delta = mouse.delta() * ANGLE_PER_PIXEL;
 
@@ -115,14 +139,26 @@ where
             position: CameraPositionStrategy::FreeCam {
                 forward_movement: movement_delta.y * MOVEMENT_UNITS_PER_SECOND,
                 side_movement: movement_delta.x * MOVEMENT_UNITS_PER_SECOND,
-                vertical_movement: vertical_delta * MOVEMENT_UNITS_PER_SECOND,
+                vertical_movement: vertical_delta * MOVEMENT_UNITS_PER_SECOND * 1.5,
             },
             delta_seconds: context.input.get_delta_seconds(),
             yaw_delta: look_delta.x,
-            pitch_delta: look_delta.y,
+            pitch_delta: -look_delta.y,
         });
 
-        let Some(mut output) = context.graphics.create_output_builder(WimpyNamedColor::Black) else {
+        let camera_position = self.camera.position();
+        context.debug.set_label_fmt(LabelID::One,format_args!("x: {:.1}, y: {:.1}, z: {:.1}",
+            camera_position.x,
+            camera_position.y,
+            camera_position.z
+        ));
+
+        context.debug.set_label_fmt(LabelID::Two,format_args!("x del: {:.1}, y del: {:.1}",
+            movement_delta.x,
+            movement_delta.y,
+        ));
+
+        let Some(mut output) = context.graphics.create_output_builder(BACKGROUND_COLOR) else {
             return;
         };
 
@@ -133,6 +169,8 @@ where
             let camera_uniform = render_pass.create_camera_uniform(&self.camera,CameraPerspective::default());
             let mut lines_pass = render_pass.set_pipeline_lines_3d(camera_uniform);
             lines_pass.draw_list(&self.lines);
+
+            context.debug.render(&mut render_pass);
         }
 
         output.present_output_surface();

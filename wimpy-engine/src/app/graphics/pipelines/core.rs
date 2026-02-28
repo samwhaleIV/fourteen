@@ -233,7 +233,6 @@ pub struct SharedPipeline {
     uniform_layout: BindGroupLayout,
     uniform_bind_group: BindGroup,
     uniform_buffer: DoubleBuffer<TransformUniform>,
-    current_uniform_bind: Option<u32>
 }
 
 #[derive(Copy,Clone)]
@@ -295,7 +294,6 @@ impl SharedPipeline {
             uniform_layout,
             uniform_bind_group,
             uniform_buffer,
-            current_uniform_bind: None,
         }
     }
 
@@ -305,7 +303,6 @@ impl SharedPipeline {
 
     pub fn reset_uniform_buffer(&mut self) {
         self.uniform_buffer.reset();
-        self.current_uniform_bind = None;
     }
 
     pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {
@@ -338,16 +335,11 @@ impl SharedPipeline {
         }
     }
 
-    pub fn set_uniform(&mut self,render_pass: &mut RenderPass,uniform_reference: UniformReference) {
-        let new_value = uniform_reference.value;
-        if let Some(cur_value) = self.current_uniform_bind && cur_value == new_value {
-            return;
-        }
+    pub fn bind_uniform<const BIND_GROUP_INDEX: u32>(&self,render_pass: &mut RenderPass,uniform_reference: UniformReference) {
         render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
+            BIND_GROUP_INDEX,
             self.get_uniform_bind_group(),
-            &[new_value]
+            &[uniform_reference.value]
         );
-        self.current_uniform_bind = Some(new_value);
     }
 }

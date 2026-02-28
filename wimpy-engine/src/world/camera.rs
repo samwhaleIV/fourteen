@@ -1,4 +1,5 @@
 use glam::*;
+use std::f32::consts::{TAU,FRAC_PI_2};
 
 /// Basic camera controller suitable for free cam or FPS controller
 /// 
@@ -87,12 +88,12 @@ pub struct CameraPositionUpdate {
 
     /// Yaw look angle (left and right rotation)
     /// 
-    /// Degrees per second
+    /// Degrees (NOT per second)
     pub yaw_delta: f32,
 
     /// Pitch look angle (up and down rotation)
     /// 
-    /// Degrees per second
+    /// Degrees (NOT per second)
     pub pitch_delta: f32,
 }
 
@@ -127,8 +128,8 @@ pub fn reposition_eye(
 
     // Normal vector
     let side = Vec3::new(
-        -forward.y,
-        forward.x,
+        forward.y,
+        -forward.x,
         0.0
     );
 
@@ -149,12 +150,16 @@ pub fn reposition_eye(
 impl WimpyCamera {
 
     pub fn update_position(&mut self,packet: CameraPositionUpdate) {
-        const RADS_PER_DEG: f32 = std::f32::consts::PI / 180.0;
-        let rads_per_deg_per_s = RADS_PER_DEG * packet.delta_seconds;
 
-        self.yaw =  packet.yaw_delta.mul_add(rads_per_deg_per_s,self.yaw);
-        self.pitch = packet.pitch_delta.mul_add(rads_per_deg_per_s,self.pitch);
+        self.yaw += packet.yaw_delta.to_radians();
+        self.pitch += packet.pitch_delta.to_radians();
 
+        self.yaw %= TAU;
+        if self.yaw < 0.0 {
+            self.yaw += TAU
+        }
+
+        self.pitch = self.pitch.clamp(-FRAC_PI_2,FRAC_PI_2);
         /*
             Angle of eye needs to be updated BEFORE the reposition of the eye -
             keep this caveat in mind when implementing an external position controller
@@ -198,5 +203,9 @@ impl WimpyCamera {
             packet.clip_far
         );
         perspective_mat * self.position_mat
+    }
+
+    pub fn position(&self) -> Vec3 {
+        self.position
     }
 }
