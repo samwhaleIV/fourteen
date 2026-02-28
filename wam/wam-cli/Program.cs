@@ -301,6 +301,9 @@ namespace WAM.CLI {
                 return;
             }
 
+            src = Path.GetFullPath(src);
+            dst = Path.GetFullPath(dst);
+
             var settings = new WamManifestSettings(src,dst,targetNamespace,null,guid,false,manifestName!);
             if(
                 !FromCommandLine &&
@@ -337,7 +340,7 @@ namespace WAM.CLI {
                 var destination = mappedFile.Destination;
                 QualifyDirectory(destination);
                 File.Copy(mappedFile.Source,destination,true);
-                Console.WriteLine($"copied file to output '{Path.GetRelativePath(settings.Destination,destination)}' from '{mappedFile.Source}'");
+                Console.WriteLine($"copied file to output '{Path.GetRelativePath(settings.Destination,destination)}' from '{Path.GetRelativePath(src,mappedFile.Source)}'");
             }
 
             var manifestPath = Path.Combine(settings.Destination,settings.ManifestOutputFile);

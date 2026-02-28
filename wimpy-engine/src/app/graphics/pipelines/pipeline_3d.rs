@@ -1,4 +1,4 @@
-use cgmath::{Matrix4,SquareMatrix};
+use glam::Mat4;
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
@@ -135,7 +135,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
 
 #[derive(Copy,Clone)]
 pub struct DrawData3D {
-    pub transform: Matrix4<f32>,
+    pub transform: Mat4,
     pub diffuse_color: WimpyColorLinear,
     pub lightmap_color: WimpyColorLinear,
 }
@@ -143,7 +143,7 @@ pub struct DrawData3D {
 impl Default for DrawData3D {
     fn default() -> Self {
         Self {
-            transform: Matrix4::identity(),
+            transform: Mat4::IDENTITY,
             diffuse_color: WimpyColorLinear::WHITE,
             lightmap_color: WimpyColorLinear::WHITE,
         }
@@ -334,10 +334,10 @@ impl ModelInstance {
 impl<'a> From<&'a DrawData3D> for ModelInstance {
     fn from(value: &'a DrawData3D) -> Self {
         return ModelInstance {
-            transform_0: value.transform.x.into(),
-            transform_1: value.transform.y.into(),
-            transform_2: value.transform.z.into(),
-            transform_3: value.transform.w.into(),
+            transform_0: value.transform.x_axis.into(),
+            transform_1: value.transform.y_axis.into(),
+            transform_2: value.transform.z_axis.into(),
+            transform_3: value.transform.w_axis.into(),
             diffuse_color: value.diffuse_color.into(),
             lightmap_color: value.lightmap_color.into(),
         }

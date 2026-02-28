@@ -1,3 +1,4 @@
+use glam::Mat4;
 use wgpu::*;
 use bytemuck::{Pod,Zeroable};
 use crate::UWimpyPoint;
@@ -110,35 +111,29 @@ impl RenderPipelines {
 #[repr(C)]
 #[derive(Debug,Copy,Clone,Pod,Zeroable)]
 pub struct TransformUniform {
-    pub value: [[f32;4];4]
+    pub view_projection: Mat4
 }
 
 impl Default for TransformUniform {
     fn default() -> Self {
         Self {
-            value: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
+            view_projection: glam::Mat4::IDENTITY
         }
     }
 }
 
 impl TransformUniform {
     pub fn create_ortho(size: UWimpyPoint) -> Self {
-        let view_projection = cgmath::ortho(
-            0.0, //Left
-            size.x as f32, //Right
-            size.y as f32, //Bottom
-            0.0, //Top
-            -1.0, //Near
-            1.0, //Far
-        ).into();
-
+        let view_projection = glam::Mat4::orthographic_rh(
+            0.0,
+            size.x as f32,
+            size.y as f32,
+            0.0,
+            0.0,
+            1.0,
+        );
         return Self {
-            value: view_projection
+            view_projection
         };
     }
 }

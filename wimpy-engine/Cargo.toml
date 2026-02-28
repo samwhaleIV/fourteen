@@ -10,10 +10,11 @@ wgpu = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bytemuck = {version = "1.24.0",features = ["derive"]}
-cgmath = "0.18.0"
 slotmap = "1.1.1"
 smallvec = "1.15.1"
 bitflags = "2.10.0"
 gltf = { version = "1", features = ["utils"] }
 rapier3d = "0.32.0"
 fast-srgb8 = "1.0.0"
+glam = { version = "0.32.0", features = ["bytemuck"] }
+
