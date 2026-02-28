@@ -207,7 +207,10 @@ impl GamepadInput {
             focus_right: self.buttons.impulse_state(GamepadButtons::RIGHT_BUMPER),
 
             view: self.buttons.impulse_state(GamepadButtons::SELECT),
-            menu: self.buttons.impulse_state(GamepadButtons::START)
+            menu: self.buttons.impulse_state(GamepadButtons::START),
+
+            z_up: ImpulseState::Released,
+            z_down: ImpulseState::Released,
         })
     }
 

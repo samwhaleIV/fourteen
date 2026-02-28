@@ -158,13 +158,12 @@ impl PipelineController for Pipeline2D {
 
 impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
     fn create(
-        frame: &'frame impl MutableFrame,
         render_pass: &'a mut RenderPass<'frame>,
         context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let pipeline_2d = context.get_2d_pipeline();
 
-        render_pass.set_pipeline(&pipeline_2d.pipelines.select(frame));
+        render_pass.set_pipeline(&pipeline_2d.pipelines.select(context.variant_key));
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),
@@ -180,16 +179,6 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
             INSTANCE_BUFFER_INDEX,
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
-
-        let transform = TransformUniform::create_ortho(frame.size());
-        let uniform_buffer_range = context.get_shared_mut().get_uniform_buffer().push(transform);
-        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-
-        render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
-            context.get_shared().get_uniform_bind_group(),
-            &[dynamic_offset as u32]
-        );
 
         let current_sampling_frame = context.textures.transparent_black.get_ref();
 

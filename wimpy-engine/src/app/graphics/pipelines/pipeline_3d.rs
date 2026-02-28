@@ -102,12 +102,11 @@ pub struct Pipeline3DPass<'a,'frame> {
 
 impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
     fn create(
-        frame: &'frame impl MutableFrame,
         render_pass: &'a mut RenderPass<'frame>,
         context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let pipeline_3d = context.get_3d_pipeline();
-        render_pass.set_pipeline(&pipeline_3d.pipelines.select(frame));
+        render_pass.set_pipeline(&pipeline_3d.pipelines.select(context.variant_key));
 
         render_pass.set_index_buffer(
             context.model_cache.get_index_buffer_slice(),

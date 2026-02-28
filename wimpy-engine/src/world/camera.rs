@@ -3,33 +3,36 @@ use glam::*;
 /// Basic camera controller suitable for free cam or FPS controller
 /// 
 /// Uses the Blender right hand coordinate system, positive Z up
-pub struct Camera {
+pub struct WimpyCamera {
     /// Eye point
-    eye_position: Vec3,
+    position: Vec3,
     /// Yaw in radians (look left and right)
     yaw: f32,
     /// Pitch in radians (look up and down)
     pitch: f32,
-    /// Viewport aspect ratio, as `w / h`
-    aspect_ratio: f32,
-    /// Vertical field of view in radians
-    vertical_fov: f32,
-    /// This is the coordinate space value for the near plane
-    /// 
-    /// The WGPU clip space is `0` (close) to `1` (far).
-    clip_near: f32,
-    /// This is the coordinate space value for the far plane
-    /// 
-    /// The WGPU clip space is `0` (close) to `1` (far).
-    clip_far: f32,
 
-    /// Current direction normal for yaw and pitch
-    /// 
-    /// In sync with `yaw` and `pitch`
-    eye_angle: Vec3
+    /// The computed angle/direction normal, in sync with yaw and pitch
+    angle: Vec3,
+
+    position_mat: Mat4,
 }
 
-pub enum CameraEyeData {
+impl Default for WimpyCamera {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            yaw: 0.0,
+            pitch: 0.0,
+            position_mat: Mat4::IDENTITY,
+            angle: Vec3::new(0.0,1.0,0.0),
+        }
+    }
+}
+
+pub enum CameraPositionStrategy {
+    /// The camera tranposes its own eye position, based on the previous position
+    /// 
+    /// Useful for debugging purposes
     FreeCam {
         /// Forward and back walking (Positive forward, negative back)
         /// 
@@ -46,25 +49,38 @@ pub enum CameraEyeData {
         /// Look angle relative movement in units per second
         vertical_movement: f32,
     },
+    /// The camera eye positioned by a third party
+    /// 
+    /// Useful if the camera is attached to a physics
+    /// constrained object like a player controller
     Manual {
-        /// Manually positioned eye point
-        /// 
-        /// Useful if the camera is attached to a physics
-        /// constrained object like a player controller
+        /// Origin for the camera 'eye' point, appropriately and obviously named 'eye'
         eye: Vec3
     }
 }
 
-pub struct CameraUpdateData {
-    /// Viewport aspect ratio, as `w / h`
-    pub aspect_ratio: f32,
-
-    pub eye: CameraEyeData,
-
+pub struct CameraPerspectivePacket {
     /// Vertical field of view, in degrees
     /// 
     /// `90` degrees is a reasonable starting point
-    pub vertical_fov: f32,
+    pub fov: f32,
+    /// The near clipping distance of the camera view frustum
+    /// 
+    /// Good starting point at `0.025`
+    pub clip_near: f32,
+
+    /// The far clipping distance of the camera view frustum
+    /// 
+    /// Good starting point at `100.0`
+    pub clip_far: f32,
+
+    /// The aspect ratio of the viewport, expressed as `w / h`
+    pub aspect_ratio: f32,
+}
+
+pub struct CameraPositionUpdate {
+    /// Strategy for modifying the camera's current eye position
+    pub position: CameraPositionStrategy,
 
     /// Time between displayed/executed frames in seconds
     pub delta_seconds: f32,
@@ -80,7 +96,7 @@ pub struct CameraUpdateData {
     pub pitch_delta: f32,
 }
 
-fn get_angle_normal(yaw: f32,pitch: f32) -> Vec3 {
+fn get_eye_angle(yaw: f32,pitch: f32) -> Vec3 {
     let (sin_yaw,cos_yaw) = yaw.sin_cos();
     let (sin_pitch,cos_pitch) = pitch.sin_cos();
 
@@ -130,22 +146,24 @@ pub fn reposition_eye(
     eye
 }
 
-impl Camera {
+impl WimpyCamera {
 
-    pub fn update(&mut self,data: CameraUpdateData) {
-        self.aspect_ratio = data.aspect_ratio;
-
+    pub fn update_position(&mut self,packet: CameraPositionUpdate) {
         const RADS_PER_DEG: f32 = std::f32::consts::PI / 180.0;
-        let rads_per_deg_per_s = RADS_PER_DEG * data.delta_seconds;
+        let rads_per_deg_per_s = RADS_PER_DEG * packet.delta_seconds;
 
-        self.yaw =  data.yaw_delta.mul_add(rads_per_deg_per_s,self.yaw);
-        self.pitch = data.pitch_delta.mul_add(rads_per_deg_per_s,self.pitch);
+        self.yaw =  packet.yaw_delta.mul_add(rads_per_deg_per_s,self.yaw);
+        self.pitch = packet.pitch_delta.mul_add(rads_per_deg_per_s,self.pitch);
 
-        // TODO: Should angle of eye be updated before or after eye?
-        self.eye_angle = get_angle_normal(self.yaw,self.pitch);
+        /*
+            Angle of eye needs to be updated BEFORE the reposition of the eye -
+            keep this caveat in mind when implementing an external position controller
+        */
 
-        self.eye_position = match data.eye {
-            CameraEyeData::FreeCam {
+        self.angle = get_eye_angle(self.yaw,self.pitch);
+
+        self.position = match packet.position {
+            CameraPositionStrategy::FreeCam {
                 forward_movement,
                 side_movement,
                 vertical_movement
@@ -156,30 +174,29 @@ impl Camera {
                     vertical_movement
                 );
                 reposition_eye(
-                    self.eye_position,
-                    self.eye_angle,
+                    self.position,
+                    self.angle,
                     movement_delta,
-                    data.delta_seconds
+                    packet.delta_seconds
                 )
             },
-            CameraEyeData::Manual { eye } => eye,
+            CameraPositionStrategy::Manual { eye } => eye,
         };
 
-        self.vertical_fov = data.vertical_fov.to_radians();
-    }
-    pub fn get_matrix(&self) -> Mat4 {
-        let look_projection = Mat4::look_to_rh(
-            self.eye_position,
-            self.eye_angle,
+        self.position_mat = Mat4::look_to_rh(
+            self.position,
+            self.angle,
             Vec3::Z
         );
+    }
 
-        let perspective_projection = Mat4::perspective_rh(
-            self.vertical_fov,
-            self.aspect_ratio,
-            self.clip_near,
-            self.clip_far
+    pub fn get_matrix(&self,packet: CameraPerspectivePacket) -> Mat4 {
+        let perspective_mat = Mat4::perspective_rh(
+            packet.fov.to_radians(),
+            packet.aspect_ratio,
+            packet.clip_near,
+            packet.clip_far
         );
-        return perspective_projection * look_projection;
+        perspective_mat * self.position_mat
     }
 }

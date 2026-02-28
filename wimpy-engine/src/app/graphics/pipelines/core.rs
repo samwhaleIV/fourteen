@@ -208,16 +208,23 @@ impl PipelineCreator<'_> {
     }
 }
 
+#[derive(Copy,Clone)]
+pub enum PipelineVariantKey {
+    InternalTarget,
+    OutputSurface
+}
+
 pub struct PipelineSet {
     internal_target_pipeline: RenderPipeline,
     output_surface_pipeline: RenderPipeline
 }
 
 impl PipelineSet {
-    pub fn select(&self,frame: &impl MutableFrame) -> &RenderPipeline {
-        match frame.is_output_surface() {
-            true => &self.output_surface_pipeline,
-            false => &self.internal_target_pipeline,
+    pub fn select(&self,key: PipelineVariantKey) -> &RenderPipeline {
+        use PipelineVariantKey::*;
+        match key {
+            OutputSurface => &self.output_surface_pipeline,
+            InternalTarget => &self.internal_target_pipeline,
         }
     }
 }
@@ -225,7 +232,13 @@ impl PipelineSet {
 pub struct SharedPipeline {
     uniform_layout: BindGroupLayout,
     uniform_bind_group: BindGroup,
-    uniform_buffer: DoubleBuffer<TransformUniform>
+    uniform_buffer: DoubleBuffer<TransformUniform>,
+    current_uniform_bind: Option<u32>
+}
+
+#[derive(Copy,Clone)]
+pub struct UniformReference {
+    value: u32
 }
 
 // Not really a render pipeline. What're you going to do about it? Cry?
@@ -282,6 +295,7 @@ impl SharedPipeline {
             uniform_layout,
             uniform_bind_group,
             uniform_buffer,
+            current_uniform_bind: None,
         }
     }
 
@@ -291,6 +305,7 @@ impl SharedPipeline {
 
     pub fn reset_uniform_buffer(&mut self) {
         self.uniform_buffer.reset();
+        self.current_uniform_bind = None;
     }
 
     pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {
@@ -303,5 +318,36 @@ impl SharedPipeline {
 
     pub fn get_uniform_bind_group(&self) -> &BindGroup {
         return &self.uniform_bind_group;
+    }
+
+    pub fn create_uniform_ortho(&mut self,size: UWimpyPoint) -> UniformReference {
+        let transform = TransformUniform::create_ortho(size);
+        let uniform_buffer_range = self.get_uniform_buffer().push(transform);
+        UniformReference {
+            value: (uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT) as u32,
+        }
+    }
+
+    pub fn create_uniform(&mut self,view_projection: Mat4) -> UniformReference {
+        let transform = TransformUniform {
+            view_projection,
+        };
+        let uniform_buffer_range = self.get_uniform_buffer().push(transform);
+        UniformReference {
+            value: (uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT) as u32,
+        }
+    }
+
+    pub fn set_uniform(&mut self,render_pass: &mut RenderPass,uniform_reference: UniformReference) {
+        let new_value = uniform_reference.value;
+        if let Some(cur_value) = self.current_uniform_bind && cur_value == new_value {
+            return;
+        }
+        render_pass.set_bind_group(
+            UNIFORM_BIND_GROUP_INDEX,
+            self.get_uniform_bind_group(),
+            &[new_value]
+        );
+        self.current_uniform_bind = Some(new_value);
     }
 }

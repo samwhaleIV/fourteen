@@ -1,8 +1,13 @@
 use std::iter;
 use crate::{app::{graphics::*, *},*};
 
-pub struct AlphaCompositeTest {
-    test_texture: TextureFrame
+/// Test sRGB texture loading, presentation, internal color (named or 'WimpyColorSrgb') sRGB translation, and linear alpha compositing behavior
+/// 
+/// Shader expects linear texture data. OK to store in sRGB formats or linear, wgpu will convert
+/// 
+/// Linear alpha compositing is desired rather than the all-too-common but incorrect post-sRGB/gamma-on-gamma blend
+pub struct SrgbTest {
+    srgb_test_texture: TextureFrame
 }
 
 const STRIP_COUNT: usize = 8;
@@ -26,13 +31,13 @@ const STRIPS: &[WimpyColorSrgb;STRIP_COUNT] = &[
     WimpyColorSrgb { r: M, g: M, b: M, a: H },  // Middle gray
 ];
 
-impl<IO> WimpyApp<IO> for AlphaCompositeTest
+impl<IO> WimpyApp<IO> for SrgbTest
 where
     IO: WimpyIO
 {
     async fn load(context: &mut WimpyContext) -> Self {
         Self {
-            test_texture: context.load_image_or_default::<IO>("test-namespace/balls").await,
+            srgb_test_texture: context.load_image_or_default::<IO>("wimpy/srgb-test").await,
         }
     }
 
@@ -62,7 +67,7 @@ where
 
             let destination = layout.compute(output.frame.area());
 
-            pipeline_pass_2d.draw(&self.test_texture,iter::once(DrawData2D {
+            pipeline_pass_2d.draw(&self.srgb_test_texture,iter::once(DrawData2D {
                 destination: output.frame.area(),
                 source: WimpyRect::ONE,
                 color: WimpyColorLinear::WHITE,

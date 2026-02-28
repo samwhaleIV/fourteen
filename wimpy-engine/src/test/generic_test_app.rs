@@ -3,7 +3,7 @@ use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, Mous
 pub struct GenericTestApp {
     test_texture: TextureFrame,
     line_start: Option<WimpyVec>,
-    lines: Vec<[LinePoint;2]>,
+    lines: Vec<LinePoint2D>,
     offset: WimpyVec,
     in_movement_mode: bool
 }
@@ -64,7 +64,7 @@ where
         return Self {
             in_movement_mode: false,
             lines: Vec::with_capacity(64),
-            test_texture: context.load_image_or_default::<IO>("wimpy/color-test").await,
+            test_texture: context.load_image_or_default::<IO>("wimpy/blend-test").await,
             line_start: None,
             offset: WimpyVec::ZERO
         };
@@ -110,16 +110,14 @@ where
                     MousePressState::JustReleased | MousePressState::Released => {
                         if let Some(start) = self.line_start.take() {
                             let end = mouse.position();
-                            self.lines.push([
-                                LinePoint {
-                                    point: start,
-                                    color: WimpyNamedColor::Red,
-                                },
-                                LinePoint {
-                                    point: end,
-                                    color: WimpyNamedColor::Green,
-                                }
-                            ])
+                            self.lines.push(LinePoint2D {
+                                point: start,
+                                color: WimpyColorLinear::RED,
+                            });
+                            self.lines.push(LinePoint2D {
+                                point: end,
+                                color: WimpyColorLinear::GREEN,
+                            });
                         }
                     },
                 }
@@ -175,10 +173,8 @@ where
 
             context.debug.render(&mut render_pass);
 
-            let mut lines_pass = render_pass.set_pipeline_lines();
-            for line_set in &self.lines {
-                lines_pass.draw(line_set);
-            }
+            let mut lines_pass = render_pass.set_pipeline_lines_2d();
+            lines_pass.draw_list(&self.lines);
         }
 
         output.present_output_surface();

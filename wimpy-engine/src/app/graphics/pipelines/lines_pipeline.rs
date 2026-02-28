@@ -1,16 +1,24 @@
+use glam::Vec3;
 use wgpu::*;
 use std::{borrow::Borrow, ops::Range};
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor, WimpyNamedColor, WimpyVec, app::graphics::{constants::*, *}};
+use crate::{UWimpyPoint, WimpyColorLinear, WimpyVec, app::graphics::{constants::*,*}};
 use super::core::*;
 
 pub struct LinesPipeline {
-    pipelines: PipelineSet,
+    strip_sub_variant: PipelineSet,
+    list_sub_variant: PipelineSet,
     line_point_buffer: DoubleBuffer<LineVertex>,
 }
 
 pub const VERTEX_BUFFER_INDEX: u32 = 0;
 pub const UNIFORM_BIND_GROUP_INDEX: u32 = 0;
+
+#[derive(Copy,Clone,PartialEq,Eq)]
+enum LinesMode {
+    Strip,
+    List
+}
 
 impl LinesPipeline {
 
@@ -37,7 +45,7 @@ impl LinesPipeline {
             push_constant_ranges: &[]
         });
 
-        let pipeline_creator = PipelineCreator {
+        let strip_sub_variant = PipelineCreator {
             graphics_provider,
             render_pipeline_layout,
             shader,
@@ -53,9 +61,27 @@ impl LinesPipeline {
                 unclipped_depth: false,
                 conservative: false
             },
-            label: "Pipeline Lines",
-        };
-        let pipelines = pipeline_creator.create_pipeline_set();
+            label: "Pipeline Lines (Line Strip)",
+        }.create_pipeline_set();
+
+        let list_sub_variant = PipelineCreator {
+            graphics_provider,
+            render_pipeline_layout,
+            shader,
+            vertex_buffer_layout: &[
+                LineVertex::get_buffer_layout(),
+            ],
+            primitive_state: &PrimitiveState {
+                topology: PrimitiveTopology::LineList,
+                strip_index_format: None,
+                front_face: FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false
+            },
+            label: "Pipeline Lines (Line Strip)",
+        }.create_pipeline_set();
 
         let line_point_buffer = DoubleBuffer::new(
             device.create_buffer(&BufferDescriptor{
@@ -67,8 +93,9 @@ impl LinesPipeline {
         );
 
         return Self {
-            pipelines,
-            line_point_buffer
+            line_point_buffer,
+            strip_sub_variant,
+            list_sub_variant,
         }
     }
 }
@@ -76,6 +103,7 @@ impl LinesPipeline {
 pub struct LinesPipelinePass<'a,'frame> {
     context: &'a mut RenderPassContext<'frame>,
     render_pass: &'a mut RenderPass<'frame>,
+    lines_mode: Option<LinesMode>,
 }
 
 impl PipelineController for LinesPipeline {
@@ -89,51 +117,32 @@ impl PipelineController for LinesPipeline {
 
 impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
     fn create(
-        frame: &'frame impl MutableFrame,
         render_pass: &'a mut RenderPass<'frame>,
         context: &'a mut RenderPassContext<'frame>
     ) -> Self {
         let lines_pipeline = context.get_line_pipeline();
-
-        render_pass.set_pipeline(&lines_pipeline.pipelines.select(frame));
 
         render_pass.set_vertex_buffer(
             VERTEX_BUFFER_INDEX,
             lines_pipeline.line_point_buffer.get_output_buffer().slice(..)
         );
 
-        let transform = TransformUniform::create_ortho(frame.size());
-        let uniform_buffer_range = context.get_shared_mut().get_uniform_buffer().push(transform);
-        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-
-        render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
-            context.get_shared().get_uniform_bind_group(),
-            &[dynamic_offset as u32]
-        );
-
         return Self {
             context,
             render_pass,
+            lines_mode: None,
         }
     }
 }
 
 impl LinesPipelinePass<'_,'_> {
-    pub fn draw<I>(&mut self,line_points: I)
+    fn draw<I>(&mut self,line_points: I)
     where
-        I: IntoIterator,
-        I::Item: Borrow<LinePoint>
+        I: Iterator<Item = LineVertex>
     {
         let buffer = &mut self.context.pipelines.get_unique_mut().lines_pipeline.line_point_buffer;
         let start = buffer.len();
-        buffer.push_set(line_points.into_iter().map(|item|{
-            let item = item.borrow();
-            LineVertex {
-                position: item.point.into(),
-                color: item.color.into_linear().into()
-            }
-        }));
+        buffer.push_set(line_points);
         let end = buffer.len();
         if start == end {
             return;
@@ -143,18 +152,92 @@ impl LinesPipelinePass<'_,'_> {
             end: end as u32
         },0..1);
     }
+
+    fn set_pipeline(&mut self,mode: LinesMode) {
+        if let Some(current_mode) = self.lines_mode && mode == current_mode {
+            return;
+        }
+        self.render_pass.set_pipeline(match mode {
+            LinesMode::Strip => {
+                &self.context.get_line_pipeline().strip_sub_variant
+            },
+            LinesMode::List => {
+                &self.context.get_line_pipeline().list_sub_variant
+            },
+        }.select(self.context.variant_key));
+        self.lines_mode = Some(mode);
+    }
+
+    pub fn draw_strip<I>(&mut self,line_points: I)
+    where
+        I: IntoIterator,
+        I::Item: Into<LineVertex>
+    {
+        self.set_pipeline(LinesMode::Strip);
+        self.draw(line_points.into_iter().map(Into::into));
+    }
+
+    pub fn draw_list<I>(&mut self,line_points: I)
+    where
+        I: IntoIterator,
+        I::Item: Into<LineVertex>
+    {
+        self.set_pipeline(LinesMode::List);
+        self.draw(line_points.into_iter().map(Into::into));
+    }
 }
 
-pub struct LinePoint {
+pub struct LinePoint2D {
     pub point: WimpyVec,
-    pub color: WimpyNamedColor
+    pub color: WimpyColorLinear
+}
+
+pub struct LinePoint3D {
+    pub point: Vec3,
+    pub color: WimpyColorLinear
 }
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct LineVertex {
-    pub position: [f32;2],
+    pub position: [f32;3],
     pub color: [f32;4]
+}
+
+impl From<LinePoint2D> for LineVertex {
+    fn from(value: LinePoint2D) -> Self {
+        Self {
+            position: [value.point.x,value.point.y,0.0],
+            color: value.color.into()
+        }
+    }
+}
+
+impl From<&LinePoint2D> for LineVertex {
+    fn from(value: &LinePoint2D) -> Self {
+        Self {
+            position: [value.point.x,value.point.y,0.0],
+            color: value.color.into()
+        }
+    }
+}
+
+impl From<LinePoint3D> for LineVertex {
+    fn from(value: LinePoint3D) -> Self {
+        Self {
+            position: value.point.into(),
+            color: value.color.into()
+        }
+    }
+}
+
+impl From<&LinePoint3D> for LineVertex {
+    fn from(value: &LinePoint3D) -> Self {
+        Self {
+            position: value.point.into(),
+            color: value.color.into()
+        }
+    }
 }
 
 #[non_exhaustive]
@@ -167,7 +250,7 @@ impl ATTR {
 
 impl LineVertex {
     const ATTRS: [VertexAttribute;2] = vertex_attr_array![
-        ATTR::VERTEX_POSITION => Float32x2,
+        ATTR::VERTEX_POSITION => Float32x3,
         ATTR::VERTEX_COLOR => Float32x4
     ];
 

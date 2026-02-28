@@ -1,12 +1,14 @@
 use super::prelude::*;
 
-pub const IMPULSE_TYPE_COUNT: usize = 10;
+pub const IMPULSE_TYPE_COUNT: usize = 12;
 
 pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
     Impulse::Up,
     Impulse::Down,
     Impulse::Left,
     Impulse::Right,
+    Impulse::ZUp,
+    Impulse::ZDown,
     Impulse::Confirm,
     Impulse::Cancel,
     Impulse::FocusLeft,
@@ -15,18 +17,21 @@ pub const IMPULSES: [Impulse;IMPULSE_TYPE_COUNT] = [
     Impulse::Menu
 ];
 
+// These enum integer values need to freeze once key binds are saved into a file. We aren't there yet.
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Impulse {
     Up = 0,
     Down = 1,
     Left = 2,
     Right = 3,
-    Confirm = 4,
-    Cancel = 5,
-    FocusLeft = 6,
-    FocusRight = 7,
-    View = 8,
-    Menu = 9
+    ZUp = 4,
+    ZDown = 5,
+    Confirm = 6,
+    Cancel = 7,
+    FocusLeft = 8,
+    FocusRight = 9,
+    View = 10,
+    Menu = 11
 }
 
 impl Impulse {
@@ -95,6 +100,8 @@ pub struct ImpulseSetDescription {
     pub down: ImpulseState,
     pub left: ImpulseState,
     pub right: ImpulseState,
+    pub z_up: ImpulseState,
+    pub z_down: ImpulseState,
     pub confirm: ImpulseState,
     pub cancel: ImpulseState,
     pub focus_left: ImpulseState,
@@ -111,6 +118,8 @@ impl ImpulseSet {
                 set.down,
                 set.left,
                 set.right,
+                set.z_up,
+                set.z_down,
                 set.confirm,
                 set.cancel,
                 set.focus_left,

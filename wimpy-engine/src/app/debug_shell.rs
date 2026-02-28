@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::fmt::{self,Write};
 
 use crate::{UWimpyPoint, WimpyColor, WimpyNamedColor, WimpyOpacity, WimpyRect, WimpyRectQuadrant, WimpyVec, WimpyVecAxis};
-use crate::app::graphics::{DrawData2D, LinePoint, fonts::*};
+use crate::app::graphics::{DrawData2D, LinePoint2D, fonts::*};
 use crate::app::graphics::{MutableFrame,RenderPassBuilder,TextDirection,TextRenderConfig};
 use crate::collections::StringPool;
 
@@ -374,7 +374,7 @@ impl DebugShell {
     where
         TFrame: MutableFrame
     {
-        let mut line_pass = render_pass.set_pipeline_lines();
+        let mut line_pass = render_pass.set_pipeline_lines_2d();
         for graph in &self.buffers.graph_commands {
             for channel_config in graph.layers.channels() {
                 let buffer = &self.graph_buffers.get(channel_config.id).value;
@@ -387,8 +387,8 @@ impl DebugShell {
                 let y_scale = (graph.area.height() - 1.0) * INV_255;
                 let y_offset = graph.area.y() + 0.5 + 127.0 * y_scale;
 
-                line_pass.draw(buffer.iter().take(sample_count).enumerate().map(|(index,value)|{
-                    LinePoint {
+                line_pass.draw_strip(buffer.iter().take(sample_count).enumerate().map(|(index,value)|{
+                    LinePoint2D {
                         point: WimpyVec {
                             x: (index as f32).mul_add(-x_scale,x_offset),
                             y: (*value as f32).mul_add(-y_scale,y_offset)

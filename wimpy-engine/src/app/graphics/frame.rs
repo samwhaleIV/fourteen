@@ -79,6 +79,11 @@ pub trait FrameReference {
             size: self.get_input_size().into()
         }
     }
+
+    fn aspect_ratio(&self) -> f32 {
+        let size = self.get_input_size();
+        return size.x as f32 / size.y as f32;
+    }
 }
 
 pub trait MutableFrame: FrameReference {

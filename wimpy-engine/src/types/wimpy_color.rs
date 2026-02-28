@@ -59,7 +59,7 @@ const fn srgb_u8(r: u8,g: u8,b: u8) -> WimpyColorSrgb {
 
 const U8_MAX_RECIP: f32 = 1.0 / u8::MAX as f32;
 
-const fn srgb_u8_to_linear_f32(color: WimpyColorSrgb) -> WimpyColorLinear {
+const fn srgb_to_linear(color: WimpyColorSrgb) -> WimpyColorLinear {
     WimpyColorLinear {
         r: srgb8_to_f32(color.r),
         g: srgb8_to_f32(color.g),
@@ -117,26 +117,35 @@ impl WimpyColorSrgb {
 }
 
 impl WimpyColorLinear {
-    pub const WHITE: Self =     srgb_u8_to_linear_f32(WimpyColorSrgb::WHITE);
-    pub const BLACK: Self =     srgb_u8_to_linear_f32(WimpyColorSrgb::BLACK);
-    pub const GRAY: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::GRAY);
-    pub const RED: Self =       srgb_u8_to_linear_f32(WimpyColorSrgb::RED);
-    pub const GREEN: Self =     srgb_u8_to_linear_f32(WimpyColorSrgb::GREEN);
-    pub const BLUE: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::BLUE);
-    pub const ORANGE: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::ORANGE);
-    pub const VIOLET: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::VIOLET);
-    pub const YELLOW: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::YELLOW);
-    pub const CYAN: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::CYAN);
-    pub const MAGENTA: Self =   srgb_u8_to_linear_f32(WimpyColorSrgb::MAGENTA);
-    pub const PINK: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::PINK);
-    pub const SALMON: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::SALMON);
-    pub const GRAPE: Self =     srgb_u8_to_linear_f32(WimpyColorSrgb::GRAPE);
-    pub const JADE: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::JADE);
-    pub const BROWN: Self =     srgb_u8_to_linear_f32(WimpyColorSrgb::BROWN);
-    pub const LAVENDER: Self =  srgb_u8_to_linear_f32(WimpyColorSrgb::LAVENDER);
-    pub const BANANA: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::BANANA);
-    pub const MAROON: Self =    srgb_u8_to_linear_f32(WimpyColorSrgb::MAROON);
-    pub const NAVY: Self =      srgb_u8_to_linear_f32(WimpyColorSrgb::NAVY);
+    pub const WHITE: Self =     srgb_to_linear(WimpyColorSrgb::WHITE);
+    pub const BLACK: Self =     srgb_to_linear(WimpyColorSrgb::BLACK);
+    pub const GRAY: Self =      srgb_to_linear(WimpyColorSrgb::GRAY);
+    pub const RED: Self =       srgb_to_linear(WimpyColorSrgb::RED);
+    pub const GREEN: Self =     srgb_to_linear(WimpyColorSrgb::GREEN);
+    pub const BLUE: Self =      srgb_to_linear(WimpyColorSrgb::BLUE);
+    pub const ORANGE: Self =    srgb_to_linear(WimpyColorSrgb::ORANGE);
+    pub const VIOLET: Self =    srgb_to_linear(WimpyColorSrgb::VIOLET);
+    pub const YELLOW: Self =    srgb_to_linear(WimpyColorSrgb::YELLOW);
+    pub const CYAN: Self =      srgb_to_linear(WimpyColorSrgb::CYAN);
+    pub const MAGENTA: Self =   srgb_to_linear(WimpyColorSrgb::MAGENTA);
+    pub const PINK: Self =      srgb_to_linear(WimpyColorSrgb::PINK);
+    pub const SALMON: Self =    srgb_to_linear(WimpyColorSrgb::SALMON);
+    pub const GRAPE: Self =     srgb_to_linear(WimpyColorSrgb::GRAPE);
+    pub const JADE: Self =      srgb_to_linear(WimpyColorSrgb::JADE);
+    pub const BROWN: Self =     srgb_to_linear(WimpyColorSrgb::BROWN);
+    pub const LAVENDER: Self =  srgb_to_linear(WimpyColorSrgb::LAVENDER);
+    pub const BANANA: Self =    srgb_to_linear(WimpyColorSrgb::BANANA);
+    pub const MAROON: Self =    srgb_to_linear(WimpyColorSrgb::MAROON);
+    pub const NAVY: Self =      srgb_to_linear(WimpyColorSrgb::NAVY);
+
+    pub const fn from_srgb(r: u8,g: u8,b: u8,a: u8) -> Self {
+        Self {
+            r: srgb8_to_f32(r),
+            g: srgb8_to_f32(g),
+            b: srgb8_to_f32(b),
+            a: a as f32 * U8_MAX_RECIP
+        }
+    }
 }
 
 impl From<WimpyNamedColor> for WimpyColorSrgb {

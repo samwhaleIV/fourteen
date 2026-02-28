@@ -1,7 +1,8 @@
 use super::{*,pipelines::core::*};
 use wgpu::*;
 
-use crate::{UWimpyPoint, WimpyColor};
+use crate::world::{CameraPerspectivePacket, WimpyCamera};
+use crate::{UWimpyPoint, WimpyColor, WimpyVec};
 use crate::app::{wam::AssetManager,WimpyIO};
 
 use pipelines::{
@@ -24,13 +25,13 @@ pub struct OutputBuilderContext<'a> {
 
 pub trait PipelinePass<'a,'frame> {
     fn create(
-        frame: &'frame impl MutableFrame,
         render_pass: &'a mut RenderPass<'frame>,
         context: &'a mut RenderPassContext<'frame>
     ) -> Self;
 }
 
 pub struct RenderPassContext<'a> {
+    pub variant_key: PipelineVariantKey,
     pub model_cache: &'a ModelCache,
     pub frame_cache: &'a FrameCache,
     pub pipelines: &'a mut RenderPipelines,
@@ -77,6 +78,23 @@ pub trait GraphicsContextConfig {
     const INSTANCE_BUFFER_SIZE_3D: usize;
     const TEXT_PIPELINE_BUFFER_SIZE: usize;
     const LINE_BUFFER_SIZE: usize;
+}
+
+#[derive(Copy,Clone)]
+pub struct CameraPerspective {
+    pub fov: f32,
+    pub clip_near: f32,
+    pub clip_far: f32,
+}
+
+impl Default for CameraPerspective {
+    fn default() -> Self {
+        Self {
+            clip_near: 0.025,
+            clip_far: 100.0,
+            fov: 90.0
+        }
+    }
 }
 
 impl GraphicsContext {
@@ -301,6 +319,7 @@ impl GraphicsContext {
 
 pub struct RenderPassBuilder<'a,TFrame> {
     frame: &'a TFrame,
+    ortho_uniform: UniformReference,
     render_pass: RenderPass<'a>,
     context: RenderPassContext<'a>
 }
@@ -309,12 +328,11 @@ impl<'frame,TFrame> RenderPassBuilder<'frame,TFrame>
 where
     TFrame: MutableFrame
 {
-    pub fn set_pipeline<'a,TPipelinePass>(&'a mut self) -> TPipelinePass
+    fn set_pipeline<'a,TPipelinePass>(&'a mut self) -> TPipelinePass
     where
         TPipelinePass: PipelinePass<'a,'frame>
     {
         let pipeline_render_pass = TPipelinePass::create(
-            self.frame,
             &mut self.render_pass,
             &mut self.context
         );
@@ -325,16 +343,38 @@ where
         self.set_pipeline()
     }
 
-    pub fn set_pipeline_3d<'a>(&'a mut self) -> Pipeline3DPass<'a,'frame> {
+    pub fn set_pipeline_3d<'a>(&'a mut self,uniform_reference: UniformReference) -> Pipeline3DPass<'a,'frame> {
+        self.context.get_shared_mut().set_uniform(&mut self.render_pass,uniform_reference);
         self.set_pipeline()
     }
 
     pub fn set_pipeline_text<'a,TFont: FontDefinition>(&'a mut self) -> PipelineTextPass<'a,'frame,TFont> {
+        self.context.get_shared_mut().set_uniform(&mut self.render_pass,self.ortho_uniform);
         self.set_pipeline()
     }
 
-    pub fn set_pipeline_lines<'a>(&'a mut self) -> LinesPipelinePass<'a,'frame> {
+    pub fn set_pipeline_lines_2d<'a>(&'a mut self) -> LinesPipelinePass<'a,'frame> {
+        self.context.get_shared_mut().set_uniform(&mut self.render_pass,self.ortho_uniform);
         self.set_pipeline()
+    }
+
+    pub fn set_pipeline_lines_3d<'a>(&'a mut self,uniform_reference: UniformReference) -> LinesPipelinePass<'a,'frame> {
+        self.context.get_shared_mut().set_uniform(&mut self.render_pass,uniform_reference);
+        self.set_pipeline()
+    }
+
+    pub fn create_camera_uniform(
+        &mut self,
+        camera: &WimpyCamera,
+        config: CameraPerspective,
+    ) -> UniformReference {
+        let matrix = camera.get_matrix(CameraPerspectivePacket {
+            fov: config.fov,
+            clip_near: config.clip_near,
+            clip_far: config.clip_far,
+            aspect_ratio: self.frame.aspect_ratio(),
+        });
+        self.context.pipelines.get_shared_mut().create_uniform(matrix)
     }
 
     pub fn frame(&self) -> &TFrame {
@@ -350,7 +390,7 @@ impl OutputBuilder<'_> {
     {
         let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_view();
 
-        let render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
+        let mut render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
@@ -369,19 +409,31 @@ impl OutputBuilder<'_> {
             timestamp_writes: None,
         });
 
-        let context = RenderPassContext {
+        let frame_size = WimpyVec::from(frame.get_input_size());
+        render_pass.set_viewport(0.0,0.0,frame_size.x,frame_size.y,0.0,1.0);
+
+        let pipeline_variant = match frame.is_output_surface() {
+            true => PipelineVariantKey::OutputSurface,
+            false => PipelineVariantKey::InternalTarget,
+        };
+
+        let mut context = RenderPassContext {
             model_cache: &self.graphics_context.model_cache,
             frame_cache: &self.graphics_context.frame_cache,
             pipelines: &mut self.graphics_context.pipelines,
             textures: &self.graphics_context.engine_textures,
             bind_groups: &mut self.graphics_context.bind_groups,
             graphics_provider: &self.graphics_context.graphics_provider,
+            variant_key: pipeline_variant,
         };
+
+        let ortho_uniform = context.get_shared_mut().create_uniform_ortho(frame.size());
 
         return Ok(RenderPassBuilder {
             frame,
             render_pass,
             context,
+            ortho_uniform,
         })
     }
 }

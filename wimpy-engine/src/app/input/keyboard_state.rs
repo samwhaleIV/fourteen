@@ -76,6 +76,9 @@ impl Default for KeyboardTranslator {
         translator.add_key_bind(KeyCode::Tab,Impulse::FocusRight);
         translator.add_key_bind(KeyCode::KeyC,Impulse::View);
 
+        translator.add_key_bind(KeyCode::Space,Impulse::FocusRight);
+        translator.add_key_bind(KeyCode::ControlLeft,Impulse::FocusLeft);
+
         translator
     }
 }
