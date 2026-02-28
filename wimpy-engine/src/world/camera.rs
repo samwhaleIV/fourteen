@@ -1,6 +1,8 @@
 use glam::*;
 use std::f32::consts::{TAU,FRAC_PI_2};
 
+const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.0001;
+
 /// Basic camera controller suitable for free cam or FPS controller
 /// 
 /// Uses the Blender right hand coordinate system, positive Z up
@@ -159,7 +161,7 @@ impl WimpyCamera {
             self.yaw += TAU
         }
 
-        self.pitch = self.pitch.clamp(-FRAC_PI_2,FRAC_PI_2);
+        self.pitch = self.pitch.clamp(-PITCH_LIMIT,PITCH_LIMIT);
         /*
             Angle of eye needs to be updated BEFORE the reposition of the eye -
             keep this caveat in mind when implementing an external position controller

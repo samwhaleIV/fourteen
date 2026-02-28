@@ -9,7 +9,7 @@ pub struct GenericTestApp {
 }
 
 impl GenericTestApp {
-    fn pressed_enter(&mut self,context: &mut WimpyContext) -> bool {
+    fn pressed_enter(&self,context: &WimpyContext) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
             match event {
@@ -72,12 +72,9 @@ where
 
     fn update(&mut self,context: &mut WimpyContext) {
 
-        let pressed_enter = self.pressed_enter(context);
-
-        let mouse = context.input.get_virtual_mouse_mut();
-        
         // Start render ...
-        if pressed_enter {
+        if self.pressed_enter(context) {
+            let mouse = context.input.get_virtual_mouse_mut();
             self.in_movement_mode = !self.in_movement_mode;
             if self.in_movement_mode {
                 mouse.queue_camera_mode();
@@ -85,6 +82,8 @@ where
                 mouse.queue_interaction_mode();
             }
         }
+
+        let mouse = context.input.get_virtual_mouse();
 
         context.debug.set_label_fmt(
             LabelID::One,

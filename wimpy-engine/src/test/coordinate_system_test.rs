@@ -1,8 +1,9 @@
 use glam::Vec3;
 
-use crate::{app::{graphics::*, input::Impulse, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
+use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
 
 pub struct CoordinateSystemTest {
+    in_movement_mode: bool,
     camera: WimpyCamera,
     lines: Vec<LinePoint3D>
 }
@@ -77,12 +78,30 @@ fn generate_lines() -> Vec<LinePoint3D> {
     line_container
 }
 
+impl CoordinateSystemTest {
+    fn pressed_enter(&self,context: &WimpyContext) -> bool {
+        let mut toggle = false;
+        for event in context.input.iter_recent_events() {
+            match event {
+                ImpulseEvent {
+                    impulse: Impulse::Confirm,
+                    state: ImpulseState::Pressed,
+                } => {
+                    toggle = true;
+                    break;
+                },
+                _ => {}
+            }
+        }
+        return toggle;
+    }
+}
+
 impl<IO> WimpyApp<IO> for CoordinateSystemTest
 where
     IO: WimpyIO
 {
     async fn load(context: &mut WimpyContext) -> Self {
-        context.input.get_virtual_mouse_mut().queue_camera_mode();
         let render_config = context.debug.get_render_config();
         render_config.top_left = Pane {
             size: WimpyVec::from(200),
@@ -107,6 +126,7 @@ where
             })
         };
         Self {
+            in_movement_mode: false,
             camera: Default::default(),
             lines: generate_lines(),
             //TODO: Load coordinate test cube
@@ -115,12 +135,21 @@ where
     }
 
     fn update(&mut self,context: &mut WimpyContext) {
-        const MOVEMENT_UNITS_PER_SECOND: f32 = 3.0;
+        const MOVEMENT_UNITS_PER_SECOND: f32 = 5.0;
         const ANGLE_PER_PIXEL: f32 = 0.15;
 
+        if self.pressed_enter(context) {
+            let mouse = context.input.get_virtual_mouse_mut();
+            self.in_movement_mode = !self.in_movement_mode;
+            if self.in_movement_mode {
+                mouse.queue_camera_mode();
+            } else {
+                mouse.queue_interaction_mode();
+            }
+        }
+
         let input = &context.input;
-        let mut movement_delta = WimpyVec::from(input.get_axes()) * MOVEMENT_UNITS_PER_SECOND;
-        movement_delta.y *= -1.0; //Explicit, intentional inversion
+        let movement_delta = WimpyVec::from(input.get_axes());
 
         use input::ImpulseState::*;
         let vertical_delta = match (
@@ -135,16 +164,18 @@ where
         let mouse = context.input.get_virtual_mouse_mut();
         let look_delta = mouse.delta() * ANGLE_PER_PIXEL;
 
-        self.camera.update_position(CameraPositionUpdate {
-            position: CameraPositionStrategy::FreeCam {
-                forward_movement: movement_delta.y * MOVEMENT_UNITS_PER_SECOND,
-                side_movement: movement_delta.x * MOVEMENT_UNITS_PER_SECOND,
-                vertical_movement: vertical_delta * MOVEMENT_UNITS_PER_SECOND * 1.5,
-            },
-            delta_seconds: context.input.get_delta_seconds(),
-            yaw_delta: look_delta.x,
-            pitch_delta: -look_delta.y,
-        });
+        if context.input.get_virtual_mouse().get_active_mode() == MouseMode::Camera {
+            self.camera.update_position(CameraPositionUpdate {
+                position: CameraPositionStrategy::FreeCam {
+                    forward_movement:   movement_delta.y * MOVEMENT_UNITS_PER_SECOND * -1.0,
+                    side_movement:      movement_delta.x * MOVEMENT_UNITS_PER_SECOND,
+                    vertical_movement:  vertical_delta *   MOVEMENT_UNITS_PER_SECOND,
+                },
+                delta_seconds: context.input.get_delta_seconds(),
+                yaw_delta: look_delta.x,
+                pitch_delta: -look_delta.y,
+            });
+        }
 
         let camera_position = self.camera.position();
         context.debug.set_label_fmt(LabelID::One,format_args!("x: {:.1}, y: {:.1}, z: {:.1}",
@@ -153,9 +184,10 @@ where
             camera_position.z
         ));
 
-        context.debug.set_label_fmt(LabelID::Two,format_args!("x del: {:.1}, y del: {:.1}",
+        context.debug.set_label_fmt(LabelID::Two,format_args!("xd: {:.1}, yd: {:.1}, zd: {:1}",
             movement_delta.x,
             movement_delta.y,
+            vertical_delta
         ));
 
         let Some(mut output) = context.graphics.create_output_builder(BACKGROUND_COLOR) else {

@@ -399,7 +399,7 @@ impl VirtualMouse {
 
     /// Since the real hardware mode can only change at the beginning of the next frame,
     /// this will only return the mode that is active for the duration of the current frame.
-    pub fn get_active_mode(&mut self) -> MouseMode {
+    pub fn get_active_mode(&self) -> MouseMode {
         self.current_mode
     }
 
