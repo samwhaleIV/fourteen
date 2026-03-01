@@ -44,7 +44,8 @@ pub enum CollisionShape {
 
 pub struct TypedBuffer<T> {
     value: wgpu::Buffer,
-    length: usize,
+    logical_length: usize,
+    physical_length: usize,
     phantom: PhantomData<T>,
 }
 
@@ -60,7 +61,8 @@ where
     fn new(buffer: Buffer) -> Self {
         return TypedBuffer {
             value: buffer,
-            length: 0,
+            logical_length: 0,
+            physical_length: 0,
             phantom: Default::default()
         }
     }
@@ -69,7 +71,7 @@ where
         let stride = length * size_of::<T>();
         match queue.write_buffer_with(
             &self.value,
-            (self.length * size_of::<T>()) as BufferAddress,
+            (self.physical_length * size_of::<T>()) as BufferAddress,
             match NonZero::new(stride as BufferAddress) {
                 Some(value) => value,
                 None => return None
@@ -83,20 +85,17 @@ where
         }
     }
 
-    fn write(&mut self,queue: &Queue,values: &[T]) -> Option<Range<usize>> {
+    fn write(&mut self,queue: &Queue,values: &[T]) -> bool {
         let Some(mut frame) = self.get_view(queue,values.len()) else {
-            return None;
+            return false;
         };
 
         frame.view.copy_from_slice(bytemuck::cast_slice(&values));
 
-        let start = self.length;
-        self.length += frame.stride;
+        self.logical_length += values.len();
+        self.physical_length += frame.stride * values.len();
 
-        return Some(Range {
-            start,
-            end: self.length
-        })
+        return true;
     }
 
     pub fn get_buffer(&self) -> &Buffer {
@@ -266,21 +265,26 @@ impl RenderBuffer {
                 lightmap_uv:lightmap_uvs[i],
                 position: positions[i],
             };
-            vertices[i] = vertex;
+            vertices.push(vertex);
         }
 
-        let Some(vertex_range) = self.vertex_buffer.write(queue,&vertices) else {
+        let base_vertex = self.vertex_buffer.logical_length;
+
+        if !self.vertex_buffer.write(queue,&vertices) {
             return Err(ModelError::VertexBufferWriteFailure);
         };
 
-        let Some(index_range) = self.index_buffer.write(queue,&indices) else {
+        let index_start = self.index_buffer.logical_length;
+        if !self.index_buffer.write(queue,&indices) {
             return Err(ModelError::IndexBufferWriteFailure);
         };
 
+        let index_end = self.index_buffer.logical_length;
+
         let entry = RenderBufferReference {
-            base_vertex: vertex_range.end as i32,
-            index_start: index_range.start as u32,
-            index_end: index_range.end as u32,
+            base_vertex: base_vertex as i32,
+            index_start: index_start as u32,
+            index_end: index_end as u32,
         };
 
         return Ok(entry);
