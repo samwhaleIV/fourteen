@@ -127,7 +127,7 @@ where
             })
         };
 
-        let model = context.get_model::<IO>("wimpy/models/coordinate-cube").await;
+        let model = context.get_model::<IO>("wimpy/models/test-room").await;
 
         Self {
             in_movement_mode: false,
@@ -138,8 +138,8 @@ where
     }
 
     fn update(&mut self,context: &mut WimpyContext) {
-        const MOVEMENT_UNITS_PER_SECOND: f32 = 5.0;
-        const ANGLE_PER_PIXEL: f32 = 0.15;
+        const MOVEMENT_UNITS_PER_SECOND: f32 = 3.5;
+        const ANGLE_PER_PIXEL: f32 = 0.1;
 
         if self.pressed_enter(context) {
             let mouse = context.input.get_virtual_mouse_mut();
@@ -206,7 +206,7 @@ where
             lines_pass.draw_list(&self.lines);
 
             let mut model_pass = render_pass.set_pipeline_3d(camera_uniform);
-            model_pass.draw(&self.model,SamplerMode::NearestClamp,TextureStrategy::NoLightmap,std::iter::once(DrawData3D {
+            model_pass.draw(&self.model,SamplerMode::NearestClamp,TextureStrategy::Standard,std::iter::once(DrawData3D {
                 transform: Mat4::IDENTITY,
                 diffuse_color: WimpyColorLinear::WHITE,
                 lightmap_color: WimpyColorLinear::WHITE,
