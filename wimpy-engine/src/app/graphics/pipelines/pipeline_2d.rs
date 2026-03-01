@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
 use crate::{WimpyColorLinear,WimpyRect};
-use crate::app::graphics::{*,constants::*};
+use crate::app::graphics::*;
 use super::core::*;
 
 pub struct Pipeline2D {

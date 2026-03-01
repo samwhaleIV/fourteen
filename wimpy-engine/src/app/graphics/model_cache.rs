@@ -1,5 +1,5 @@
 use super::pipelines::pipeline_3d::ModelVertex;
-use std::{marker::PhantomData, num::NonZero, ops::Range};
+use std::{marker::PhantomData, num::NonZero};
 use bytemuck::{Pod,Zeroable};
 use wgpu::*;
 

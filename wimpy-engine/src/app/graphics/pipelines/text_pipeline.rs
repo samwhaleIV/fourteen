@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
 use crate::{WimpyColor, WimpyNamedColor, WimpyRect, WimpyVec};
-use crate::app::graphics::{*,constants::*};
+use crate::app::graphics::*;
 use super::core::*;
 
 const VERTEX_BUFFER_INDEX: u32 = 0;

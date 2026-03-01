@@ -3,7 +3,6 @@ use wgpu::*;
 
 use crate::world::{CameraPerspectivePacket, WimpyCamera};
 use crate::{UWimpyPoint, WimpyColor, WimpyVec};
-use crate::app::wam::AssetManager;
 
 use pipelines::{
     pipeline_2d::*,

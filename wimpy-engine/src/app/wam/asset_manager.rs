@@ -7,8 +7,6 @@ use crate::app::graphics::{
     TextureFrame,
     ModelCacheReference,
     GraphicsContext,
-    CollisionShape,
-    RenderBufferReference
 };
 
 pub struct AssetManager {

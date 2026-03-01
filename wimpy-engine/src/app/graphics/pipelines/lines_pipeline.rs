@@ -1,8 +1,8 @@
 use glam::Vec3;
 use wgpu::*;
-use std::{borrow::Borrow, ops::Range};
+use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{UWimpyPoint, WimpyColorLinear, WimpyVec, app::graphics::{constants::*,*}};
+use crate::{WimpyColorLinear, WimpyVec, app::graphics::*};
 use super::core::*;
 
 pub struct LinesPipeline {

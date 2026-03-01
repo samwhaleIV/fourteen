@@ -2,7 +2,7 @@ use glam::Mat4;
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear, app::{graphics::{constants::*, *},wam::ModelData}};
+use crate::{WimpyColorLinear, app::{graphics::*,wam::ModelData}};
 use super::core::*;
 
 pub struct Pipeline3D {

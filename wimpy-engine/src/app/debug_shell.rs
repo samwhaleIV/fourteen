@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::fmt::{self,Write};
 
-use crate::{UWimpyPoint, WimpyColor, WimpyNamedColor, WimpyOpacity, WimpyRect, WimpyRectQuadrant, WimpyVec, WimpyVecAxis};
+use crate::{WimpyColor, WimpyNamedColor, WimpyOpacity, WimpyRect, WimpyRectQuadrant, WimpyVec, WimpyVecAxis};
 use crate::app::graphics::{DrawData2D, LinePoint2D, fonts::*};
 use crate::app::graphics::{MutableFrame,RenderPassBuilder,TextDirection,TextRenderConfig};
 use crate::collections::StringPool;
