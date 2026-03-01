@@ -72,7 +72,7 @@ impl VirtualAssetTranslator<'_> {
                 }));
             }
             self.manifest.add_virtual_asset(
-                AssetReference::ImageSlice(VirtualImageSliceAsset {
+                AssetReference::ImageSlice(ImageSliceAssetReference {
                     name: rc_name.clone(),
                     key: *key,
                     area: image.area,

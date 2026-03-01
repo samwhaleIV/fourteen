@@ -36,19 +36,19 @@ impl EngineTextures {
             frame_cache,
         };
 
-        let missing_texture = MissingTexture::create();
+        let missing_texture = builder.create(MissingTexture::create());
 
         return Self {
-            missing: builder.create(missing_texture),
+            missing: missing_texture,
             opaque_white: builder.create(OpaqueWhite),
             opaque_black: builder.create(OpaqueBlack),
             transparent_white: builder.create(TransparentWhite),
             transparent_black: builder.create(TransparentBlack),
-            font_classic: None,
-            font_classic_outline: None,
-            font_twelven: None,
-            font_twelven_shaded: None,
-            font_mono_elf: None,
+            font_classic: missing_texture.clone(),
+            font_classic_outline: missing_texture.clone(),
+            font_twelven: missing_texture.clone(),
+            font_twelven_shaded: missing_texture.clone(),
+            font_mono_elf: missing_texture.clone(),
         }
     }
 }

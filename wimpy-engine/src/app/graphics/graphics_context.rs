@@ -3,7 +3,7 @@ use wgpu::*;
 
 use crate::world::{CameraPerspectivePacket, WimpyCamera};
 use crate::{UWimpyPoint, WimpyColor, WimpyVec};
-use crate::app::{wam::AssetManager,WimpyIO};
+use crate::app::wam::AssetManager;
 
 use pipelines::{
     pipeline_2d::*,
@@ -47,11 +47,11 @@ pub enum AvailableControls {
 }
 
 pub struct EngineTextures {
-    pub font_classic: Option<TextureFrame>,
-    pub font_classic_outline: Option<TextureFrame>,
-    pub font_twelven: Option<TextureFrame>,
-    pub font_twelven_shaded: Option<TextureFrame>,
-    pub font_mono_elf: Option<TextureFrame>,
+    pub font_classic: TextureFrame,
+    pub font_classic_outline: TextureFrame,
+    pub font_twelven: TextureFrame,
+    pub font_twelven_shaded: TextureFrame,
+    pub font_mono_elf: TextureFrame,
 
     pub missing: TextureFrame,
     pub opaque_white: TextureFrame,
@@ -102,14 +102,15 @@ impl GraphicsContext {
     pub fn get_graphics_provider(&self) -> &GraphicsProvider {
         return &self.graphics_provider;
     }
+
     pub fn get_graphics_provider_mut(&mut self) -> &mut GraphicsProvider {
         return &mut self.graphics_provider;
     }
-    pub async fn create<IO: WimpyIO,TConfig: GraphicsContextConfig>(
-        asset_manager: &mut AssetManager,
-        graphics_provider: GraphicsProvider
-    ) -> Self {
 
+    pub async fn create<TConfig>(graphics_provider: GraphicsProvider) -> Self
+    where
+        TConfig: GraphicsContextConfig
+    {
         let mut texture_id_generator = TextureIdentityGenerator::default();
 
         let bind_group_cache = BindGroupCache::create(&graphics_provider);
@@ -133,7 +134,7 @@ impl GraphicsContext {
             &mut frame_cache,
         );
 
-        let mut graphics_context = Self {
+        Self {
             graphics_provider,
             texture_id_generator,
             pipelines,
@@ -141,36 +142,7 @@ impl GraphicsContext {
             frame_cache,
             engine_textures,
             bind_groups: bind_group_cache,
-        };
-
-        graphics_context.load_engine_textures::<IO>(asset_manager).await;
-
-        return graphics_context;
-    }
-
-    async fn load_engine_textures<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager) {
-        use super::constants::assets::*;
-        self.engine_textures.font_classic =         self.load_texture::<IO>(asset_manager,FONT_CLASSIC).await;
-        self.engine_textures.font_classic_outline = self.load_texture::<IO>(asset_manager,FONT_CLASSIC_OUTLINE).await;
-        self.engine_textures.font_twelven =         self.load_texture::<IO>(asset_manager,FONT_TWELVEN).await;
-        self.engine_textures.font_twelven_shaded =  self.load_texture::<IO>(asset_manager,FONT_TWELVEN_SHADED).await;
-        self.engine_textures.font_mono_elf =        self.load_texture::<IO>(asset_manager,FONT_MONO_ELF).await;
-    }
-
-    async fn load_texture<IO: WimpyIO>(&mut self,asset_manager: &mut AssetManager,asset_name: &str) -> Option<TextureFrame> {
-        let log_error = |error| {
-            log::error!("Engine asset load failure: '{}': {:?}",asset_name,error);
-            None
-        };
-        let key = match asset_manager.get_image_reference(asset_name) {
-            Ok(value) => value,
-            Err(error) => return log_error(error),
-        };
-        let image = match asset_manager.load_image::<IO>(&key,self).await {
-            Ok(value) => value,
-            Err(error) => return log_error(error),
-        };
-        return Some(image);
+        }
     }
 
     pub fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,TextureError> {

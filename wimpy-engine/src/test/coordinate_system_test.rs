@@ -1,11 +1,12 @@
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 
-use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
+use crate::{app::{graphics::{pipelines::pipeline_3d::TextureStrategy, *}, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, wam::ModelData, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
 
 pub struct CoordinateSystemTest {
     in_movement_mode: bool,
     camera: WimpyCamera,
-    lines: Vec<LinePoint3D>
+    lines: Vec<LinePoint3D>,
+    model: ModelData,
 }
 
 const LINE_COUNT: usize = 11;
@@ -24,7 +25,7 @@ fn generate_lines() -> Vec<LinePoint3D> {
     const SIZE: f32 = LINE_COUNT as f32;
     const HALF_SIZE: f32 = SIZE * 0.5;
 
-    const OFFSET: f32 = -HALF_SIZE + 0.5; //todo.. for centering
+    const OFFSET: f32 = -HALF_SIZE + 0.5;
 
     for i in 0..LINE_COUNT+1 {
         let is_middle_line: bool = i == LINE_COUNT / 2;
@@ -125,12 +126,14 @@ where
                 background_opacity: WimpyOpacity::Transparent,
             })
         };
+
+        let model = context.get_model::<IO>("wimpy/models/coordinate-cube").await;
+
         Self {
             in_movement_mode: false,
             camera: Default::default(),
             lines: generate_lines(),
-            //TODO: Load coordinate test cube
-            //coordinate_test_cube = context.assets.get_mo
+            model,
         }
     }
 
@@ -202,6 +205,17 @@ where
             let mut lines_pass = render_pass.set_pipeline_lines_3d(camera_uniform);
             lines_pass.draw_list(&self.lines);
 
+            let mut model_pass = render_pass.set_pipeline_3d(camera_uniform);
+            model_pass.draw(
+                &self.model,
+                SamplerMode::NearestClamp,
+                TextureStrategy::NoLightmap,
+                std::iter::once(DrawData3D {
+                    transform: Mat4::IDENTITY,
+                    diffuse_color: WimpyColorLinear::WHITE,
+                    lightmap_color: WimpyColorLinear::WHITE,
+                })
+            );
             context.debug.render(&mut render_pass);
         }
 

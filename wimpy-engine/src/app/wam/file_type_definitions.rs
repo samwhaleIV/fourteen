@@ -38,7 +38,7 @@ impl HardAssetData {
 pub enum AssetReference {
     Text(TextAssetReference),
     Image(ImageAssetReference),
-    ImageSlice(VirtualImageSliceAsset),
+    ImageSlice(ImageSliceAssetReference),
     Model(ModelAssetReference),
 }
 

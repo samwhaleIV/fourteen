@@ -97,7 +97,6 @@ impl PipelineController for Pipeline3D {
 pub struct Pipeline3DPass<'a,'frame> {
     context: &'a mut RenderPassContext<'frame>,
     render_pass: &'a mut RenderPass<'frame>,
-    has_transform_bind: bool,
 }
 
 impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
@@ -126,10 +125,8 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
         );
 
         return Self {
-            //frame_size,
             context,
             render_pass,
-            has_transform_bind: false,
         }
     }
 }
@@ -159,37 +156,19 @@ pub enum TextureStrategy {
 }
 
 impl Pipeline3DPass<'_,'_> {
-    pub fn set_transform(&mut self,transform: TransformUniform) {
-        let uniform_buffer_range = self.context.pipelines
-            .get_shared_mut()
-            .get_uniform_buffer()
-            .push(transform);
+    pub fn draw<I>(&mut self,model_data: &ModelData,diffuse_sampler: SamplerMode,texture_strategy: TextureStrategy,draw_data: I)
+    where
+        I: IntoIterator,
+        I::Item: Into<ModelInstance>
+    {
 
-        let dynamic_offset = uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT;
-
-        self.render_pass.set_bind_group(
-            UNIFORM_BIND_GROUP_INDEX,
-            self.context.get_shared().get_uniform_bind_group(),
-            &[dynamic_offset as u32]
-        );
-    }
-
-    pub fn draw(
-        &mut self,
-        model_data: &ModelData,
-        diffuse_sampler: SamplerMode,
-        texture_strategy: TextureStrategy,
-        draw_data: &[DrawData3D]
-    ) {
-
-        let Some(mesh_reference) = model_data.render else {
-            log::warn!("Model data's 'render' value is 'None'. Is this intentional?");
+        let Some(cache_reference) = model_data.cache_reference else {
             return;
         };
 
-        if !self.has_transform_bind {
-            self.set_transform(TransformUniform::default());
-        }
+        let Some(buffer_reference) = self.context.model_cache.entries.get(cache_reference) else {
+            return;
+        };
 
         if let Err(()) = self.set_mesh_textures(&TextureDrawData {
             diffuse: model_data.diffuse,
@@ -200,11 +179,11 @@ impl Pipeline3DPass<'_,'_> {
             return;
         }
         let indices = Range {
-            start: mesh_reference.index_start,
-            end: mesh_reference.index_end
+            start: buffer_reference.index_start,
+            end: buffer_reference.index_end
         };
-        let instances = self.context.get_3d_pipeline_mut().instance_buffer.push_set(draw_data.iter().map(Into::into));
-        self.render_pass.draw_indexed(indices,mesh_reference.base_vertex,Range {
+        let instances = self.context.get_3d_pipeline_mut().instance_buffer.push_set(draw_data.into_iter().map(Into::into));
+        self.render_pass.draw_indexed(indices,buffer_reference.base_vertex,Range {
             start: instances.start as u32,
             end: instances.end as u32,
         });
@@ -332,8 +311,8 @@ impl ModelInstance {
     }
 }
 
-impl<'a> From<&'a DrawData3D> for ModelInstance {
-    fn from(value: &'a DrawData3D) -> Self {
+impl From<&DrawData3D> for ModelInstance {
+    fn from(value: &DrawData3D) -> Self {
         return ModelInstance {
             transform_0: value.transform.x_axis.into(),
             transform_1: value.transform.y_axis.into(),
@@ -347,6 +326,13 @@ impl<'a> From<&'a DrawData3D> for ModelInstance {
 
 impl From<DrawData3D> for ModelInstance {
     fn from(value: DrawData3D) -> Self {
-        ModelInstance::from(&value)
+        return ModelInstance {
+            transform_0: value.transform.x_axis.into(),
+            transform_1: value.transform.y_axis.into(),
+            transform_2: value.transform.z_axis.into(),
+            transform_3: value.transform.w_axis.into(),
+            diffuse_color: value.diffuse_color.into(),
+            lightmap_color: value.lightmap_color.into(),
+        }
     }
 }

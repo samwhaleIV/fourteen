@@ -64,7 +64,7 @@ where
         return Self {
             in_movement_mode: false,
             lines: Vec::with_capacity(64),
-            test_texture: context.load_image_or_default::<IO>("wimpy/blend-test").await,
+            test_texture: context.get_image::<IO>("wimpy/blend-test").await,
             line_start: None,
             offset: WimpyVec::ZERO
         };

@@ -29,7 +29,6 @@ macro_rules! area {
 impl FontDefinition for FontClassic {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_classic
-        .unwrap_or(textures.missing)
     }
 
     fn get_glyph(character: char) -> GlyphArea {
@@ -104,7 +103,6 @@ impl FontDefinition for FontClassic {
 impl FontDefinition for FontClassicOutlined {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_classic_outline
-        .unwrap_or(textures.missing)
     }
     fn get_glyph(character: char) -> GlyphArea {
         return match character {
@@ -266,7 +264,6 @@ fn get_twelven_glyph_area(character: char) -> GlyphArea {
 impl FontDefinition for FontTwelven {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_twelven
-        .unwrap_or(textures.missing)
     }
     fn get_glyph(character: char) -> GlyphArea {
         get_twelven_glyph_area(character)
@@ -279,7 +276,6 @@ impl FontDefinition for FontTwelven {
 impl FontDefinition for FontTwelvenShaded {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_twelven_shaded
-        .unwrap_or(textures.missing)
     }
     fn get_glyph(character: char) -> GlyphArea {
         get_twelven_glyph_area(character)
@@ -292,7 +288,6 @@ impl FontDefinition for FontTwelvenShaded {
 impl FontDefinition for FontMonoElf {
     fn get_texture(textures: &EngineTextures) -> TextureFrame {
         textures.font_mono_elf
-        .unwrap_or(textures.missing)
     }
 
     fn get_glyph(character: char) -> GlyphArea {

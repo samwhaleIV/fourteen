@@ -37,7 +37,7 @@ where
 {
     async fn load(context: &mut WimpyContext) -> Self {
         Self {
-            srgb_test_texture: context.load_image_or_default::<IO>("wimpy/srgb-test").await,
+            srgb_test_texture: context.get_image::<IO>("wimpy/srgb-test").await,
         }
     }
 

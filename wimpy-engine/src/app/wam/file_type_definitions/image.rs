@@ -14,7 +14,7 @@ pub struct HardImageAsset {
 
 
 #[derive(Debug,Clone)]
-pub struct VirtualImageSliceAsset {
+pub struct ImageSliceAssetReference {
     pub name: Rc<str>,
     pub key: HardAssetKey,
     pub area: ImageArea
@@ -22,4 +22,4 @@ pub struct VirtualImageSliceAsset {
 
 impl_hard_asset_resolver!(HardImageAsset,Image,HardAssetType::Image);
 impl_asset_reference_resolver!(ImageAssetReference,Image);
-impl_asset_reference_resolver!(VirtualImageSliceAsset,ImageSlice);
+impl_asset_reference_resolver!(ImageSliceAssetReference,ImageSlice);

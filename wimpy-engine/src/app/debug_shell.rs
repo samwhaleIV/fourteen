@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::default;
 use std::marker::PhantomData;
 use std::fmt::{self,Write};
 
@@ -411,7 +410,6 @@ impl DebugShell {
             line_height_scale: 1.0,
             word_seperator: ' ',
         };
-        const TEXT_MARGIN: f32 = 5.0;
         let mut text_pipeline = render_pass.set_pipeline_text::<FontMonoElf>();
         for command in &self.buffers.label_commands {
             text_pipeline.batch_text(
