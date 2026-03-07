@@ -7,6 +7,7 @@ mod frame_cache;
 mod double_buffer;
 mod bind_group_cache;
 mod engine_textures;
+mod virtual_texture_atlas;
 
 pub mod pipelines;
 pub mod fonts;
@@ -21,6 +22,7 @@ pub use frame_cache::*;
 pub use bind_group_cache::*;
 pub use double_buffer::*;
 pub use engine_textures::*;
+pub use virtual_texture_atlas::*;
 
 pub use pipelines::pipeline_2d::DrawData2D;
 pub use pipelines::pipeline_3d::DrawData3D;

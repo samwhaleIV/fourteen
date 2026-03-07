@@ -1,11 +1,13 @@
 use glam::Mat4;
 use wgpu::*;
-use std::ops::Range;
+use std::{borrow::Borrow, ops::Range};
 use bytemuck::{Pod,Zeroable};
 use crate::{WimpyColorLinear, app::{graphics::*,wam::ModelData}};
 use super::core::*;
 
 pub struct Pipeline3D {
+    diffuse_atlas: VirtualTextureAtlas,
+    lightmap_atlas: VirtualTextureAtlas,
     pipelines: PipelineSet,
     instance_buffer: DoubleBuffer<ModelInstance>,
 }
@@ -19,6 +21,7 @@ impl Pipeline3D {
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
+        texture_id_generator: &mut TextureIdentityGenerator,
         texture_layout: &BindGroupLayout,
         uniform_layout: &BindGroupLayout
     ) -> Self
@@ -71,7 +74,29 @@ impl Pipeline3D {
             })
         );
 
+        use constants::pipeline_3d::*;
+
+        let diffuse_atlas = VirtualTextureAtlas::create(
+            graphics_provider,
+            texture_id_generator.next(),
+            &VirtualTextureAtlasConfig {
+                slot_size: ATLAS_SLOT_SIZE_DIFFUSE,
+                slot_length: ATLAS_SLOT_LENGTH_DIFFUSE,
+            }
+        );
+
+        let lightmap_atlas = VirtualTextureAtlas::create(
+            graphics_provider,
+            texture_id_generator.next(),
+            &VirtualTextureAtlasConfig {
+                slot_size: ATLAS_SLOT_SIZE_LIGHTMAP,
+                slot_length: ATLAS_SLOT_LENGTH_LIGHTMAP,
+            }
+        );
+
         return Self {
+            diffuse_atlas,
+            lightmap_atlas,
             pipelines,
             instance_buffer,
         }
@@ -82,7 +107,7 @@ struct TextureDrawData {
     diffuse: Option<TextureFrame>,
     lightmap: Option<TextureFrame>,
     diffuse_sampler: SamplerMode,
-    strategy: TextureStrategy,
+    strategy: TextureChannelStrategy,
 }
 
 impl PipelineController for Pipeline3D {
@@ -149,39 +174,45 @@ impl Default for DrawData3D {
 }
 
 #[derive(Copy,Clone)]
-pub enum TextureStrategy {
+pub enum TextureChannelStrategy {
     Standard,
     NoLightmap,
     LightmapToDiffuse,
 }
 
 impl Pipeline3DPass<'_,'_> {
-    pub fn draw<I>(&mut self,model_data: &ModelData,diffuse_sampler: SamplerMode,texture_strategy: TextureStrategy,draw_data: I)
+    pub fn set_diffuse_sampler_mode(&mut self) {
+        todo!();
+    }
+    pub fn set_texture_channel_strategy(&mut self) {
+        todo!();
+    }
+    pub fn batch<I>(&mut self,model_data: &ModelData,draw_data: I)
     where
         I: IntoIterator,
-        I::Item: Into<ModelInstance>
+        I::Item: Borrow<DrawData3D>
     {
 
-        let Some(cache_reference) = model_data.cache_reference else {
-            return;
-        };
+        // let Some(cache_reference) = model_data.cache_reference else {
+        //     return;
+        // };
 
-        let Some(buffer_reference) = self.context.model_cache.entries.get(cache_reference) else {
-            return;
-        };
+        // let Some(buffer_reference) = self.context.model_cache.entries.get(cache_reference) else {
+        //     return;
+        // };
 
-        if let Err(()) = self.set_mesh_textures(&TextureDrawData {
-            diffuse: model_data.diffuse,
-            lightmap: model_data.lightmap,
-            diffuse_sampler,
-            strategy: texture_strategy
-        }) {
-            return;
-        }
-        let indices = Range {
-            start: buffer_reference.index_start,
-            end: buffer_reference.index_end
-        };
+        // if let Err(()) = self.set_mesh_textures(&TextureDrawData {
+        //     diffuse: model_data.diffuse,
+        //     lightmap: model_data.lightmap,
+        //     diffuse_sampler,
+        //     strategy: texture_strategy
+        // }) {
+        //     return;
+        // }
+        // let indices = Range {
+        //     start: buffer_reference.index_start,
+        //     end: buffer_reference.index_end
+        // };
         let instances = self.context.get_3d_pipeline_mut().instance_buffer.push_set(draw_data.into_iter().map(Into::into));
         self.render_pass.draw_indexed(indices,buffer_reference.base_vertex,Range {
             start: instances.start as u32,
@@ -191,54 +222,54 @@ impl Pipeline3DPass<'_,'_> {
 
     fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) -> Result<(),()> {
 
-        let m = self.context.textures.missing;
-        let w = self.context.textures.opaque_white;
+        // let m = self.context.textures.missing;
+        // let w = self.context.textures.opaque_white;
 
-        let (diffuse,lightmap) = match (
-            texture_data.diffuse,
-            texture_data.lightmap,
-            texture_data.strategy
-        ) {
-            (None, None, _) =>                                          (m, w),
+        // let (diffuse,lightmap) = match (
+        //     texture_data.diffuse,
+        //     texture_data.lightmap,
+        //     texture_data.strategy
+        // ) {
+        //     (None, None, _) =>                                          (m, w),
 
-            (None, Some(l),     TextureStrategy::Standard) =>           (m, l),
-            (Some(d), None,     TextureStrategy::Standard) =>           (d, w),
-            (Some(d), Some(l),  TextureStrategy::Standard) =>           (d, l),
+        //     (None, Some(l),     TextureStrategy::Standard) =>           (m, l),
+        //     (Some(d), None,     TextureStrategy::Standard) =>           (d, w),
+        //     (Some(d), Some(l),  TextureStrategy::Standard) =>           (d, l),
 
-            (Some(d), _,        TextureStrategy::NoLightmap) =>         (d, w),
-            (None, _,           TextureStrategy::NoLightmap) =>         (m, w),
+        //     (Some(d), _,        TextureStrategy::NoLightmap) =>         (d, w),
+        //     (None, _,           TextureStrategy::NoLightmap) =>         (m, w),
 
-            (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
-            (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
-        };
+        //     (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
+        //     (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
+        // };
 
-        self.context.set_texture_bind_group(
-            TEXTURE_BIND_GROUP_INDEX,
-            &mut self.render_pass,
-            &BindGroupCacheIdentity::DualChannel {
-            ch_0: BindGroupChannelConfig {
-                mode: texture_data.diffuse_sampler,
-                texture: match self.context.frame_cache.get(diffuse.get_ref()) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        log::error!("Could not resolve diffuse texture frame to a texture view: {:?}",error);
-                        return Err(())
-                    },
-                },
-            },
-            ch_1: BindGroupChannelConfig {
-                mode: SamplerMode::LinearClamp,
-                texture: match self.context.frame_cache.get(lightmap.get_ref()) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        log::error!("Could not resolve lightmap texture frame to a texture view: {:?}",error);
-                        return Err(())
-                    },
-                }
-            }
-        });
+        // self.context.set_texture_bind_group(
+        //     TEXTURE_BIND_GROUP_INDEX,
+        //     &mut self.render_pass,
+        //     &BindGroupCacheIdentity::DualChannel {
+        //     ch_0: BindGroupChannelConfig {
+        //         mode: texture_data.diffuse_sampler,
+        //         texture: match self.context.frame_cache.get(diffuse.get_ref()) {
+        //             Ok(value) => value,
+        //             Err(error) => {
+        //                 log::error!("Could not resolve diffuse texture frame to a texture view: {:?}",error);
+        //                 return Err(())
+        //             },
+        //         },
+        //     },
+        //     ch_1: BindGroupChannelConfig {
+        //         mode: SamplerMode::LinearClamp,
+        //         texture: match self.context.frame_cache.get(lightmap.get_ref()) {
+        //             Ok(value) => value,
+        //             Err(error) => {
+        //                 log::error!("Could not resolve lightmap texture frame to a texture view: {:?}",error);
+        //                 return Err(())
+        //             },
+        //         }
+        //     }
+        // });
 
-        return Ok(())
+        // return Ok(())
     }
 }
 
@@ -253,10 +284,16 @@ pub struct ModelVertex {
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
 pub struct ModelInstance {
+    pub uv_pos_diffuse: [f32;2],
+    pub uv_size_diffuse: [f32;2],
+    pub uv_pos_lightmap: [f32;2],
+    pub uv_size_lightmap: [f32;2],
+
     pub transform_0: [f32;4],
     pub transform_1: [f32;4],
     pub transform_2: [f32;4],
     pub transform_3: [f32;4],
+
     pub diffuse_color: [f32;4],
     pub lightmap_color: [f32;4]
 }
@@ -268,12 +305,20 @@ impl ATTR {
     pub const DIFFUSE_UV: u32 = 0;
     pub const LIGHTMAP_UV: u32 = 1;
     pub const POSITION: u32 = 2;
-    pub const TRANSFORM_0: u32 = 3;
-    pub const TRANSFORM_1: u32 = 4;
-    pub const TRANSFORM_2: u32 = 5;
-    pub const TRANSFORM_3: u32 = 6;
-    pub const DIFFUSE_COLOR: u32 = 7;
-    pub const LIGHTMAP_COLOR: u32 = 8;
+
+    pub const UV_POS_DIFFUSE: u32 = 3;
+    pub const UV_SIZE_DIFFUSE: u32 = 4;
+
+    pub const UV_POS_LIGHTMAP: u32 = 5;
+    pub const UV_SIZE_LIGHTMAP: u32 = 6;
+
+    pub const TRANSFORM_0: u32 = 7;
+    pub const TRANSFORM_1: u32 = 8;
+    pub const TRANSFORM_2: u32 = 9;
+    pub const TRANSFORM_3: u32 = 10;
+
+    pub const DIFFUSE_COLOR: u32 = 11;
+    pub const LIGHTMAP_COLOR: u32 = 12;
 }
 
 impl ModelVertex {
@@ -293,11 +338,17 @@ impl ModelVertex {
 }
 
 impl ModelInstance {
-    const ATTRS: [wgpu::VertexAttribute;6] = wgpu::vertex_attr_array![
+    const ATTRS: [wgpu::VertexAttribute;10] = wgpu::vertex_attr_array![
+        ATTR::UV_POS_DIFFUSE => Float32x2,
+        ATTR::UV_SIZE_DIFFUSE => Float32x2,
+        ATTR::UV_POS_LIGHTMAP => Float32x2,
+        ATTR::UV_SIZE_LIGHTMAP => Float32x2,
+
         ATTR::TRANSFORM_0 => Float32x4,
         ATTR::TRANSFORM_1 => Float32x4,
         ATTR::TRANSFORM_2 => Float32x4,
         ATTR::TRANSFORM_3 => Float32x4,
+
         ATTR::DIFFUSE_COLOR => Float32x4,
         ATTR::LIGHTMAP_COLOR => Float32x4,
     ];
@@ -311,28 +362,40 @@ impl ModelInstance {
     }
 }
 
-impl From<&DrawData3D> for ModelInstance {
-    fn from(value: &DrawData3D) -> Self {
-        return ModelInstance {
-            transform_0: value.transform.x_axis.into(),
-            transform_1: value.transform.y_axis.into(),
-            transform_2: value.transform.z_axis.into(),
-            transform_3: value.transform.w_axis.into(),
-            diffuse_color: value.diffuse_color.into(),
-            lightmap_color: value.lightmap_color.into(),
-        }
-    }
-}
+// impl From<&DrawData3D> for ModelInstance {
+//     fn from(value: &DrawData3D) -> Self {
+//         return ModelInstance {
+//             uv_pos_diffuse: todo!(),
+//             uv_size_diffuse: todo!(),
+//             uv_pos_lightmap: todo!(),
+//             uv_size_lightmap: todo!(),
 
-impl From<DrawData3D> for ModelInstance {
-    fn from(value: DrawData3D) -> Self {
-        return ModelInstance {
-            transform_0: value.transform.x_axis.into(),
-            transform_1: value.transform.y_axis.into(),
-            transform_2: value.transform.z_axis.into(),
-            transform_3: value.transform.w_axis.into(),
-            diffuse_color: value.diffuse_color.into(),
-            lightmap_color: value.lightmap_color.into(),
-        }
-    }
-}
+//             transform_0: value.transform.x_axis.into(),
+//             transform_1: value.transform.y_axis.into(),
+//             transform_2: value.transform.z_axis.into(),
+//             transform_3: value.transform.w_axis.into(),
+
+//             diffuse_color: value.diffuse_color.into(),
+//             lightmap_color: value.lightmap_color.into(),
+//         }
+//     }
+// }
+
+// impl From<DrawData3D> for ModelInstance {
+//     fn from(value: DrawData3D) -> Self {
+//         return ModelInstance {
+//             uv_pos_diffuse: todo!(),
+//             uv_size_diffuse: todo!(),
+//             uv_pos_lightmap: todo!(),
+//             uv_size_lightmap: todo!(),
+
+//             transform_0: value.transform.x_axis.into(),
+//             transform_1: value.transform.y_axis.into(),
+//             transform_2: value.transform.z_axis.into(),
+//             transform_3: value.transform.w_axis.into(),
+
+//             diffuse_color: value.diffuse_color.into(),
+//             lightmap_color: value.lightmap_color.into(),
+//         }
+//     }
+// }

@@ -10,12 +10,19 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(3) transform_0: vec4<f32>,
-    @location(4) transform_1: vec4<f32>,
-    @location(5) transform_2: vec4<f32>,
-    @location(6) transform_3: vec4<f32>,
-    @location(7) diffuse_color: vec4<f32>,
-    @location(8) lightmap_color: vec4<f32>
+    @location(3) uv_pos_diffuse: vec2<f32>,
+    @location(4) uv_size_diffuse: vec2<f32>,
+
+    @location(5) uv_pos_lightmap: vec2<f32>,
+    @location(6) uv_size_lightmap: vec2<f32>,
+
+    @location(7) transform_0: vec4<f32>,
+    @location(8) transform_1: vec4<f32>,
+    @location(9) transform_2: vec4<f32>,
+    @location(10) transform_3: vec4<f32>,
+
+    @location(11) diffuse_color: vec4<f32>,
+    @location(12) lightmap_color: vec4<f32>
 }
 
 struct VertexOutput {
@@ -51,15 +58,6 @@ struct VertexOutput {
 @group(0) @binding(1) var s_diffuse: sampler;
 @group(0) @binding(2) var t_lightmap: texture_2d<f32>;
 @group(0) @binding(3) var s_lightmap: sampler;
-
-fn linear_to_srgb(linear: vec4<f32>) -> vec4<f32> {
-    let color_linear = linear.rgb;
-    let selector = ceil(color_linear - vec3<f32>(0.0031308));
-    let under = 12.92 * color_linear;
-    let over = 1.055 * pow(color_linear,vec3<f32>(1.0/2.4)) - 0.055;
-    let result = mix(under,over,selector);
-    return vec4<f32>(result,linear.a);
-}
 
 fn get_fragment_color(fragment: VertexOutput) -> vec4<f32> {
     var diffuse_sample = textureSample(

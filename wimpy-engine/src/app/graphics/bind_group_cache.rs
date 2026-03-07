@@ -277,7 +277,7 @@ impl BindGroupCache {
                 device,
                 &self.layout,
                 Channel {
-                    texture: ch_0.texture.get_view(),
+                    texture: ch_0.texture.get_texture_view(),
                     sampler: self.samplers.get(ch_0.mode),
                 }
             ),
@@ -285,11 +285,11 @@ impl BindGroupCache {
                 device,
                 &self.layout,
                 Channel {
-                    texture: ch_0.texture.get_view(),
+                    texture: ch_0.texture.get_texture_view(),
                     sampler: self.samplers.get(ch_0.mode),
                 },
                 Channel {
-                    texture: ch_1.texture.get_view(),
+                    texture: ch_1.texture.get_texture_view(),
                     sampler: self.samplers.get(ch_1.mode),
                 }
             ),

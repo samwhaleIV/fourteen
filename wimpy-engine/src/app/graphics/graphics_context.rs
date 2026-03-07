@@ -37,7 +37,7 @@ pub struct RenderPassContext<'a> {
     pub pipelines: &'a mut RenderPipelines,
     pub textures: &'a EngineTextures,
     pub bind_groups: &'a mut BindGroupCache,
-    pub graphics_provider: &'a GraphicsProvider
+    pub graphics_provider: &'a GraphicsProvider,
 }
 
 pub enum AvailableControls {
@@ -116,6 +116,7 @@ impl GraphicsContext {
 
         let pipelines = RenderPipelines::create::<TConfig>(
             &graphics_provider,
+            &mut texture_id_generator,
             bind_group_cache.get_texture_layout()
         );
 
@@ -158,7 +159,7 @@ impl GraphicsContext {
     }
 
     pub fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
-        let size = cache_size.output_single_dimension;
+        let size = cache_size.output_length;
         let cache_reference = match self.frame_cache.start_lease(size) {
             Ok(value) => value, 
             Err(error) => {
@@ -213,12 +214,12 @@ impl GraphicsContext {
         });
         CacheSize {
             input: size,
-            output_single_dimension: output
+            output_length: output
         }
     }
 
     pub fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
-        let size = cache_size.output_single_dimension;
+        let size = cache_size.output_length;
         if self.frame_cache.has_available_items(size) {
             return;
         }
@@ -240,10 +241,6 @@ impl GraphicsContext {
 
     pub fn get_collision_mesh<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Option<&'a CollisionShape> {
         self.model_cache.collision_shapes.get(model_cache_reference)
-    }
-
-    pub fn get_missing_texture(&self) -> TextureFrame {
-        return self.engine_textures.missing.clone();
     }
 
     pub fn create_output_builder<'a>(&'a mut self,color: impl WimpyColor) -> Option<OutputBuilderContext<'a>> {
@@ -357,7 +354,7 @@ impl OutputBuilder<'_> {
     where
         TFrame: MutableFrame
     {
-        let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_view();
+        let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_texture_view();
 
         let mut render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),

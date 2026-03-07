@@ -29,6 +29,7 @@ pub trait PipelineController {
 impl RenderPipelines {
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
+        texture_id_generator: &mut TextureIdentityGenerator,
         texture_bind_group_layout: &BindGroupLayout
     ) -> Self
     where
@@ -45,6 +46,7 @@ impl RenderPipelines {
 
         let pipeline_3d = Pipeline3D::create::<TConfig>(
             graphics_provider,
+            texture_id_generator,
             texture_bind_group_layout,
             uniform_bind_group_layout
         );

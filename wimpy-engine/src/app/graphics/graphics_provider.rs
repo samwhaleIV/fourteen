@@ -1,6 +1,6 @@
 use wgpu::*;
-
-use crate::{UWimpyPoint, app::graphics::constants::PREFER_SRGB_OUTPUT_SURFACE};
+use crate::UWimpyPoint;
+use super::constants::PREFER_SRGB_OUTPUT_SURFACE;
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,
@@ -9,7 +9,7 @@ pub struct GraphicsProvider {
     config: SurfaceConfiguration,
     max_texture_dimension: u32,
     output_view_format: TextureFormat,
-    max_texture_power_of_two: u32
+    max_texture_power_of_two: u32,
 }
 
 pub struct GraphicsProviderConfig {

@@ -1,4 +1,6 @@
 use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
+use wgpu::Extent3d;
+
 use super::*;
 
 #[derive(Debug,Copy,Clone,Default,PartialEq)]
@@ -349,6 +351,15 @@ impl From<i32> for WimpyVec {
         Self {
             x: value as f32,
             y: value as f32,
+        }
+    }
+}
+
+impl From<Extent3d> for WimpyVec {
+    fn from(value: Extent3d) -> Self {
+        Self {
+            x: value.width as f32,
+            y: value.height as f32
         }
     }
 }

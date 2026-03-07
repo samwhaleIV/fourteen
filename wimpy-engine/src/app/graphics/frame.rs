@@ -10,7 +10,8 @@ pub struct RestrictedSize {
 #[derive(Copy,Clone)]
 pub struct CacheSize {
     pub input: UWimpyPoint,
-    pub output_single_dimension: u32
+    /// The length of either `x` or `y`, since a cache size is applied to both dimensions.
+    pub output_length: u32
 }
 
 pub struct OutputFrame {
@@ -129,7 +130,7 @@ impl FrameReference for TempFrame {
     }
 
     fn get_output_size(&self) -> UWimpyPoint {
-        self.size.output_single_dimension.into()
+        self.size.output_length.into()
     }
 }
 

@@ -123,12 +123,16 @@ impl TextureContainer {
         };
     }
 
-    pub fn get_view(&self) -> &TextureView {
-        return &self.view;
+    pub fn get_texture_view(&self) -> &TextureView {
+        &self.view
+    }
+
+    pub fn get_texture(&self) -> &Texture {
+        self.view.texture()
     }
 
     pub fn get_identity(&self) -> TextureContainerIdentity {
-        return self.identity;
+        self.identity
     }
 
     pub fn create_render_target(
