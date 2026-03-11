@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
-use crate::{UWimpyPoint, WimpyRect, WimpyVec};
+use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::ClockCache};
 use super::{FrameCacheReference, GraphicsContext, TextureContainer, GraphicsProvider, TextureContainerIdentity};
 
 pub struct VirtualTextureAtlasConfig {
@@ -13,29 +12,25 @@ pub struct VirtualTextureAtlasConfig {
 pub struct VirtualTextureAtlas {
     /// The size in pixels of a slot. An atlas item can be smaller than this squared, even rectangular, but cannot exceed this value in either dimension.
     slot_size: u32,
+
     /// How many slots occupy a dimension
     slot_length: u32,
-    /// The surface provided to a shader
-    texture_container: TextureContainer,
-    /// The indices available for use in the virtual atlas grid
-    free_slot_ids: Vec<u16>,
-    /// Textures currently rendered onto the `output_frame` surface
-    bound_textures: HashMap<FrameCacheReference,AtlasSlotData>,
 
     /// The UV scalar to apply to atlas slots.
     /// 
     /// Represented as a reciprocal in order to avoid the expense of division (compared to multiplication) and divide by zero.
-    size_recip: WimpyVec
-}
+    size_recip: WimpyVec,
 
-struct AtlasSlotData {
-    slot_id: u16,
-    uv_area: WimpyRect
-}
+    /// The surface provided to a shader
+    atlas_texture: TextureContainer,
 
-pub enum AtlasUpdate {
-    AddTexture(FrameCacheReference),
-    RemoveTexture(FrameCacheReference)
+    /// Backend cache for key/ownership logisitics
+    /// 
+    /// Does not contain cache values, only provides feedback for coordinated movements (inserted, dropped, or maintained)
+    residency_cache: ClockCache<FrameCacheReference>,
+
+    /// A cache of sub-UV areas within the atlas surface
+    uv_cache: Vec<WimpyRect>,
 }
 
 const fn get_slot_origin(slot_length: u32,slot_id: u32) -> UWimpyPoint {
@@ -61,32 +56,31 @@ impl VirtualTextureAtlas {
             UWimpyPoint::from(pixel_size)
         );
 
-        let free_slots: Vec<u16> = (0..config.slot_length.pow(2) as u16).collect();
-        let active_textures = HashMap::with_capacity(free_slots.len());
+        let slot_count = config.slot_size.pow(2) as usize;
 
         Self {
             slot_size: config.slot_size,
             slot_length: pixel_size / config.slot_size,
-            texture_container,
-            free_slot_ids: free_slots,
-            bound_textures: active_textures,
-            size_recip: WimpyVec::ONE / WimpyVec::from(pixel_size)
+            atlas_texture: texture_container,
+            size_recip: WimpyVec::ONE / WimpyVec::from(pixel_size),
+            residency_cache: ClockCache::new(slot_count),
+            uv_cache: vec![Default::default();slot_count]
         }
     }
 
-    fn add_texture(&mut self,graphics_context: &mut GraphicsContext,encoder: &mut CommandEncoder,texture: FrameCacheReference) {
-        let std::collections::hash_map::Entry::Vacant(entry) = self.bound_textures.entry(texture) else {
-            return;
-        };
-        let Some(slot_id) = self.free_slot_ids.pop() else {
-            log::warn!("Texture atlas is full; cannot insert texture");
-            return;
-        };
+    fn write_texture_to_surface(
+        &mut self,
+        graphics_context: &mut GraphicsContext,
+        encoder: &mut CommandEncoder,
+        texture: FrameCacheReference,
+        slot: usize,
+    ) {
         let source_texture = match graphics_context.frame_cache.get(texture) {
             Ok(container) => {
                 container.get_texture()
             },
             Err(_) => {
+                // This is not similiar to where we would want to use the 'missing' texture. This is an internal structural issue
                 log::warn!("Texture not found; it's not in the frame cache");
                 return;
             },
@@ -105,9 +99,9 @@ impl VirtualTextureAtlas {
             origin: Origin3d::ZERO,
             aspect: TextureAspect::All,
         };
-        let origin = get_slot_origin(self.slot_length,slot_id as u32);
+        let origin = get_slot_origin(self.slot_length,slot as u32);
         let dst = TexelCopyTextureInfo {
-            texture: self.texture_container.get_texture(),
+            texture: self.atlas_texture.get_texture(),
             mip_level: 0,
             origin: Origin3d {
                 x: origin.x,
@@ -122,43 +116,33 @@ impl VirtualTextureAtlas {
             depth_or_array_layers: 1,
         };
         encoder.copy_texture_to_texture(src,dst,copy_size);
-        entry.insert(AtlasSlotData {
-            slot_id,
-            uv_area: WimpyRect {
-                position: WimpyVec::from(origin) * self.size_recip,
-                size: WimpyVec::from(src_size) * self.size_recip,
-            },
-        });
+
+        if let Some(uv) = self.uv_cache.get_mut(slot) {
+            uv.position = WimpyVec::from(origin) * self.size_recip;
+            uv.size = WimpyVec::from(src_size) * self.size_recip;
+        }
     }
 
-    fn remove_texture(&mut self,texture: FrameCacheReference) {
-        let Some(slot_data) = self.bound_textures.remove(&texture) else {
-            return;
-        };
-        self.free_slot_ids.push(slot_data.slot_id);
-    }
-
-    pub fn update<I>(&mut self,graphics_context: &mut GraphicsContext,encoder: &mut CommandEncoder,updates: I)
+    pub fn set_textures<I>(
+        &mut self,graphics_context: &mut GraphicsContext,
+        encoder: &mut CommandEncoder,
+        textures: I
+    )
     where
-        I: IntoIterator<Item = AtlasUpdate>
+        I: IntoIterator<Item = FrameCacheReference>
     {
-        for update in updates.into_iter() {
-            match update {
-                AtlasUpdate::AddTexture(texture) => {
-                    self.add_texture(graphics_context,encoder,texture)
-                },
-                AtlasUpdate::RemoveTexture(texture) => {
-                    self.remove_texture(texture)
-                },
+        for texture in textures.into_iter() {
+            if let Some(cache_change) = self.residency_cache.insert(texture) {
+                self.write_texture_to_surface(graphics_context,encoder,texture,cache_change.slot);
             }
         }
     }
 
     pub fn get_uv_area(&self,texture: &FrameCacheReference) -> Option<WimpyRect> {
-        let Some(slot_data) = self.bound_textures.get(&texture) else {
-            // Texture not in atlas
-            return None;
-        };
-        Some(slot_data.uv_area)
+        if let Some(slot) = self.residency_cache.get_slot_for_key(*texture) {
+            self.uv_cache.get(slot).copied()
+        } else {
+            None
+        }
     }
 }
