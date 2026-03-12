@@ -1,6 +1,6 @@
 use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
-use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::ClockCache};
-use super::{FrameCacheReference, GraphicsContext, TextureContainer, GraphicsProvider, TextureContainerIdentity};
+use crate::{UWimpyPoint, WimpyRect, WimpyVec, app::graphics::FrameCache, collections::ClockCache};
+use super::{FrameCacheReference, TextureContainer, GraphicsProvider, TextureContainerIdentity};
 
 pub struct VirtualTextureAtlasConfig {
     /// How big a slot is (e.g., 16 pixels)
@@ -22,12 +22,14 @@ pub struct VirtualTextureAtlas {
     size_recip: WimpyVec,
 
     /// The surface provided to a shader
-    atlas_texture: TextureContainer,
+    atlas_texture_container: TextureContainer,
 
     /// Backend cache for key/ownership logisitics
     /// 
     /// Does not contain cache values, only provides feedback for coordinated movements (inserted, dropped, or maintained)
     residency_cache: ClockCache<FrameCacheReference>,
+
+    encoder_commands: Vec<EncoderTextureCopyCommand>,
 
     /// A cache of sub-UV areas within the atlas surface
     uv_cache: Vec<WimpyRect>,
@@ -38,6 +40,12 @@ const fn get_slot_origin(slot_length: u32,slot_id: u32) -> UWimpyPoint {
         x: slot_id % slot_length,
         y: slot_id / slot_length,
     }
+}
+
+struct EncoderTextureCopyCommand {
+    texture: wgpu::Texture,
+    src_size: UWimpyPoint,
+    dst_origin: UWimpyPoint,
 }
 
 impl VirtualTextureAtlas {
@@ -61,21 +69,50 @@ impl VirtualTextureAtlas {
         Self {
             slot_size: config.slot_size,
             slot_length: pixel_size / config.slot_size,
-            atlas_texture: texture_container,
+            atlas_texture_container: texture_container,
             size_recip: WimpyVec::ONE / WimpyVec::from(pixel_size),
+            uv_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
-            uv_cache: vec![Default::default();slot_count]
+            encoder_commands: Vec::with_capacity(slot_count / 4)
         }
     }
 
-    fn write_texture_to_surface(
+    pub fn flush(&mut self,encoder: &mut CommandEncoder) {
+        let atlas_texture = &self.atlas_texture_container.get_texture().clone();
+        for command in self.encoder_commands.drain(..) {
+            let src = TexelCopyTextureInfo {
+                texture: &command.texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            };
+
+            let dst = TexelCopyTextureInfo {
+                texture: atlas_texture,
+                mip_level: 0,
+                origin: Origin3d {
+                    x: command.dst_origin.x,
+                    y: command.dst_origin.y,
+                    z: 0,
+                },
+                aspect: TextureAspect::All,
+            };
+            let copy_size = Extent3d {
+                width:  command.src_size.x,
+                height: command.src_size.y,
+                depth_or_array_layers: 1,
+            };
+            encoder.copy_texture_to_texture(src,dst,copy_size);
+        }
+    }
+
+    fn set_texture_internal(
         &mut self,
-        graphics_context: &mut GraphicsContext,
-        encoder: &mut CommandEncoder,
+        frame_cache: &FrameCache,
         texture: FrameCacheReference,
         slot: usize,
     ) {
-        let source_texture = match graphics_context.frame_cache.get(texture) {
+        let source_texture = match frame_cache.get(texture) {
             Ok(container) => {
                 container.get_texture()
             },
@@ -85,64 +122,53 @@ impl VirtualTextureAtlas {
                 return;
             },
         };
-        let src_size = source_texture.size();
-        if
-            src_size.width > self.slot_size ||
-            src_size.height > self.slot_size
-        {
-            log::warn!("Texture too big for atlas slot");
-            return;
-        }
-        let src = TexelCopyTextureInfo {
-            texture: source_texture,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        };
-        let origin = get_slot_origin(self.slot_length,slot as u32);
-        let dst = TexelCopyTextureInfo {
-            texture: self.atlas_texture.get_texture(),
-            mip_level: 0,
-            origin: Origin3d {
-                x: origin.x,
-                y: origin.y,
-                z: 0,
-            },
-            aspect: TextureAspect::All,
-        };
-        let copy_size = Extent3d {
-            width: src_size.width,
-            height: src_size.height,
-            depth_or_array_layers: 1,
-        };
-        encoder.copy_texture_to_texture(src,dst,copy_size);
 
-        if let Some(uv) = self.uv_cache.get_mut(slot) {
-            uv.position = WimpyVec::from(origin) * self.size_recip;
-            uv.size = WimpyVec::from(src_size) * self.size_recip;
+        let slot_size = self.slot_size;
+        let mut src_size = UWimpyPoint::from(source_texture.size());
+
+        if src_size.x > slot_size {
+            src_size.x = src_size.x.min(slot_size);
+            log::warn!("Texture width '{}' too big for atlas slot '{}'",src_size.x,slot_size);
         }
+
+        if src_size.y > slot_size {
+            src_size.y = src_size.y.min(slot_size);
+            log::warn!("Texture height '{}' too big for atlas slot '{}'",src_size.y,slot_size);
+        }
+
+        let dst_origin = get_slot_origin(self.slot_length,slot as u32);
+
+        self.encoder_commands.push(EncoderTextureCopyCommand {
+            texture: source_texture.clone(),
+            src_size,
+            dst_origin,
+        });
+
+        let uv_area = WimpyRect {
+            position: WimpyVec::from(dst_origin),
+            size: WimpyVec::from(src_size)
+        } * self.size_recip;
+
+        self.uv_cache[slot] = uv_area;
     }
 
-    pub fn set_textures<I>(
-        &mut self,graphics_context: &mut GraphicsContext,
-        encoder: &mut CommandEncoder,
-        textures: I
-    )
-    where
-        I: IntoIterator<Item = FrameCacheReference>
-    {
-        for texture in textures.into_iter() {
-            if let Some(cache_change) = self.residency_cache.insert(texture) {
-                self.write_texture_to_surface(graphics_context,encoder,texture,cache_change.slot);
-            }
+    pub fn set_texture(&mut self,frame_cache: &FrameCache,texture: FrameCacheReference) -> WimpyRect {
+        let cache_update = self.residency_cache.insert(texture);
+        if cache_update.feedback.is_some() {
+            self.set_texture_internal(frame_cache,texture,cache_update.slot);
         }
+        self.uv_cache[cache_update.slot]
     }
 
-    pub fn get_uv_area(&self,texture: &FrameCacheReference) -> Option<WimpyRect> {
-        if let Some(slot) = self.residency_cache.get_slot_for_key(*texture) {
+    pub fn get_uv_area(&self,texture: FrameCacheReference) -> Option<WimpyRect> {
+        if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
             self.uv_cache.get(slot).copied()
         } else {
             None
         }
+    }
+
+    pub fn get_texture_container(&self) -> &TextureContainer {
+        &self.atlas_texture_container
     }
 }

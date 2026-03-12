@@ -8,7 +8,7 @@ use crate::app::graphics::*;
 use super::core::*;
 
 pub struct Pipeline2D {
-    pipelines: PipelineSet,
+    variants: PipelineVariants,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<QuadInstance>,
@@ -113,7 +113,7 @@ impl Pipeline2D {
         );
 
         return Self {
-            pipelines,
+            variants: pipelines,
             vertex_buffer,
             index_buffer,
             instance_buffer,
@@ -147,12 +147,9 @@ impl Default for DrawData2D {
     }
 }
 
-impl PipelineController for Pipeline2D {
-    fn write_dynamic_buffers(&mut self,queue: &Queue) {
-        self.instance_buffer.write_out(queue);
-    }
-    fn reset_pipeline_state(&mut self) {
-        self.instance_buffer.reset();
+impl PipelineFlush for Pipeline2D {
+    fn flush(&mut self,context: &mut PipelineFlushContext) {
+        self.instance_buffer.flush(context.queue);
     }
 }
 
@@ -162,10 +159,10 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
         context: &'a mut RenderPassContext<'frame>,
         uniform_reference: UniformReference
     ) -> Self {
-        let pipeline_2d = context.get_2d_pipeline();
+        let pipeline_2d = &context.pipelines.pipeline_2d;
 
-        render_pass.set_pipeline(&pipeline_2d.pipelines.select(context.variant_key));
-        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        render_pass.set_pipeline(&pipeline_2d.variants.select(context.variant_key));
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),
@@ -205,15 +202,13 @@ impl Pipeline2DPass<'_,'_> {
 
         return match self.context.frame_cache.get(reference) {
             Ok(texture_container) => {
-                self.context.set_texture_bind_group(
-                    TEXTURE_BIND_GROUP_INDEX,
-                    &mut self.render_pass,
-                    &BindGroupCacheIdentity::SingleChannel {
+                let bind_group = self.context.bind_groups.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: self.sampler_mode,
                         texture: texture_container,
                     }
                 });
+                self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
                 Ok(())
             },
             Err(error) => {
@@ -235,7 +230,7 @@ impl Pipeline2DPass<'_,'_> {
 
         let uv_scale = frame_reference.get_uv_scale();
 
-        let range = self.context.get_2d_pipeline_mut().instance_buffer.push_set(draw_data.into_iter().map(|item|{
+        let range = self.context.pipelines.pipeline_2d.instance_buffer.push_set(draw_data.into_iter().map(|item|{
             let item = item.borrow();
 
             let dst = item.destination.origin_top_left_to_center();

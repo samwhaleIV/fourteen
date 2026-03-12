@@ -1,6 +1,6 @@
 mod graphics_provider;
 mod graphics_context;
-mod model_cache;
+mod mesh_cache;
 mod texture_container;
 mod frame;
 mod frame_cache;
@@ -15,7 +15,7 @@ pub mod constants;
 
 pub use graphics_provider::*;
 pub use graphics_context::*;
-pub use model_cache::*;
+pub use mesh_cache::*;
 pub use texture_container::*;
 pub use frame::*;
 pub use frame_cache::*;

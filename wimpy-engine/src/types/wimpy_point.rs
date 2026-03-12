@@ -200,3 +200,12 @@ impl From<[i32;2]> for IWimpyPoint {
         }
     }
 }
+
+impl From<wgpu::Extent3d> for UWimpyPoint {
+    fn from(value: wgpu::Extent3d) -> Self {
+        Self {
+            x: value.width,
+            y: value.height
+        }
+    }
+}

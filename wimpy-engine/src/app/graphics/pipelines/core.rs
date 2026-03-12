@@ -9,33 +9,40 @@ use super::pipeline_3d::*;
 use super::text_pipeline::*;
 use super::lines_pipeline::*;
 
-pub struct UniquePipelines {
-    pub pipeline_2d: Pipeline2D,
-    pub pipeline_3d: Pipeline3D,
-    pub text_pipeline: TextPipeline,
-    pub lines_pipeline: LinesPipeline
-}
 
 pub struct RenderPipelines {
-    pipelines_unique: UniquePipelines,
-    pipeline_shared: SharedPipeline,
+    pub pipeline_2d: Pipeline2D,
+    pub pipeline_3d: Pipeline3D,
+    pub text: TextPipeline,
+    pub lines: LinesPipeline,
+    pub shared: SharedPipeline
 }
 
-pub trait PipelineController {
-    fn write_dynamic_buffers(&mut self,queue: &Queue);
-    fn reset_pipeline_state(&mut self);
+pub struct PipelineFlushContext<'a> {
+    pub queue: &'a Queue,
+    pub encoder: &'a mut CommandEncoder
+}
+
+pub trait PipelineFlush {
+    /// Write out and clear buffers and encoders that are built frame by frame, such as instance buffers
+    /// 
+    /// Not intended for static buffers such as vertex or index buffers
+    fn flush(&mut self,context: &mut PipelineFlushContext);
 }
 
 impl RenderPipelines {
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
+        bind_group_cache: &mut BindGroupCache,
         texture_id_generator: &mut TextureIdentityGenerator,
-        texture_bind_group_layout: &BindGroupLayout
+        mesh_cache: &mut MeshCache,
     ) -> Self
     where
         TConfig: GraphicsContextConfig
     {
         let pipeline_shared = SharedPipeline::create::<TConfig>(graphics_provider);
+
+        let texture_bind_group_layout = bind_group_cache.get_texture_layout();
         let uniform_bind_group_layout = pipeline_shared.get_uniform_layout();
 
         let pipeline_2d = Pipeline2D::create::<TConfig>(
@@ -46,9 +53,10 @@ impl RenderPipelines {
 
         let pipeline_3d = Pipeline3D::create::<TConfig>(
             graphics_provider,
-            texture_id_generator,
             texture_bind_group_layout,
-            uniform_bind_group_layout
+            uniform_bind_group_layout,
+            texture_id_generator,
+            mesh_cache
         );
 
         let text_pipeline = TextPipeline::create::<TConfig>(
@@ -64,49 +72,25 @@ impl RenderPipelines {
         );
 
         return Self {
-            pipelines_unique: UniquePipelines {
-                pipeline_2d,
-                pipeline_3d,
-                text_pipeline,
-                lines_pipeline,
-            },
-            pipeline_shared,
+            pipeline_2d,
+            pipeline_3d,
+            text: text_pipeline,
+            lines: lines_pipeline,
+            shared: pipeline_shared,
         }
     }
 
-    pub fn write_pipeline_buffers(&mut self,queue: &Queue) {
-        // Investigate: only finalize the pipelines that were used during this output builder's life (or let the pipelines no-op on their own?)
-        self.pipelines_unique.pipeline_2d.write_dynamic_buffers(queue);
-        self.pipelines_unique.pipeline_3d.write_dynamic_buffers(queue);
-        self.pipelines_unique.text_pipeline.write_dynamic_buffers(queue);
-        self.pipelines_unique.lines_pipeline.write_dynamic_buffers(queue);
-        // We always write the shared buffers
-        self.pipeline_shared.write_uniform_buffer(queue);
-    }
+    pub fn flush(&mut self,queue: &Queue,encoder: &mut CommandEncoder) {
+        let context = &mut PipelineFlushContext { queue, encoder };
 
-    pub fn reset_pipeline_states(&mut self) {
-        self.pipelines_unique.pipeline_2d.reset_pipeline_state();
-        self.pipelines_unique.pipeline_3d.reset_pipeline_state();
-        self.pipelines_unique.text_pipeline.reset_pipeline_state();
-        self.pipelines_unique.lines_pipeline.reset_pipeline_state();
-        
-        self.pipeline_shared.reset_uniform_buffer();
-    }
+        self.pipeline_2d.flush(context);
+        self.pipeline_3d.flush(context);
+        self.text.flush(context);
+        self.lines.flush(context);
 
-    pub fn get_shared(&self) -> &SharedPipeline {
-        return &self.pipeline_shared;
-    }
-
-    pub fn get_shared_mut(&mut self) -> &mut SharedPipeline {
-        return &mut self.pipeline_shared;
-    }
-
-    pub fn get_unique(&self) -> &UniquePipelines {
-        return &self.pipelines_unique;
-    }
-
-    pub fn get_unique_mut(&mut self) -> &mut UniquePipelines {
-        return &mut self.pipelines_unique;
+        let uniform_buffer = &mut self.shared.uniform_buffer;
+        uniform_buffer.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
+        uniform_buffer.reset();
     }
 }
 
@@ -198,8 +182,8 @@ impl PipelineCreator<'_> {
         return pipeline;
     }
 
-    pub fn create_pipeline_set(&self) -> PipelineSet {
-        PipelineSet {
+    pub fn create_pipeline_set(&self) -> PipelineVariants {
+        PipelineVariants {
             internal_target_pipeline: self.create_pipeline(
                 INTERNAL_RENDER_TARGET_FORMAT
             ),
@@ -216,12 +200,13 @@ pub enum PipelineVariantKey {
     OutputSurface
 }
 
-pub struct PipelineSet {
+/// Provides variadic pipeline selection for handling format mismatches between internal render targets and the ultimate output surface
+pub struct PipelineVariants {
     internal_target_pipeline: RenderPipeline,
     output_surface_pipeline: RenderPipeline
 }
 
-impl PipelineSet {
+impl PipelineVariants {
     pub fn select(&self,key: PipelineVariantKey) -> &RenderPipeline {
         use PipelineVariantKey::*;
         match key {
@@ -297,14 +282,6 @@ impl SharedPipeline {
             uniform_bind_group,
             uniform_buffer,
         }
-    }
-
-    pub fn write_uniform_buffer(&mut self,queue: &Queue) {
-        self.uniform_buffer.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
-    }
-
-    pub fn reset_uniform_buffer(&mut self) {
-        self.uniform_buffer.reset();
     }
 
     pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {

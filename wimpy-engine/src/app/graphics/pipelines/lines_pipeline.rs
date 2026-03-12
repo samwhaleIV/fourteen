@@ -6,8 +6,8 @@ use crate::{WimpyColorLinear, WimpyVec, app::graphics::*};
 use super::core::*;
 
 pub struct LinesPipeline {
-    strip_sub_variant: PipelineSet,
-    list_sub_variant: PipelineSet,
+    strip_sub_variant: PipelineVariants,
+    list_sub_variant: PipelineVariants,
     line_point_buffer: DoubleBuffer<LineVertex>,
 }
 
@@ -107,11 +107,9 @@ pub struct LinesPipelinePass<'a,'frame> {
     uniform_reference: UniformReference,
 }
 
-impl PipelineController for LinesPipeline {
-    fn write_dynamic_buffers(&mut self,queue: &Queue) {
-        self.line_point_buffer.write_out(queue);
-    }
-    fn reset_pipeline_state(&mut self) {
+impl PipelineFlush for LinesPipeline {
+    fn flush(&mut self,context: &mut PipelineFlushContext) {
+        self.line_point_buffer.flush(context.queue);
         self.line_point_buffer.reset();
     }
 }
@@ -122,7 +120,7 @@ impl<'a,'frame> PipelinePass<'a,'frame> for LinesPipelinePass<'a,'frame> {
         context: &'a mut RenderPassContext<'frame>,
         uniform_reference: UniformReference,
     ) -> Self {
-        let lines_pipeline = context.get_line_pipeline();
+        let lines_pipeline = &context.pipelines.lines;
 
         render_pass.set_vertex_buffer(
             VERTEX_BUFFER_INDEX,
@@ -143,7 +141,7 @@ impl LinesPipelinePass<'_,'_> {
     where
         I: Iterator<Item = LineVertex>
     {
-        let buffer = &mut self.context.pipelines.get_unique_mut().lines_pipeline.line_point_buffer;
+        let buffer = &mut self.context.pipelines.lines.line_point_buffer;
         let start = buffer.len();
         buffer.push_set(line_points);
         let end = buffer.len();
@@ -162,13 +160,13 @@ impl LinesPipelinePass<'_,'_> {
         }
         self.render_pass.set_pipeline(match mode {
             LinesMode::Strip => {
-                &self.context.get_line_pipeline().strip_sub_variant
+                &self.context.pipelines.lines.strip_sub_variant
             },
             LinesMode::List => {
-                &self.context.get_line_pipeline().list_sub_variant
+                &self.context.pipelines.lines.list_sub_variant
             },
         }.select(self.context.variant_key));
-        self.context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(self.render_pass,self.uniform_reference);
+        self.context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(self.render_pass,self.uniform_reference);
         self.lines_mode = Some(mode);
     }
 

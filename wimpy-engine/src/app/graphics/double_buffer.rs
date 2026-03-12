@@ -50,7 +50,10 @@ impl<TItem> DoubleBuffer<TItem>
 where
     TItem: Pod + Zeroable
 {
-    pub fn write_out(&self,queue: &Queue) {
+    fn write_out(&self,queue: &Queue) {
+        if self.input_buffer.len() <= 0 {
+            return;
+        }
         if
             let Some(size) = NonZero::new((self.input_buffer.len() * size_of::<TItem>()) as BufferAddress) &&
             let Some(mut buffer_view) = queue.write_buffer_with(&self.output_buffer,0,size)
@@ -58,7 +61,16 @@ where
             buffer_view.copy_from_slice(bytemuck::cast_slice(&self.input_buffer));
         }
     }
+
+    pub fn flush(&mut self,queue: &Queue) {
+        self.write_out(queue);
+        self.reset();
+    }
+
     pub fn write_out_with_padding(&self,queue: &Queue,padding: usize) {
+        if self.input_buffer.len() <= 0 {
+            return;
+        }
         for (i,item) in self.input_buffer.iter().enumerate() {
             queue.write_buffer(&self.output_buffer,(i * padding) as BufferAddress,bytemuck::bytes_of(item));
         }

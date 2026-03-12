@@ -14,7 +14,7 @@ const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 pub struct TextPipeline {
-    pipelines: PipelineSet,
+    variants: PipelineVariants,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     instance_buffer: DoubleBuffer<GlyphInstance>,
@@ -131,7 +131,7 @@ impl TextPipeline {
         );
 
         Self {
-            pipelines,
+            variants: pipelines,
             vertex_buffer,
             index_buffer,
             instance_buffer,
@@ -178,12 +178,9 @@ fn validate_scale(scale: f32) -> f32 {
     scale.round().max(1.0)
 }
 
-impl PipelineController for TextPipeline {
-    fn write_dynamic_buffers(&mut self,queue: &Queue) {
-        self.instance_buffer.write_out(queue);
-    }
-    fn reset_pipeline_state(&mut self) {
-        self.instance_buffer.reset();
+impl PipelineFlush for TextPipeline {
+    fn flush(&mut self,context: &mut PipelineFlushContext) {
+        self.instance_buffer.flush(context.queue);
     }
 }
 
@@ -196,24 +193,22 @@ where
         context: &'a mut RenderPassContext<'frame>,
         uniform_reference: UniformReference,
     ) -> Self {
-        let text_pipeline = context.get_text_pipeline();
-
-        render_pass.set_pipeline(&text_pipeline.pipelines.select(context.variant_key));
-        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        render_pass.set_pipeline(context.pipelines.text.variants.select(context.variant_key));
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
-            text_pipeline.index_buffer.slice(..),
+            context.pipelines.text.index_buffer.slice(..),
             IndexFormat::Uint32
         );
 
         render_pass.set_vertex_buffer(
             VERTEX_BUFFER_INDEX,
-            text_pipeline.vertex_buffer.slice(..)
+            context.pipelines.text.vertex_buffer.slice(..)
         );
 
         render_pass.set_vertex_buffer(
             INSTANCE_BUFFER_INDEX,
-            text_pipeline.instance_buffer.get_output_buffer().slice(..)
+            context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
         let target_texture = TFont::get_texture(context.textures);
@@ -223,15 +218,13 @@ where
 
         match context.frame_cache.get(target_texture_ref) {
             Ok(texture_container) => {
-                context.set_texture_bind_group(
-                    TEXTURE_BIND_GROUP_INDEX,
-                    render_pass,
-                    &BindGroupCacheIdentity::SingleChannel {
+                let bind_group = context.bind_groups.get(context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: SamplerMode::NearestClamp,
                         texture: texture_container,
                     }
                 });
+                render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
                 texture_valid = true;
             },
             Err(error) => {
@@ -241,7 +234,7 @@ where
 
         let uv_scalar = WimpyVec::from(target_texture.size()).reciprocal() * target_texture.get_uv_scale();
 
-        let range_start = context.pipelines.get_unique().text_pipeline.instance_buffer.len();
+        let range_start = context.pipelines.text.instance_buffer.len();
 
         Self {
             uv_scalar,
@@ -408,7 +401,7 @@ where
     // TODO: get rid of the inner crappy pass including submit. Use a push forward approach. Push config values to be used when a submit is called ?
     fn get_renderer(&mut self,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) -> TextRenderer<'_, TFont> {
         let uv_scalar = self.uv_scalar;
-        let instance_buffer = &mut self.context.get_text_pipeline_mut().instance_buffer;
+        let instance_buffer = &mut self.context.pipelines.text.instance_buffer;
         TextRenderer::<TFont>::new(position,color,config,uv_scalar,instance_buffer)
     }
 
@@ -434,7 +427,7 @@ where
         if !self.texture_valid {
             return;
         }
-        let range_end = self.context.get_text_pipeline().instance_buffer.len();
+        let range_end = self.context.pipelines.text.instance_buffer.len();
         if self.range_start == range_end {
             return;
         }

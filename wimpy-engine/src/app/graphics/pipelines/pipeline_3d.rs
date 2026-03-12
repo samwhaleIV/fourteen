@@ -1,29 +1,97 @@
 use glam::Mat4;
 use wgpu::*;
-use std::{borrow::Borrow, ops::Range};
+use std::{borrow::Borrow, num::NonZero};
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear, app::{graphics::*,wam::ModelData}};
+use crate::{WimpyColorLinear,app::{graphics::*,wam::ModelData}};
 use super::core::*;
+use constants::pipeline_3d::*;
 
 pub struct Pipeline3D {
     diffuse_atlas: VirtualTextureAtlas,
     lightmap_atlas: VirtualTextureAtlas,
-    pipelines: PipelineSet,
-    instance_buffer: DoubleBuffer<ModelInstance>,
+    variants: PipelineVariants,
+    storage_bind_group: BindGroup,
+    external_instance_buffer: Buffer,
+    instance_buffer: InstanceBucketSet
 }
 
-const VERTEX_BUFFER_INDEX: u32 = 0;
-const INSTANCE_BUFFER_INDEX: u32 = 1;
-const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
-const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
+struct InstanceBucket {
+    largest: u32,
+    buffer: Vec<MeshInstance>
+}
+
+impl Default for InstanceBucket {
+    fn default() -> Self {
+        Self {
+            largest: u32::MIN,
+            buffer: Vec::with_capacity(INSTANCE_BUFFER_BUCKET_START_SIZE),
+        }
+    }
+}
+
+impl InstanceBucket {
+    fn clear(&mut self) {
+        self.largest = u32::MIN;
+        self.buffer.clear();
+    }
+}
+
+#[derive(Default)]
+struct InstanceBucketSet {
+    /// Amount of items across all buckets
+    instance_count: usize,
+    buckets: [InstanceBucket;INSTANCE_BUFFER_BUCKET_COUNT as usize]
+}
+
+impl InstanceBucketSet {
+    fn flush(&mut self,buffer: &Buffer,queue: &Queue) {
+        if
+            let Some(size) = NonZero::new((self.instance_count * size_of::<MeshInstance>()) as BufferAddress) &&
+            let Some(mut buffer_view) = queue.write_buffer_with(buffer,0,size)
+        {
+            let mut offset: usize = 0;
+            for bucket in self.buckets.iter() {
+                let bytes = bytemuck::cast_slice(&bucket.buffer);
+                buffer_view[offset..offset + bytes.len()].copy_from_slice(bytes);
+                offset += bytes.len();
+            }
+        }
+        for bucket in self.buckets.iter_mut() {
+            bucket.clear();
+        }
+        self.instance_count = 0;
+    }
+
+    fn push(&mut self,instance: MeshInstance) {
+        let Some(log2) = instance.index_count.checked_ilog2() else {
+            return;
+        };
+        let bucket_index = log2.saturating_sub(SMALLEST_BUCKET_LIMIT_POW_OF_2).min(INSTANCE_BUFFER_BUCKET_COUNT - 1);
+        let bucket = &mut self.buckets[bucket_index as usize];
+        bucket.largest = bucket.largest.max(instance.index_count);
+        bucket.buffer.push(instance);
+        self.instance_count += 1;
+    }
+}
+
+// Bind group indices
+const TEXTURE_BG: u32 = 0;
+const UNIFORM_BG: u32 = 1;
+const STORAGE_BG: u32 = 2;
+
+// Bind group entry indices
+const STORAGE_BG_VERTICES: u32 = 0;
+const STORAGE_BG_INDICES: u32 = 1;
+const STORAGE_BG_INSTANCES: u32 = 2;
 
 impl Pipeline3D {
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        texture_id_generator: &mut TextureIdentityGenerator,
         texture_layout: &BindGroupLayout,
-        uniform_layout: &BindGroupLayout
+        uniform_layout: &BindGroupLayout,
+        texture_id_generator: &mut TextureIdentityGenerator,
+        mesh_cache: &MeshCache
     ) -> Self
     where
         TConfig: GraphicsContextConfig
@@ -35,11 +103,39 @@ impl Pipeline3D {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pipeline3D.wgsl").into())
         });
 
+        let storage_layout_entry = |binding| {
+            BindGroupLayoutEntry {
+                binding,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage {
+                        read_only: true
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None
+                },
+                count: None,
+            }
+        };
+
+        let storage_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Pipeline 3D Storage Bind Group Layout"),
+            entries: &[
+                // Vertex Buffer
+                storage_layout_entry(STORAGE_BG_VERTICES),
+                // Index Buffer
+                storage_layout_entry(STORAGE_BG_INDICES),
+                // Instance Buffer
+                storage_layout_entry(STORAGE_BG_INSTANCES)
+            ]
+        });
+
         let render_pipeline_layout = &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 3D Render Layout"),
             bind_group_layouts: &[
                 texture_layout,
                 uniform_layout,
+                &storage_bind_group_layout
             ],
             push_constant_ranges: &[]
         });
@@ -49,8 +145,8 @@ impl Pipeline3D {
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[
-                ModelVertex::get_buffer_layout(),
-                ModelInstance::get_buffer_layout()
+                MeshVertex::get_buffer_layout(),
+                MeshInstance::get_buffer_layout()
             ],
             primitive_state: &wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -65,16 +161,12 @@ impl Pipeline3D {
         };
         let pipelines = pipeline_creator.create_pipeline_set();
 
-        let instance_buffer = DoubleBuffer::new(
-            device.create_buffer(&BufferDescriptor{
-                label: Some("Pipeline 3D Instance Buffer"),
-                size: TConfig::INSTANCE_BUFFER_SIZE_3D as BufferAddress,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            })
-        );
-
-        use constants::pipeline_3d::*;
+        let instance_buffer = device.create_buffer(&BufferDescriptor{
+            label: Some("Pipeline 3D Instance Buffer"),
+            size: TConfig::INSTANCE_BUFFER_SIZE_3D as BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let diffuse_atlas = VirtualTextureAtlas::create(
             graphics_provider,
@@ -94,28 +186,43 @@ impl Pipeline3D {
             }
         );
 
+        let storage_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Pipeline 3D Storage Bind Group"),
+            layout: &storage_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: STORAGE_BG_VERTICES,
+                    resource: mesh_cache.get_vertex_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: STORAGE_BG_INDICES,
+                    resource: mesh_cache.get_index_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: STORAGE_BG_INSTANCES,
+                    resource: instance_buffer.as_entire_binding(),
+                },
+            ]
+        });
+
+        let instance_buffer_buckets: InstanceBucketSet = Default::default();
+
         return Self {
             diffuse_atlas,
             lightmap_atlas,
-            pipelines,
-            instance_buffer,
+            variants: pipelines,
+            external_instance_buffer: instance_buffer,
+            storage_bind_group,
+            instance_buffer: instance_buffer_buckets,
         }
     }
 }
 
-struct TextureDrawData {
-    diffuse: Option<TextureFrame>,
-    lightmap: Option<TextureFrame>,
-    diffuse_sampler: SamplerMode,
-    strategy: TextureChannelStrategy,
-}
-
-impl PipelineController for Pipeline3D {
-    fn write_dynamic_buffers(&mut self,queue: &Queue) {
-        self.instance_buffer.write_out(queue);
-    }
-    fn reset_pipeline_state(&mut self) {
-        self.instance_buffer.reset();
+impl PipelineFlush for Pipeline3D {
+    fn flush(&mut self,context: &mut PipelineFlushContext) {
+        self.instance_buffer.flush(&self.external_instance_buffer,context.queue);
+        self.diffuse_atlas.flush(context.encoder);
+        self.lightmap_atlas.flush(context.encoder);
     }
 }
 
@@ -130,29 +237,13 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
         context: &'a mut RenderPassContext<'frame>,
         uniform_reference: UniformReference
     ) -> Self {
-        let pipeline_3d = context.get_3d_pipeline();
-        render_pass.set_pipeline(&pipeline_3d.pipelines.select(context.variant_key));
-        context.get_shared().bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
-        render_pass.set_index_buffer(
-            context.model_cache.get_index_buffer_slice(),
-            wgpu::IndexFormat::Uint32
-        );
+        render_pass.set_pipeline(context.pipelines.pipeline_3d.variants.select(context.variant_key));
 
-        render_pass.set_vertex_buffer(
-            VERTEX_BUFFER_INDEX,
-            context.model_cache.get_vertex_buffer_slice()
-        );
+        context.pipelines.shared.bind_uniform::<UNIFORM_BG>(render_pass,uniform_reference);
+        render_pass.set_bind_group(STORAGE_BG,&context.pipelines.pipeline_3d.storage_bind_group,&[]);
 
-        render_pass.set_vertex_buffer(
-            INSTANCE_BUFFER_INDEX,
-            pipeline_3d.instance_buffer.get_output_buffer().slice(..)
-        );
-
-        return Self {
-            context,
-            render_pass,
-        }
+        return Self { context, render_pass, }
     }
 }
 
@@ -174,10 +265,15 @@ impl Default for DrawData3D {
 }
 
 #[derive(Copy,Clone)]
-pub enum TextureChannelStrategy {
+pub enum TextureStrategy {
     Standard,
     NoLightmap,
     LightmapToDiffuse,
+}
+
+pub struct TextureMode {
+    diffuse_sampler: SamplerMode,
+    strategy: TextureStrategy,
 }
 
 impl Pipeline3DPass<'_,'_> {
@@ -187,145 +283,151 @@ impl Pipeline3DPass<'_,'_> {
     pub fn set_texture_channel_strategy(&mut self) {
         todo!();
     }
-    pub fn batch<I>(&mut self,model_data: &ModelData,draw_data: I)
+
+    pub fn draw<I>(&mut self,model_data: &ModelData,texture_mode: TextureMode,draw_data: I)
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData3D>
     {
+        let Some(buffer_reference) = model_data.cache_reference.and_then(|cache_reference|self.context.mesh_cache.entries.get(cache_reference)) else {
+            // TODO: implement fallback model. Idk, a cube or something
+            return;
+        };
 
-        // let Some(cache_reference) = model_data.cache_reference else {
-        //     return;
-        // };
+        let m = self.context.textures.missing;
+        let w = self.context.textures.opaque_white;
 
-        // let Some(buffer_reference) = self.context.model_cache.entries.get(cache_reference) else {
-        //     return;
-        // };
+        let (diffuse,lightmap) = match (
+            model_data.diffuse,
+            model_data.lightmap,
+            texture_mode.strategy
+        ) {
+            (None, None, _) =>                                          (m, w),
 
-        // if let Err(()) = self.set_mesh_textures(&TextureDrawData {
-        //     diffuse: model_data.diffuse,
-        //     lightmap: model_data.lightmap,
-        //     diffuse_sampler,
-        //     strategy: texture_strategy
-        // }) {
-        //     return;
-        // }
-        // let indices = Range {
-        //     start: buffer_reference.index_start,
-        //     end: buffer_reference.index_end
-        // };
-        let instances = self.context.get_3d_pipeline_mut().instance_buffer.push_set(draw_data.into_iter().map(Into::into));
-        self.render_pass.draw_indexed(indices,buffer_reference.base_vertex,Range {
-            start: instances.start as u32,
-            end: instances.end as u32,
+            (None, Some(l),     TextureStrategy::Standard) =>           (m, l),
+            (Some(d), None,     TextureStrategy::Standard) =>           (d, w),
+            (Some(d), Some(l),  TextureStrategy::Standard) =>           (d, l),
+
+            (Some(d), _,        TextureStrategy::NoLightmap) =>         (d, w),
+            (None, _,           TextureStrategy::NoLightmap) =>         (m, w),
+
+            (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
+            (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
+        };
+
+        let uv_diffuse = self.context.pipelines.pipeline_3d.diffuse_atlas.set_texture(
+            self.context.frame_cache,
+            diffuse.get_ref()
+        );
+
+        let uv_lightmap = self.context.pipelines.pipeline_3d.lightmap_atlas.set_texture(
+            self.context.frame_cache,
+            lightmap.get_ref()
+        );
+
+        let bind_group = self.context.bind_groups.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::DualChannel {
+            ch_0: BindGroupChannelConfig {
+                mode: texture_mode.diffuse_sampler,
+                texture: &self.context.pipelines.pipeline_3d.diffuse_atlas.get_texture_container(),
+            },
+            ch_1: BindGroupChannelConfig {
+                mode: SamplerMode::LinearClamp,
+                texture: &self.context.pipelines.pipeline_3d.lightmap_atlas.get_texture_container(),
+            }
         });
-    }
+        self.render_pass.set_bind_group(TEXTURE_BG,bind_group,&[]);
 
-    fn set_mesh_textures(&mut self,texture_data: &TextureDrawData) -> Result<(),()> {
+        for instance in draw_data.into_iter() {
+            let instance = instance.borrow();
+            self.context.pipelines.pipeline_3d.instance_buffer.push(MeshInstance {
+                uv_diffuse: uv_diffuse.into(),
+                uv_lightmap: uv_lightmap.into(),
 
-        // let m = self.context.textures.missing;
-        // let w = self.context.textures.opaque_white;
+                transform_0: instance.transform.x_axis.into(),
+                transform_1: instance.transform.y_axis.into(),
+                transform_2: instance.transform.z_axis.into(),
+                transform_3: instance.transform.w_axis.into(),
 
-        // let (diffuse,lightmap) = match (
-        //     texture_data.diffuse,
-        //     texture_data.lightmap,
-        //     texture_data.strategy
-        // ) {
-        //     (None, None, _) =>                                          (m, w),
+                base_vertex: buffer_reference.base_vertex,
+                index_start: buffer_reference.index_start,
+                index_count: buffer_reference.index_count,
+            });
+        }
 
-        //     (None, Some(l),     TextureStrategy::Standard) =>           (m, l),
-        //     (Some(d), None,     TextureStrategy::Standard) =>           (d, w),
-        //     (Some(d), Some(l),  TextureStrategy::Standard) =>           (d, l),
+        let buckets = &self.context.pipelines.pipeline_3d.instance_buffer.buckets;
+        let mut offset: u32 = 0;
 
-        //     (Some(d), _,        TextureStrategy::NoLightmap) =>         (d, w),
-        //     (None, _,           TextureStrategy::NoLightmap) =>         (m, w),
+        // Reasonably sized meshes, vertex discards offset greatly by draw call reduction
+        for bucket in &buckets[..buckets.len() - 1] {
+            let instances = bucket.buffer.len() as u32;
+            if instances <= 0 {
+                continue;
+            }
+            self.render_pass.draw(0..bucket.largest,offset..offset + instances);
+            offset += instances;
+        }
 
-        //     (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
-        //     (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
-        // };
-
-        // self.context.set_texture_bind_group(
-        //     TEXTURE_BIND_GROUP_INDEX,
-        //     &mut self.render_pass,
-        //     &BindGroupCacheIdentity::DualChannel {
-        //     ch_0: BindGroupChannelConfig {
-        //         mode: texture_data.diffuse_sampler,
-        //         texture: match self.context.frame_cache.get(diffuse.get_ref()) {
-        //             Ok(value) => value,
-        //             Err(error) => {
-        //                 log::error!("Could not resolve diffuse texture frame to a texture view: {:?}",error);
-        //                 return Err(())
-        //             },
-        //         },
-        //     },
-        //     ch_1: BindGroupChannelConfig {
-        //         mode: SamplerMode::LinearClamp,
-        //         texture: match self.context.frame_cache.get(lightmap.get_ref()) {
-        //             Ok(value) => value,
-        //             Err(error) => {
-        //                 log::error!("Could not resolve lightmap texture frame to a texture view: {:?}",error);
-        //                 return Err(())
-        //             },
-        //         }
-        //     }
-        // });
-
-        // return Ok(())
+        // Very large meshes, high potential for extreme vertex discards
+        for instance in &buckets[buckets.len() - 1].buffer {
+            self.render_pass.draw(0..instance.index_count,offset..offset + 1);
+            offset += 1;
+        }
     }
 }
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct ModelVertex {
-    pub diffuse_uv: [f32;2],
-    pub lightmap_uv: [f32;2],
+pub struct MeshVertex {
+    pub uv_diffuse: [f32;2],
+    pub uv_lightmap: [f32;2],
     pub position: [f32;3],
 }
 
 #[repr(C)]
 #[derive(Copy,Clone,Debug,Default,Pod,Zeroable)]
-pub struct ModelInstance {
-    pub uv_pos_diffuse: [f32;2],
-    pub uv_size_diffuse: [f32;2],
-    pub uv_pos_lightmap: [f32;2],
-    pub uv_size_lightmap: [f32;2],
+pub struct MeshInstance {
+    pub uv_diffuse: [f32;4],
+    pub uv_lightmap: [f32;4],
 
     pub transform_0: [f32;4],
     pub transform_1: [f32;4],
     pub transform_2: [f32;4],
     pub transform_3: [f32;4],
 
-    pub diffuse_color: [f32;4],
-    pub lightmap_color: [f32;4]
+    pub base_vertex: u32,
+    pub index_start: u32,
+    pub index_count: u32
 }
 
 #[non_exhaustive]
 struct ATTR;
 
 impl ATTR {
-    pub const DIFFUSE_UV: u32 = 0;
-    pub const LIGHTMAP_UV: u32 = 1;
-    pub const POSITION: u32 = 2;
+    /* Per Vertex */
+      pub const DIFFUSE_UV: u32 = 0;
+      pub const LIGHTMAP_UV: u32 = 1;
+      pub const POSITION: u32 = 2;
 
-    pub const UV_POS_DIFFUSE: u32 = 3;
-    pub const UV_SIZE_DIFFUSE: u32 = 4;
+    /* Per Instance */
+      // -UVs
+        pub const UV_DIFFUSE: u32 = 3;
+        pub const UV_LIGHTMAP: u32 = 4;
 
-    pub const UV_POS_LIGHTMAP: u32 = 5;
-    pub const UV_SIZE_LIGHTMAP: u32 = 6;
-
-    pub const TRANSFORM_0: u32 = 7;
-    pub const TRANSFORM_1: u32 = 8;
-    pub const TRANSFORM_2: u32 = 9;
-    pub const TRANSFORM_3: u32 = 10;
-
-    pub const DIFFUSE_COLOR: u32 = 11;
-    pub const LIGHTMAP_COLOR: u32 = 12;
+      // -Transform
+        pub const TRANSFORM_0: u32 = 5;
+        pub const TRANSFORM_1: u32 = 6;
+        pub const TRANSFORM_2: u32 = 7;
+        pub const TRANSFORM_3: u32 = 8;
+    
+      // -Storage buffer reference
+        pub const STORAGE_BUFFER_LOCATION: u32 = 9;
 }
 
-impl ModelVertex {
+impl MeshVertex {
     const ATTRS: [wgpu::VertexAttribute;3] = wgpu::vertex_attr_array![
+        ATTR::POSITION => Float32x3,
         ATTR::DIFFUSE_UV => Float32x2,
         ATTR::LIGHTMAP_UV => Float32x2,
-        ATTR::POSITION => Float32x3
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -337,20 +439,17 @@ impl ModelVertex {
     }
 }
 
-impl ModelInstance {
-    const ATTRS: [wgpu::VertexAttribute;10] = wgpu::vertex_attr_array![
-        ATTR::UV_POS_DIFFUSE => Float32x2,
-        ATTR::UV_SIZE_DIFFUSE => Float32x2,
-        ATTR::UV_POS_LIGHTMAP => Float32x2,
-        ATTR::UV_SIZE_LIGHTMAP => Float32x2,
+impl MeshInstance {
+    const ATTRS: [wgpu::VertexAttribute;7] = wgpu::vertex_attr_array![
+        ATTR::UV_DIFFUSE => Float32x4,
+        ATTR::UV_LIGHTMAP => Float32x4,
 
         ATTR::TRANSFORM_0 => Float32x4,
         ATTR::TRANSFORM_1 => Float32x4,
         ATTR::TRANSFORM_2 => Float32x4,
         ATTR::TRANSFORM_3 => Float32x4,
 
-        ATTR::DIFFUSE_COLOR => Float32x4,
-        ATTR::LIGHTMAP_COLOR => Float32x4,
+        ATTR::STORAGE_BUFFER_LOCATION => Uint32x3
     ];
 
     pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -361,41 +460,3 @@ impl ModelInstance {
         }
     }
 }
-
-// impl From<&DrawData3D> for ModelInstance {
-//     fn from(value: &DrawData3D) -> Self {
-//         return ModelInstance {
-//             uv_pos_diffuse: todo!(),
-//             uv_size_diffuse: todo!(),
-//             uv_pos_lightmap: todo!(),
-//             uv_size_lightmap: todo!(),
-
-//             transform_0: value.transform.x_axis.into(),
-//             transform_1: value.transform.y_axis.into(),
-//             transform_2: value.transform.z_axis.into(),
-//             transform_3: value.transform.w_axis.into(),
-
-//             diffuse_color: value.diffuse_color.into(),
-//             lightmap_color: value.lightmap_color.into(),
-//         }
-//     }
-// }
-
-// impl From<DrawData3D> for ModelInstance {
-//     fn from(value: DrawData3D) -> Self {
-//         return ModelInstance {
-//             uv_pos_diffuse: todo!(),
-//             uv_size_diffuse: todo!(),
-//             uv_pos_lightmap: todo!(),
-//             uv_size_lightmap: todo!(),
-
-//             transform_0: value.transform.x_axis.into(),
-//             transform_1: value.transform.y_axis.into(),
-//             transform_2: value.transform.z_axis.into(),
-//             transform_3: value.transform.w_axis.into(),
-
-//             diffuse_color: value.diffuse_color.into(),
-//             lightmap_color: value.lightmap_color.into(),
-//         }
-//     }
-// }

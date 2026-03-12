@@ -5,7 +5,7 @@ use crate::app::graphics::{
     TextureError,
     ModelError,
     TextureFrame,
-    ModelCacheReference,
+    MeshCacheReference,
     GraphicsContext,
 };
 
@@ -21,7 +21,7 @@ pub struct ImageSliceData {
 
 #[derive(Default,Debug)]
 pub struct ModelData {
-    pub cache_reference: Option<ModelCacheReference>,
+    pub cache_reference: Option<MeshCacheReference>,
     pub diffuse: Option<TextureFrame>,
     pub lightmap: Option<TextureFrame>,
 }
@@ -152,7 +152,7 @@ impl AssetManager {
         }
     }
 
-    async fn get_mesh<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &Rc<str>,graphics_context: &mut GraphicsContext) -> Result<ModelCacheReference,AssetManagerError> {
+    async fn get_mesh<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &Rc<str>,graphics_context: &mut GraphicsContext) -> Result<MeshCacheReference,AssetManagerError> {
         let model = Self::get_hard_asset_container::<HardModelAsset>(&mut self.manifest.hard_assets,key,name)?;
 
         match model.0.state {
@@ -162,7 +162,7 @@ impl AssetManager {
                     Ok(data) => data,
                     Err(error) => return Err(AssetManagerError::FileError(error)),
                 };
-                match graphics_context.create_model_cache_entry(&gltf_data) {
+                match graphics_context.create_mesh_cache_entry(&gltf_data) {
                     Ok(value) => {
                         model.0.state = HardAssetState::Loaded(value);
                         Ok(value)

@@ -22,12 +22,17 @@ pub mod assets {
     pub const FONT_MONO_ELF:            &'static str = "wimpy/font/mono-elf";
 }
 
-
-
 pub mod pipeline_3d {
     pub const ATLAS_SLOT_LENGTH_DIFFUSE: u32 = 16;
     pub const ATLAS_SLOT_SIZE_DIFFUSE: u32 = 256;
 
     pub const ATLAS_SLOT_LENGTH_LIGHTMAP: u32 = 16;
     pub const ATLAS_SLOT_SIZE_LIGHTMAP: u32 = 256;
+
+    pub const INSTANCE_BUFFER_BUCKET_START_SIZE: usize = 32;
+
+    pub const INSTANCE_BUFFER_BUCKET_COUNT: u32 = 8;
+
+    /// The smallest instance bucket size contains all values up to this power of 2
+    pub const SMALLEST_BUCKET_LIMIT_POW_OF_2: u32 = 4;
 }

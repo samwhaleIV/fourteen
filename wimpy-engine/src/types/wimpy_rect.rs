@@ -138,3 +138,68 @@ pub enum WimpyRectQuadrant {
     BottomLeft,
     BottomRight
 }
+
+impl From<WimpyRect> for [f32;4] {
+    fn from(value: WimpyRect) -> Self {
+        [
+            value.position.x,
+            value.position.y,
+            value.size.x,
+            value.size.y
+        ]
+    }
+}
+
+impl From<[WimpyVec;2]> for WimpyRect {
+    fn from(value: [WimpyVec;2]) -> Self {
+        Self {
+            position: value[0],
+            size: value[1],
+        }
+    }
+}
+
+impl From<[u32;4]> for WimpyRect {
+    fn from(value: [u32;4]) -> Self {
+        Self {
+            position: WimpyVec {
+                x: value[0] as f32,
+                y: value[1] as f32,
+            },
+            size: WimpyVec {
+                x: value[2] as f32,
+                y: value[3] as f32
+            },
+        }
+    }
+}
+
+impl From<[i32;4]> for WimpyRect {
+    fn from(value: [i32;4]) -> Self {
+        Self {
+            position: WimpyVec {
+                x: value[0] as f32,
+                y: value[1] as f32,
+            },
+            size: WimpyVec {
+                x: value[2] as f32,
+                y: value[3] as f32
+            },
+        }
+    }
+}
+
+impl From<[f32;4]> for WimpyRect {
+    fn from(value: [f32;4]) -> Self {
+        Self {
+            position: WimpyVec {
+                x: value[0],
+                y: value[1],
+            },
+            size: WimpyVec {
+                x: value[2],
+                y: value[3],
+            },
+        }
+    }
+}

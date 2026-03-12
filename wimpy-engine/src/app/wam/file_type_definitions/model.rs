@@ -1,9 +1,9 @@
 use super::*;
-use crate::app::graphics::ModelCacheReference;
+use crate::app::graphics::MeshCacheReference;
 
 #[derive(Debug,Default)]
 pub struct HardModelAsset {
-    pub state: HardAssetState<ModelCacheReference>
+    pub state: HardAssetState<MeshCacheReference>
 }
 
 #[derive(Debug,Clone)]

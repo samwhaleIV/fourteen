@@ -32,7 +32,7 @@ pub trait PipelinePass<'a,'frame> {
 
 pub struct RenderPassContext<'a> {
     pub variant_key: PipelineVariantKey,
-    pub model_cache: &'a ModelCache,
+    pub mesh_cache: &'a MeshCache,
     pub frame_cache: &'a FrameCache,
     pub pipelines: &'a mut RenderPipelines,
     pub textures: &'a EngineTextures,
@@ -63,8 +63,8 @@ pub struct GraphicsContext {
     pub graphics_provider: GraphicsProvider,
     pub pipelines: RenderPipelines,
     pub frame_cache: FrameCache,
-    pub model_cache: ModelCache,
-    pub bind_groups: BindGroupCache,
+    pub mesh_cache: MeshCache,
+    pub bind_group_cache: BindGroupCache,
     pub texture_id_generator: TextureIdentityGenerator,
     pub engine_textures: EngineTextures
 }
@@ -73,8 +73,8 @@ pub trait GraphicsContextConfig {
     // These are in byte count
     const UNIFORM_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_2D: usize;
-    const MODEL_CACHE_VERTEX_BUFFER_SIZE: usize;
-    const MODEL_CACHE_INDEX_BUFFER_SIZE: usize;
+    const MESH_CACHE_VERTEX_BUFFER_SIZE: usize;
+    const MESH_CACHE_INDEX_BUFFER_SIZE: usize;
     const INSTANCE_BUFFER_SIZE_3D: usize;
     const TEXT_PIPELINE_BUFFER_SIZE: usize;
     const LINE_BUFFER_SIZE: usize;
@@ -110,20 +110,21 @@ impl GraphicsContext {
     where
         TConfig: GraphicsContextConfig
     {
+        let mut bind_group_cache = BindGroupCache::create(&graphics_provider);
+
         let mut texture_id_generator = TextureIdentityGenerator::default();
 
-        let bind_group_cache = BindGroupCache::create(&graphics_provider);
+        let mut mesh_cache = MeshCache::create(
+            graphics_provider.get_device(),
+            TConfig::MESH_CACHE_VERTEX_BUFFER_SIZE,
+            TConfig::MESH_CACHE_INDEX_BUFFER_SIZE
+        );
 
         let pipelines = RenderPipelines::create::<TConfig>(
             &graphics_provider,
+            &mut bind_group_cache,
             &mut texture_id_generator,
-            bind_group_cache.get_texture_layout()
-        );
-
-        let model_cache = ModelCache::create(
-            graphics_provider.get_device(),
-            TConfig::MODEL_CACHE_VERTEX_BUFFER_SIZE,
-            TConfig::MODEL_CACHE_INDEX_BUFFER_SIZE
+            &mut mesh_cache
         );
 
         let mut frame_cache = FrameCache::default();
@@ -138,10 +139,10 @@ impl GraphicsContext {
             graphics_provider,
             texture_id_generator,
             pipelines,
-            model_cache,
+            mesh_cache,
             frame_cache,
             engine_textures,
-            bind_groups: bind_group_cache,
+            bind_group_cache,
         }
     }
 
@@ -231,16 +232,16 @@ impl GraphicsContext {
         ));
     }
 
-    pub fn create_model_cache_entry(&mut self,gltf_data: &[u8]) -> Result<ModelCacheReference,ModelError> {
-        self.model_cache.create_entry(self.graphics_provider.get_queue(),gltf_data)
+    pub fn create_mesh_cache_entry(&mut self,gltf_data: &[u8]) -> Result<MeshCacheReference,ModelError> {
+        self.mesh_cache.create_entry(self.graphics_provider.get_queue(),gltf_data)
     }
 
-    pub fn get_render_mesh(&self,model_cache_reference: ModelCacheReference) -> Option<RenderBufferReference> {
-        self.model_cache.entries.get(model_cache_reference).cloned()
+    pub fn get_render_mesh(&self,mesh_cache_reference: MeshCacheReference) -> Option<RenderBufferReference> {
+        self.mesh_cache.entries.get(mesh_cache_reference).cloned()
     }
 
-    pub fn get_collision_mesh<'a>(&'a self,model_cache_reference: ModelCacheReference) -> Option<&'a CollisionShape> {
-        self.model_cache.collision_shapes.get(model_cache_reference)
+    pub fn get_collision_mesh<'a>(&'a self,mesh_cache_reference: MeshCacheReference) -> Option<&'a CollisionShape> {
+        self.mesh_cache.collision_shapes.get(mesh_cache_reference)
     }
 
     pub fn create_output_builder<'a>(&'a mut self,color: impl WimpyColor) -> Option<OutputBuilderContext<'a>> {
@@ -340,7 +341,7 @@ where
             clip_far: config.clip_far,
             aspect_ratio: self.frame.aspect_ratio(),
         });
-        self.context.pipelines.get_shared_mut().create_uniform(matrix)
+        self.context.pipelines.shared.create_uniform(matrix)
     }
 
     pub fn frame(&self) -> &TFrame {
@@ -383,17 +384,17 @@ impl OutputBuilder<'_> {
             false => PipelineVariantKey::InternalTarget,
         };
 
-        let mut context = RenderPassContext {
-            model_cache: &self.graphics_context.model_cache,
+        let context = RenderPassContext {
+            mesh_cache: &self.graphics_context.mesh_cache,
             frame_cache: &self.graphics_context.frame_cache,
             pipelines: &mut self.graphics_context.pipelines,
             textures: &self.graphics_context.engine_textures,
-            bind_groups: &mut self.graphics_context.bind_groups,
+            bind_groups: &mut self.graphics_context.bind_group_cache,
             graphics_provider: &self.graphics_context.graphics_provider,
             variant_key: pipeline_variant,
         };
 
-        let ortho_uniform = context.get_shared_mut().create_uniform_ortho(frame.size());
+        let ortho_uniform = context.pipelines.shared.create_uniform_ortho(frame.size());
 
         return Ok(RenderPassBuilder {
             frame,
@@ -405,18 +406,16 @@ impl OutputBuilder<'_> {
 }
 
 impl OutputBuilderContext<'_> {
-    pub fn present_output_surface(self) {
+    pub fn present_output_surface(mut self) {
         let graphics_context = self.builder.graphics_context;
 
         let queue = graphics_context.graphics_provider.get_queue();
-        graphics_context.pipelines.write_pipeline_buffers(queue);
+        graphics_context.pipelines.flush(queue,&mut self.builder.encoder);
         queue.submit(std::iter::once(self.builder.encoder.finish()));
 
         if let Err(error) = graphics_context.frame_cache.remove(self.frame.get_ref()) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
         self.builder.output_surface.present();
-
-        graphics_context.pipelines.reset_pipeline_states();
     }
 }

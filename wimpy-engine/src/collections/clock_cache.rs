@@ -22,16 +22,18 @@ pub struct SlotData<TKey> {
     pub key: TKey,
     pub slot: usize
 }
+pub struct CacheState<TKey> {
+    pub slot: usize,
+    pub feedback: Option<CacheInsertionFeedback<TKey>>
+}
 
-pub struct SlotChange<TKey> {
+pub struct CacheInsertionFeedback<TKey> {
     /// The previous key that was in use at this slot
     /// 
     /// `None` if this is the first key registered to this slot
     pub old_key: Option<TKey>,
     /// The key that is assigned to this slot
     pub new_key: TKey,
-    /// An index into the `slots` slab of the owner `ClockCache`
-    pub slot: usize
 }
 
 impl<TKey> ClockCacheSlots<TKey>
@@ -74,16 +76,20 @@ where
     }
 
 
-    pub fn insert(&mut self,key: TKey) -> Option<SlotChange<TKey>> {
+    pub fn insert(&mut self,key: TKey) -> CacheState<TKey> {
         use std::collections::hash_map::Entry::*;
         match self.map.entry(key) {
 
             // Key already in cache
             Occupied(entry) => {
-                if let Some(slot) = self.slots.buffer.get_mut(*entry.get()) {
+                let slot_id = *entry.get();
+                if let Some(slot) = self.slots.buffer.get_mut(slot_id) {
                     slot.referenced = true;
                 }
-                None
+                CacheState {
+                    slot: slot_id,
+                    feedback: None,
+                }
             },
 
             // Key not in cache
@@ -95,11 +101,13 @@ where
                         referenced: true,
                     });
                     entry.insert(slot);
-                    Some(SlotChange {
-                        old_key: None,
-                        new_key: key,
-                        slot
-                    })
+                    CacheState {
+                        slot,
+                        feedback: Some(CacheInsertionFeedback {
+                            old_key: None,
+                            new_key: key,
+                        })
+                    }
                 } else {
                     let evictee = self.slots.get_evictee();
                     entry.insert(evictee.slot);
@@ -108,14 +116,15 @@ where
                         owner: key,
                         referenced: true,
                     };
-                    Some(SlotChange {
-                        old_key: Some(evictee.key),
-                        new_key: key,
-                        slot: evictee.slot
-                    })
+                    CacheState {
+                        slot: evictee.slot,
+                        feedback: Some(CacheInsertionFeedback {
+                            old_key: Some(evictee.key),
+                            new_key: key,
+                        })
+                    }
                 }
             },
-
         }
     }
 

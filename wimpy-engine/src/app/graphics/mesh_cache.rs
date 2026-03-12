@@ -1,4 +1,4 @@
-use super::pipelines::pipeline_3d::ModelVertex;
+use super::pipelines::pipeline_3d::MeshVertex;
 use std::{marker::PhantomData, num::NonZero};
 use bytemuck::{Pod,Zeroable};
 use wgpu::*;
@@ -30,7 +30,7 @@ use slotmap::{
 };
 
 slotmap::new_key_type! {
-    pub struct ModelCacheReference;
+    pub struct MeshCacheReference;
 }
 
 #[derive(Debug)]
@@ -103,31 +103,31 @@ where
     }
 }
 
-pub struct RenderBuffer {
-    index_buffer: TypedBuffer<u32>,
-    vertex_buffer: TypedBuffer<ModelVertex>,
+pub struct StorageBufferSet {
+    vertices: TypedBuffer<MeshVertex>,
+    indices: TypedBuffer<u32>,
 }
 
-pub struct ModelCache {
-    pub render_buffer: RenderBuffer,
-    pub entries: SlotMap<ModelCacheReference,RenderBufferReference>,
-    pub collision_shapes: SecondaryMap<ModelCacheReference,CollisionShape>,
+pub struct MeshCache {
+    pub storage_buffers: StorageBufferSet,
+    pub entries: SlotMap<MeshCacheReference,RenderBufferReference>,
+    pub collision_shapes: SecondaryMap<MeshCacheReference,CollisionShape>,
 }
 
-impl ModelCache {
+impl MeshCache {
     pub fn get_index_buffer_slice(&self) -> BufferSlice<'_> {
-        return self.render_buffer.index_buffer.get_buffer().slice(..);
+        return self.storage_buffers.indices.get_buffer().slice(..);
     }
     pub fn get_vertex_buffer_slice(&self) -> BufferSlice<'_> {
-        return self.render_buffer.vertex_buffer.get_buffer().slice(..);
+        return self.storage_buffers.vertices.get_buffer().slice(..);
     }
 }
 
 #[derive(Debug,Copy,Clone)]
 pub struct RenderBufferReference {
     pub index_start: u32,
-    pub index_end: u32,
-    pub base_vertex: i32,
+    pub index_count: u32,
+    pub base_vertex: u32,
 }
 
 #[derive(Debug)]
@@ -221,7 +221,7 @@ impl<'a> PrimitiveSet<'a> {
     }
 }
 
-impl RenderBuffer {
+impl StorageBufferSet {
     fn import_render_primitive(
         &mut self,
         buffers: &Vec<Data>,
@@ -257,34 +257,34 @@ impl RenderBuffer {
             return Err(ModelError::MismatchedAttributeQuantity);
         }
 
-        let mut vertices: Vec<ModelVertex> = Vec::with_capacity(positions.len());
+        let mut vertices: Vec<MeshVertex> = Vec::with_capacity(positions.len());
 
         for i in 0..positions.len() {
-            let vertex = ModelVertex {
-                diffuse_uv: diffuse_uvs[i],
-                lightmap_uv:lightmap_uvs[i],
+            let vertex = MeshVertex {
+                uv_diffuse: diffuse_uvs[i],
+                uv_lightmap:lightmap_uvs[i],
                 position: positions[i],
             };
             vertices.push(vertex);
         }
 
-        let base_vertex = self.vertex_buffer.logical_length;
+        let base_vertex = self.vertices.logical_length;
 
-        if !self.vertex_buffer.write(queue,&vertices) {
+        if !self.vertices.write(queue,&vertices) {
             return Err(ModelError::VertexBufferWriteFailure);
         };
 
-        let index_start = self.index_buffer.logical_length;
-        if !self.index_buffer.write(queue,&indices) {
+        let index_start = self.indices.logical_length;
+        if !self.indices.write(queue,&indices) {
             return Err(ModelError::IndexBufferWriteFailure);
         };
 
-        let index_end = self.index_buffer.logical_length;
+        let index_end = self.indices.logical_length;
 
         let entry = RenderBufferReference {
-            base_vertex: base_vertex as i32,
+            base_vertex: base_vertex as u32,
             index_start: index_start as u32,
-            index_end: index_end as u32,
+            index_count: (index_end - index_start) as u32,
         };
 
         return Ok(entry);
@@ -317,26 +317,26 @@ fn read_vertices_for_trimesh(values: ReadPositions<'_>) -> Vec<Vec3> {
     }).collect()
 }
 
-impl ModelCache {
+impl MeshCache {
     pub fn create(device: &Device,vertex_buffer_size: usize,index_buffer_size: usize) -> Self {
         let index_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Index Buffer"),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             size: index_buffer_size as BufferAddress,
             mapped_at_creation: false,
         }));
 
         let vertex_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Vertex Buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             size: vertex_buffer_size as BufferAddress,
             mapped_at_creation: false,
         }));
 
         return Self {
-            render_buffer: RenderBuffer {
-                index_buffer,
-                vertex_buffer,
+            storage_buffers: StorageBufferSet {
+                indices: index_buffer,
+                vertices: vertex_buffer,
             },
             entries: SlotMap::with_key(),
             collision_shapes: SecondaryMap::new(),
@@ -367,7 +367,7 @@ impl ModelCache {
         return Ok(mesh);
     }
 
-    pub fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<ModelCacheReference,ModelError> {
+    pub fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<MeshCacheReference,ModelError> {
         let (document, buffers, _) = match gltf::import_slice(gltf_data) {
             Ok(value) => value,
             Err(error) => {
@@ -385,19 +385,27 @@ impl ModelCache {
             return Err(ModelError::NoRenderPrimitive);
         };
 
-        let render_buffer_reference = self.render_buffer.import_render_primitive(
+        let render_buffer_reference = self.storage_buffers.import_render_primitive(
             &buffers,
             queue,
             render_primitive
         )?;
 
-        let model_cache_reference = self.entries.insert(render_buffer_reference);
+        let reference = self.entries.insert(render_buffer_reference);
 
         if let Some(primitive) = primitive_set.collision {
             let trimesh = Self::create_collision_primitive(&buffers,primitive)?;
-            self.collision_shapes.insert(model_cache_reference,CollisionShape::TriMesh(trimesh));
+            self.collision_shapes.insert(reference,CollisionShape::TriMesh(trimesh));
         }
 
-        return Ok(model_cache_reference);
+        return Ok(reference);
+    }
+
+    pub fn get_vertex_buffer(&self) -> &Buffer {
+        self.storage_buffers.vertices.get_buffer()
+    }
+
+    pub fn get_index_buffer(&self) -> &Buffer {
+        self.storage_buffers.indices.get_buffer()
     }
 }
