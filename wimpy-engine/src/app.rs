@@ -23,7 +23,7 @@ use input::InputManager;
 use wam::*;
 
 use crate::app::graphics::{
-    FrameReference, GraphicsContextConfig, GraphicsProvider, TextureFrame
+    FrameReference, GraphicsContextConfig, GraphicsProvider, MeshCache, TextureFrame, TexturedMeshReference
 };
 
 use crate::app::input::InputType;
@@ -59,6 +59,7 @@ pub struct WimpyContext {
     pub input: InputManager,
     pub assets: AssetManager,
     pub debug: DebugShell,
+    pub mesh_cache: MeshCache,
     missing_text: Rc<str>,
 }
 
@@ -71,6 +72,7 @@ pub struct WimpyContextCreationConfig<'a> {
 pub struct AssetLoadingContext<'a> {
     asset_manager: &'a mut AssetManager,
     graphics_context: &'a mut GraphicsContext,
+    mesh_cache: &'a mut MeshCache,
     missing_text: &'a Rc<str>
 }
 
@@ -80,6 +82,12 @@ impl WimpyContext {
         IO: WimpyIO,
         TConfig: GraphicsContextConfig
     {
+        let mesh_cache = MeshCache::create(
+            config.graphics_provider.get_device(),
+            TConfig::MESH_CACHE_VERTEX_BUFFER_SIZE,
+            TConfig::MESH_CACHE_INDEX_BUFFER_SIZE
+        );
+
         let assets = AssetManager::load_or_default::<IO>(config.manifest_path).await;
         let graphics = GraphicsContext::create::<TConfig>(config.graphics_provider).await;
 
@@ -93,15 +101,17 @@ impl WimpyContext {
             input,
             assets,
             debug,
+            mesh_cache,
             missing_text: Rc::from(MISSING_TEXT_ASSET),
         };
 
-        context.load_engine_textures::<IO>().await;
+        context.load_engine_assets::<IO>().await;
 
         Some(context)
     }
 
-    async fn load_engine_textures<IO: WimpyIO>(&mut self) {
+    // A series of assets that are 'always' expected to be a part of the runtime, such as fonts
+    async fn load_engine_assets<IO: WimpyIO>(&mut self) {
         use graphics::constants::assets::*;
         self.graphics.engine_textures.font_classic =         self.get_image::<IO>(FONT_CLASSIC).await;
         self.graphics.engine_textures.font_classic_outline = self.get_image::<IO>(FONT_CLASSIC_OUTLINE).await;
@@ -119,6 +129,7 @@ impl WimpyContext {
         let mut context = AssetLoadingContext {
             asset_manager: &mut self.assets,
             graphics_context: &mut self.graphics,
+            mesh_cache: &mut self.mesh_cache,
             missing_text: &self.missing_text
         };
         let Ok(virtual_asset) = context.asset_manager.get_virtual_asset::<T::VirtualReference>(&Rc::from(name)) else {
@@ -154,8 +165,8 @@ impl WimpyContext {
         self.get_asset::<IO,generic_types::Text,_>(name,|context|context.missing_text.clone()).await
     }
 
-    pub async fn get_model<IO: WimpyIO>(&mut self,name: &str) -> ModelData {
-        self.get_asset::<IO,generic_types::Model,_>(name,|_|ModelData::default()).await
+    pub async fn get_model<IO: WimpyIO>(&mut self,name: &str) -> TexturedMeshReference {
+        self.get_asset::<IO,generic_types::Model,_>(name,|_|TexturedMeshReference::default()).await
     }
 }
 

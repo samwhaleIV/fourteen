@@ -14,7 +14,6 @@ impl VirtualAssetTranslator<'_> {
             let key = self.manifest.hard_assets.insert(HardAsset {
                 file_source: Rc::from(hard_asset_input.source),
                 data_type: hard_asset_input.r#type,
-                data: HardAssetData::get_uninit(hard_asset_input.r#type),
             });
 
             self.namespaces_ids.insert(id,key);
@@ -85,50 +84,69 @@ impl VirtualAssetTranslator<'_> {
 
     pub fn load_models(&mut self,models: Vec<VirtualModelAssetInput>) -> Result<(),WamManifestError> {
         for model in models.into_iter() {
-            let assets = [
-                (model.model_id,HardAssetType::Model,ModelField::Model),
-                (model.diffuse_id,HardAssetType::Image,ModelField::Diffuse),
-                (model.lightmap_id,HardAssetType::Image,ModelField::Lightmap),
-            ];
-
             let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
 
-            let mut model_data = ModelAssetReference {
-                name: rc_name.clone(),
-                model: None,
-                diffuse: None,
-                lightmap: None,
+            let Some(key) = self.namespaces_ids.get(&model.id) else {
+                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                    name: rc_name,
+                    id: model.id
+                }));
             };
 
-            for (id,expected_type,field) in assets {
-                let Some(id) = id else {
-                    continue;
-                };
-                let Some(key) = self.namespaces_ids.get(&id) else {
-                    return Err(WamManifestError::MissingAsset(MissingAssetInfo {
-                        name: rc_name,
-                        id
-                    }));
-                };
-                let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
-                if hard_asset.data_type != expected_type {
-                    return Err(WamManifestError::MismatchedModelResource(MismatchedModelResourceInfo {
-                        name: rc_name,
-                        field,
-                        expected_type,
-                        found_type: hard_asset.data_type
-                    }));
-                }
+            let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
+            if hard_asset.data_type != HardAssetType::Model {
+                return Err(WamManifestError::AssetTypeMismatch(TypeMismatchInfo {
+                    name: rc_name,
+                    id: model.id,
+                    expected_type: HardAssetType::Model,
+                    found_type: hard_asset.data_type
+                }));
+            }
 
-                match field {
-                    ModelField::Model => model_data.model = Some(*key),
-                    ModelField::Diffuse => model_data.diffuse = Some(*key),
-                    ModelField::Lightmap => model_data.lightmap = Some(*key),
+            let mut meshlets: Vec<MeshletDescriptor> = Vec::with_capacity(model.meshlets.len());
+
+            for meshlet in &model.meshlets {
+                let mut ref_meshlet = MeshletDescriptor {
+                    diffuse: None,
+                    lightmap: None,
+                };
+                let fields = [
+                    (meshlet.diffuse_id,MeshletField::Diffuse),
+                    (meshlet.lightmap_id,MeshletField::Lightmap)
+                ];
+                for (id,field) in fields {
+                    let Some(id) = id else {
+                        continue;
+                    };
+                    let Some(key) = self.namespaces_ids.get(&id) else {
+                        return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                            name: rc_name,
+                            id
+                        }));
+                    };
+                    let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
+                    if hard_asset.data_type != HardAssetType::Image {
+                        return Err(WamManifestError::MismatchedMeshletField(MismatchedMeshletFieldInfo {
+                            name: rc_name,
+                            field,
+                            expected_type: HardAssetType::Image,
+                            found_type: hard_asset.data_type
+                        }));
+                    }
+                    match field {
+                        MeshletField::Diffuse => ref_meshlet.diffuse = Some(*key),
+                        MeshletField::Lightmap => ref_meshlet.lightmap = Some(*key),
+                    }
                 }
+                meshlets.push(ref_meshlet);
             }
 
             self.manifest.add_virtual_asset(
-                AssetReference::Model(model_data),
+                AssetReference::Model(ModelAssetReference {
+                    name: rc_name.clone(),
+                    key: *key,
+                    meshlet_descriptors: meshlets
+                }),
                 rc_name.clone()
             );
         }

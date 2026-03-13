@@ -206,7 +206,7 @@ where
             lines_pass.draw_list(&self.lines);
 
             let mut model_pass = render_pass.set_pipeline_3d(camera_uniform);
-            model_pass.draw(&self.model,SamplerMode::NearestClamp,TextureStrategy::Standard,std::iter::once(DrawData3D {
+            model_pass.batch(&self.model,SamplerMode::NearestClamp,TextureStrategy::Standard,std::iter::once(DrawData3D {
                 transform: Mat4::IDENTITY,
                 diffuse_color: WimpyColorLinear::WHITE,
                 lightmap_color: WimpyColorLinear::WHITE,

@@ -2,7 +2,7 @@ use glam::Mat4;
 use wgpu::*;
 use std::{borrow::Borrow, num::NonZero};
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear,app::{graphics::*,wam::ModelData}};
+use crate::{WimpyColorLinear,app::{graphics::*,wam::{MeshReference, Meshlet}}};
 use super::core::*;
 use constants::pipeline_3d::*;
 
@@ -12,7 +12,7 @@ pub struct Pipeline3D {
     variants: PipelineVariants,
     storage_bind_group: BindGroup,
     external_instance_buffer: Buffer,
-    instance_buffer: InstanceBucketSet
+    instance_buckets: InstanceBucketSet
 }
 
 struct InstanceBucket {
@@ -213,14 +213,14 @@ impl Pipeline3D {
             variants: pipelines,
             external_instance_buffer: instance_buffer,
             storage_bind_group,
-            instance_buffer: instance_buffer_buckets,
+            instance_buckets: instance_buffer_buckets,
         }
     }
 }
 
 impl PipelineFlush for Pipeline3D {
     fn flush(&mut self,context: &mut PipelineFlushContext) {
-        self.instance_buffer.flush(&self.external_instance_buffer,context.queue);
+        self.instance_buckets.flush(&self.external_instance_buffer,context.queue);
         self.diffuse_atlas.flush(context.encoder);
         self.lightmap_atlas.flush(context.encoder);
     }
@@ -247,21 +247,9 @@ impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline3DPass<'a,'frame> {
     }
 }
 
-#[derive(Copy,Clone)]
 pub struct DrawData3D {
     pub transform: Mat4,
-    pub diffuse_color: WimpyColorLinear,
-    pub lightmap_color: WimpyColorLinear,
-}
-
-impl Default for DrawData3D {
-    fn default() -> Self {
-        Self {
-            transform: Mat4::IDENTITY,
-            diffuse_color: WimpyColorLinear::WHITE,
-            lightmap_color: WimpyColorLinear::WHITE,
-        }
-    }
+    pub meshlets: TexturedMeshReference
 }
 
 #[derive(Copy,Clone)]
@@ -269,11 +257,6 @@ pub enum TextureStrategy {
     Standard,
     NoLightmap,
     LightmapToDiffuse,
-}
-
-pub struct TextureMode {
-    diffuse_sampler: SamplerMode,
-    strategy: TextureStrategy,
 }
 
 impl Pipeline3DPass<'_,'_> {
@@ -284,50 +267,10 @@ impl Pipeline3DPass<'_,'_> {
         todo!();
     }
 
-    pub fn draw<I>(&mut self,model_data: &ModelData,texture_mode: TextureMode,draw_data: I)
-    where
-        I: IntoIterator,
-        I::Item: Borrow<DrawData3D>
-    {
-        let Some(buffer_reference) = model_data.cache_reference.and_then(|cache_reference|self.context.mesh_cache.entries.get(cache_reference)) else {
-            // TODO: implement fallback model. Idk, a cube or something
-            return;
-        };
-
-        let m = self.context.textures.missing;
-        let w = self.context.textures.opaque_white;
-
-        let (diffuse,lightmap) = match (
-            model_data.diffuse,
-            model_data.lightmap,
-            texture_mode.strategy
-        ) {
-            (None, None, _) =>                                          (m, w),
-
-            (None, Some(l),     TextureStrategy::Standard) =>           (m, l),
-            (Some(d), None,     TextureStrategy::Standard) =>           (d, w),
-            (Some(d), Some(l),  TextureStrategy::Standard) =>           (d, l),
-
-            (Some(d), _,        TextureStrategy::NoLightmap) =>         (d, w),
-            (None, _,           TextureStrategy::NoLightmap) =>         (m, w),
-
-            (_, Some(l),        TextureStrategy::LightmapToDiffuse) =>  (l, w),
-            (_, None,           TextureStrategy::LightmapToDiffuse) =>  (m, w),
-        };
-
-        let uv_diffuse = self.context.pipelines.pipeline_3d.diffuse_atlas.set_texture(
-            self.context.frame_cache,
-            diffuse.get_ref()
-        );
-
-        let uv_lightmap = self.context.pipelines.pipeline_3d.lightmap_atlas.set_texture(
-            self.context.frame_cache,
-            lightmap.get_ref()
-        );
-
+    fn set_atlas_bind_group(&mut self,diffuse_sampler: SamplerMode) {
         let bind_group = self.context.bind_groups.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::DualChannel {
             ch_0: BindGroupChannelConfig {
-                mode: texture_mode.diffuse_sampler,
+                mode: diffuse_sampler,
                 texture: &self.context.pipelines.pipeline_3d.diffuse_atlas.get_texture_container(),
             },
             ch_1: BindGroupChannelConfig {
@@ -336,25 +279,58 @@ impl Pipeline3DPass<'_,'_> {
             }
         });
         self.render_pass.set_bind_group(TEXTURE_BG,bind_group,&[]);
+    }
 
-        for instance in draw_data.into_iter() {
-            let instance = instance.borrow();
-            self.context.pipelines.pipeline_3d.instance_buffer.push(MeshInstance {
-                uv_diffuse: uv_diffuse.into(),
-                uv_lightmap: uv_lightmap.into(),
+    pub fn batch<'a,I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
+    where
+        I: IntoIterator<Item = DrawData3D>,
+    {
+        for meshlet in draw_data.into_iter() {
 
-                transform_0: instance.transform.x_axis.into(),
-                transform_1: instance.transform.y_axis.into(),
-                transform_2: instance.transform.z_axis.into(),
-                transform_3: instance.transform.w_axis.into(),
+            let meshlets = self.context.m
 
-                base_vertex: buffer_reference.base_vertex,
-                index_start: buffer_reference.index_start,
-                index_count: buffer_reference.index_count,
-            });
+            let transform_0 = meshlet.transform.x_axis.into();
+            let transform_1 = meshlet.transform.y_axis.into();
+            let transform_2 = meshlet.transform.z_axis.into();
+            let transform_3 = meshlet.transform.w_axis.into();
+
+            for meshlet in meshlet.meshlets {
+                let (diffuse,lightmap) = match texture_strategy {
+                    TextureStrategy::Standard => (meshlet.diffuse,meshlet.lightmap),
+                    TextureStrategy::LightmapToDiffuse => (meshlet.lightmap,self.context.textures.opaque_white),
+                    TextureStrategy::NoLightmap => (meshlet.diffuse,self.context.textures.opaque_white)
+                };
+
+                let uv_diffuse = self.context.pipelines.pipeline_3d.diffuse_atlas.set_texture(
+                    self.context.frame_cache,
+                    diffuse.get_ref()
+                );
+
+                let uv_lightmap = self.context.pipelines.pipeline_3d.lightmap_atlas.set_texture(
+                    self.context.frame_cache,
+                    lightmap.get_ref()
+                );
+
+                self.context.pipelines.pipeline_3d.instance_buckets.push(MeshInstance {
+                    uv_diffuse: uv_diffuse.into(),
+                    uv_lightmap: uv_lightmap.into(),
+
+                    transform_0,
+                    transform_1,
+                    transform_2,
+                    transform_3,
+
+                    base_vertex: meshlet.range.base_vertex,
+                    index_start: meshlet.range.index_start,
+                    index_count: meshlet.range.index_count,
+                });
+            }
         }
+    }
 
-        let buckets = &self.context.pipelines.pipeline_3d.instance_buffer.buckets;
+    pub fn submit(&mut self,diffuse_sampler: SamplerMode) {
+        self.set_atlas_bind_group(diffuse_sampler);
+        let buckets = &self.context.pipelines.pipeline_3d.instance_buckets.buckets;
         let mut offset: u32 = 0;
 
         // Reasonably sized meshes, vertex discards offset greatly by draw call reduction

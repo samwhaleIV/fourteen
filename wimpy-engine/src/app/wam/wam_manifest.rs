@@ -1,7 +1,11 @@
 use super::prelude::*;
 
+const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;
+const DEFAULT_HARD_ASSET_CAPACITY: usize = 32;
+
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
+
 pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
@@ -13,18 +17,10 @@ slotmap::new_key_type! {
     pub struct HardAssetKey;
 }
 
-#[derive(Debug,Default)]
-pub enum HardAssetState<T> {
-    #[default]
-    Unloaded,
-    Loaded(T)
-}
-
 #[derive(Debug)]
 pub struct HardAsset {
     pub file_source: Rc<str>,
     pub data_type: HardAssetType,
-    pub data: HardAssetData,
 }
 
 #[derive(Debug,Default)]
@@ -64,17 +60,24 @@ pub struct ImageArea {
 
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
-pub struct VirtualModelAssetInput {
-    pub name: String,
-    pub model_id: Option<u32>,
+pub struct MeshletDescriptionInput {
     pub diffuse_id: Option<u32>,
     pub lightmap_id: Option<u32>,
 }
 
+#[derive(Deserialize,Debug)]
+#[serde(rename_all = "kebab-case")]
+pub struct VirtualModelAssetInput {
+    pub id: u32,
+    pub name: String,
+    #[serde(default)]
+    pub meshlets: Vec<MeshletDescriptionInput>
+}
+
 #[derive(Debug)]
 pub struct MissingAssetInfo {
-    pub name: Rc<str>,
     pub id: u32,
+    pub name: Rc<str>,
 }
 
 #[derive(Debug)]
@@ -93,16 +96,15 @@ pub struct UnexpectedTypeInfo {
 }
 
 #[derive(Debug)]
-pub enum ModelField {
-    Model,
+pub enum MeshletField {
     Diffuse,
     Lightmap
 }
 
 #[derive(Debug)]
-pub struct MismatchedModelResourceInfo {
+pub struct MismatchedMeshletFieldInfo {
     pub name: Rc<str>,
-    pub field: ModelField,
+    pub field: MeshletField,
     pub expected_type: HardAssetType,
     pub found_type: HardAssetType
 }
@@ -112,7 +114,7 @@ pub enum WamManifestError {
     MissingAsset(MissingAssetInfo),
     UnexpectedType(UnexpectedTypeInfo),
     AssetTypeMismatch(TypeMismatchInfo),
-    MismatchedModelResource(MismatchedModelResourceInfo),
+    MismatchedMeshletField(MismatchedMeshletFieldInfo),
     IOError(std::io::Error),
     JsonError(String)
 }
@@ -130,7 +132,7 @@ impl WamManifest {
         };
 
         let mut manifest = Self {
-            hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_key(),
+            hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_capacity_and_key(DEFAULT_HARD_ASSET_CAPACITY),
             virtual_assets: Default::default(),
             string_builder: String::with_capacity(DEFAULT_NAME_STRING_BUILDER_CAPACITY)
         };

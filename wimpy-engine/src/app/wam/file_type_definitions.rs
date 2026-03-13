@@ -1,12 +1,42 @@
-mod image;
-mod model;
-mod text;
-
-pub use image::*;
-pub use model::*;
-pub use text::*;
-
 use super::prelude::*;
+
+pub struct TextAssetKey {
+
+}
+
+#[derive(Debug)]
+pub struct MeshletDescriptor {
+    pub diffuse: Option<HardAssetKey>,
+    pub lightmap: Option<HardAssetKey>,
+}
+
+#[derive(Debug)]
+pub struct ModelAssetReference {
+    pub name: Rc<str>,
+    /// The `.gltf` file that contains the mesh
+    pub key: HardAssetKey,
+    pub meshlet_descriptors: Vec<MeshletDescriptor>,
+}
+
+#[derive(Debug,Clone)]
+pub struct ImageAssetReference {
+    pub name: Rc<str>,
+    pub key: HardAssetKey
+}
+
+#[derive(Debug,Clone)]
+pub struct ImageSliceAssetReference {
+    pub name: Rc<str>,
+    pub key: HardAssetKey,
+    pub area: ImageArea
+}
+
+#[derive(Debug,Clone)]
+pub struct TextAssetReference {
+    pub name: Rc<str>,
+    pub key: HardAssetKey
+}
+
 
 #[derive(Deserialize,Debug,Copy,Clone,PartialEq,Eq)]
 #[serde(rename_all = "lowercase")]
@@ -14,24 +44,6 @@ pub enum HardAssetType {
     Text,
     Image,
     Model,
-}
-
-
-#[derive(Debug)]
-pub enum HardAssetData {
-    Image(HardImageAsset),
-    Model(HardModelAsset),
-    Text(HardTextAsset),
-}
-
-impl HardAssetData {
-    pub fn get_uninit(data_type: HardAssetType) -> Self {
-        match data_type {
-            HardAssetType::Text => HardAssetData::Text(Default::default()),
-            HardAssetType::Image => HardAssetData::Image(Default::default()),
-            HardAssetType::Model => HardAssetData::Model(Default::default()),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -52,3 +64,8 @@ impl AssetReference {
         }
     }
 }
+
+impl_asset_reference_resolver!(ModelAssetReference,Model);
+impl_asset_reference_resolver!(ImageAssetReference,Image);
+impl_asset_reference_resolver!(ImageSliceAssetReference,ImageSlice);
+impl_asset_reference_resolver!(TextAssetReference,Text);

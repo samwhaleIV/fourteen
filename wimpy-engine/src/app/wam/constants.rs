@@ -1,1 +1,0 @@
-pub const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;

@@ -1,6 +1,10 @@
+use crate::app::graphics::TextureFrame;
+
 use super::pipelines::pipeline_3d::MeshVertex;
 use std::{marker::PhantomData, num::NonZero};
 use bytemuck::{Pod,Zeroable};
+use glam::Vec3;
+use slotmap::SlotMap;
 use wgpu::*;
 
 use gltf::{
@@ -14,32 +18,25 @@ use gltf::{
     }
 };
 
-use rapier3d::{
-    math::Vec3,
-    prelude::{
-        Ball,
-        Capsule,
-        Cuboid,
-        TriMesh
-    }
-};
-
-use slotmap::{
-    SecondaryMap,
-    SlotMap
-};
+const TEXTURED_MESH_REFERENCE_START_CAPACITY: usize = 8;
+const MESHLET_ITERATOR_START_SIZE: usize = 8;
 
 slotmap::new_key_type! {
-    pub struct MeshCacheReference;
+    pub struct TexturedMeshReference;
+}
+
+pub struct MeshCache {
+    mesh_references: SlotMap<TexturedMeshReference,Vec<TexturedMeshlet>>,
+    meshlet_range_buffer: Vec<MeshletRange>,
+    vertices: TypedBuffer<MeshVertex>,
+    indices: TypedBuffer<u32>
 }
 
 #[derive(Debug)]
-pub enum CollisionShape {
-    TriMesh(TriMesh),
-    //Other shapes not yet implemented
-    Cuboid(Cuboid),
-    Sphere(Ball),
-    Capsule(Capsule)
+pub struct TexturedMeshlet {
+    pub meshlet: MeshletRange,
+    pub diffuse: TextureFrame,
+    pub lightmap: TextureFrame,
 }
 
 pub struct TypedBuffer<T> {
@@ -103,33 +100,6 @@ where
     }
 }
 
-pub struct StorageBufferSet {
-    vertices: TypedBuffer<MeshVertex>,
-    indices: TypedBuffer<u32>,
-}
-
-pub struct MeshCache {
-    pub storage_buffers: StorageBufferSet,
-    pub entries: SlotMap<MeshCacheReference,RenderBufferReference>,
-    pub collision_shapes: SecondaryMap<MeshCacheReference,CollisionShape>,
-}
-
-impl MeshCache {
-    pub fn get_index_buffer_slice(&self) -> BufferSlice<'_> {
-        return self.storage_buffers.indices.get_buffer().slice(..);
-    }
-    pub fn get_vertex_buffer_slice(&self) -> BufferSlice<'_> {
-        return self.storage_buffers.vertices.get_buffer().slice(..);
-    }
-}
-
-#[derive(Debug,Copy,Clone)]
-pub struct RenderBufferReference {
-    pub index_start: u32,
-    pub index_count: u32,
-    pub base_vertex: u32,
-}
-
 #[derive(Debug)]
 pub enum ModelError {
     GltfParseFailure(String),
@@ -155,79 +125,20 @@ pub enum ModelError {
 const DIFFUSE_UV_CHANNEL: u32 = 0;
 const LIGHTMAP_UV_CHANNEL: u32 = 1;
 
-struct PrimitiveSet<'a> {
-    render: Option<Primitive<'a>>,
-    collision: Option<Primitive<'a>>
+#[derive(Debug)]
+pub struct MeshletRange {
+    pub index_start: u32,
+    pub index_count: u32,
+    pub base_vertex: u32,
 }
 
-enum PrimitiveType {
-    Invalid,
-    CanRender,
-    CannotRender
-}
-
-impl PrimitiveType {
-    fn classify(primitive: &Primitive) -> PrimitiveType {
-        let mut has_position = false;
-        let mut can_render = false;
-
-        use gltf::Semantic::*;
-
-        for (semantic, _) in primitive.attributes() {
-            match semantic {
-                Positions => has_position = true,
-                Normals | TexCoords(_)| Colors(_) | Tangents => can_render = true,
-                _ => {}
-            }
-        }
-
-        return match (has_position,can_render) {
-            (true, true) => PrimitiveType::CanRender,
-            (true, false) => PrimitiveType::CannotRender,
-            (false, true) => PrimitiveType::Invalid,
-            (false, false) => PrimitiveType::Invalid,
-        };
-    }
-}
-
-impl<'a> PrimitiveSet<'a> {
-    fn evaluate_mesh(mesh: &'a Mesh) -> Self {
-        let mut render_primitive: Option<Primitive> = None;
-        let mut collision_primitive: Option<Primitive> = None;
-
-        for primitive in mesh.primitives() {
-            match PrimitiveType::classify(&primitive) {
-                PrimitiveType::CanRender => {
-                    if render_primitive.is_none() {
-                        render_primitive = Some(primitive);
-                    }
-                },
-                PrimitiveType::CannotRender => {
-                    if collision_primitive.is_none() {
-                        collision_primitive = Some(primitive);
-                    }
-                },
-                PrimitiveType::Invalid => continue,
-            }
-            if render_primitive.is_some() && collision_primitive.is_some() {
-                break;
-            }
-        }
-
-        return Self {
-            render: render_primitive,
-            collision: collision_primitive
-        };
-    }
-}
-
-impl StorageBufferSet {
+impl MeshCache {
     fn import_render_primitive(
         &mut self,
         buffers: &Vec<Data>,
         queue: &Queue,
         primitive: Primitive,
-    ) -> Result<RenderBufferReference,ModelError> {
+    ) -> Result<MeshletRange,ModelError> {
         let reader = primitive.reader(|buffer|Some(&buffers[buffer.index()]));
 
         let positions: Vec<[f32;3]> = match reader.read_positions() {
@@ -281,7 +192,7 @@ impl StorageBufferSet {
 
         let index_end = self.indices.logical_length;
 
-        let entry = RenderBufferReference {
+        let entry = MeshletRange {
             base_vertex: base_vertex as u32,
             index_start: index_start as u32,
             index_count: (index_end - index_start) as u32,
@@ -319,14 +230,14 @@ fn read_vertices_for_trimesh(values: ReadPositions<'_>) -> Vec<Vec3> {
 
 impl MeshCache {
     pub fn create(device: &Device,vertex_buffer_size: usize,index_buffer_size: usize) -> Self {
-        let index_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
+        let indices = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Index Buffer"),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             size: index_buffer_size as BufferAddress,
             mapped_at_creation: false,
         }));
 
-        let vertex_buffer = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
+        let vertices = TypedBuffer::new(device.create_buffer(&BufferDescriptor{
             label: Some("Model Cache Vertex Buffer"),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             size: vertex_buffer_size as BufferAddress,
@@ -334,40 +245,14 @@ impl MeshCache {
         }));
 
         return Self {
-            storage_buffers: StorageBufferSet {
-                indices: index_buffer,
-                vertices: vertex_buffer,
-            },
-            entries: SlotMap::with_key(),
-            collision_shapes: SecondaryMap::new(),
+            mesh_references: SlotMap::with_capacity_and_key(TEXTURED_MESH_REFERENCE_START_CAPACITY),
+            meshlet_range_buffer: Vec::with_capacity(MESHLET_ITERATOR_START_SIZE),
+            indices,
+            vertices,
         }
     }
 
-    fn create_collision_primitive(
-        buffers: &Vec<Data>,
-        primitive: Primitive
-    ) -> Result<TriMesh,ModelError> {
-        let reader = primitive.reader(|buffer|Some(&buffers[buffer.index()]));
-
-        let vertices: Vec<Vec3> = match reader.read_positions() {
-            Some(values) => read_vertices_for_trimesh(values),
-            None => return Err(ModelError::MissingPositions),
-        };
-
-        let indices: Vec<[u32;3]> = match reader.read_indices() {
-            Some(values) => read_indices_for_trimesh(values),
-            None => return Err(ModelError::MissingIndices),
-        };
-        
-        let mesh = match TriMesh::new(vertices,indices) {
-            Ok(value) => value,
-            Err(error) => return Err(ModelError::TriMeshCreationFailure(format!("{:?}",error))),
-        };
-
-        return Ok(mesh);
-    }
-
-    pub fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<MeshCacheReference,ModelError> {
+    fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<(usize,std::vec::Drain<MeshletRange>),ModelError> {
         let (document, buffers, _) = match gltf::import_slice(gltf_data) {
             Ok(value) => value,
             Err(error) => {
@@ -375,37 +260,60 @@ impl MeshCache {
             },
         };
 
-        let Some(mesh) = find_model_mesh(&document) else {
+        //todo... find correct mesh (name matching)
+        let Some(model_mesh) = find_model_mesh(&document) else {
             return Err(ModelError::NoMeshes)
         };
 
-        let primitive_set = PrimitiveSet::evaluate_mesh(&mesh);
+        //todo... find correct collision mesh
 
-        let Some(render_primitive) = primitive_set.render else {
-            return Err(ModelError::NoRenderPrimitive);
-        };
+        //todo... find vis portals/cell bounds
 
-        let render_buffer_reference = self.storage_buffers.import_render_primitive(
-            &buffers,
-            queue,
-            render_primitive
-        )?;
-
-        let reference = self.entries.insert(render_buffer_reference);
-
-        if let Some(primitive) = primitive_set.collision {
-            let trimesh = Self::create_collision_primitive(&buffers,primitive)?;
-            self.collision_shapes.insert(reference,CollisionShape::TriMesh(trimesh));
+        for primitive in model_mesh.primitives() {
+            match self.import_render_primitive(&buffers,queue,primitive) {
+                Ok(value) => self.meshlet_range_buffer.push(value),
+                Err(error) => {
+                    self.meshlet_range_buffer.clear();
+                    return Err(error);
+                },
+            }
         }
 
-        return Ok(reference);
+        let buffer = &mut self.meshlet_range_buffer;
+        Ok((buffer.len(),buffer.drain(..)))
+    }
+
+    pub fn get_index_buffer_slice(&self) -> BufferSlice<'_> {
+        self.indices.get_buffer().slice(..)
+    }
+
+    pub fn get_vertex_buffer_slice(&self) -> BufferSlice<'_> {
+        self.vertices.get_buffer().slice(..)
     }
 
     pub fn get_vertex_buffer(&self) -> &Buffer {
-        self.storage_buffers.vertices.get_buffer()
+        self.vertices.get_buffer()
     }
 
     pub fn get_index_buffer(&self) -> &Buffer {
-        self.storage_buffers.indices.get_buffer()
+        self.indices.get_buffer()
+    }
+
+    /// Geometry feedback from the mesh cache
+    /// 
+    /// Reroute back to the mesh cache to provide the meshlets with texture information
+    pub fn insert_geometry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<(usize,std::vec::Drain<MeshletRange>),ModelError> {
+        self.create_entry(queue,gltf_data)
+    }
+
+    pub fn create_textured_mesh_reference(&mut self,mesh: Vec<TexturedMeshlet>) -> TexturedMeshReference {
+        self.mesh_references.insert(mesh)
+    }
+
+    pub fn get_textured_mesh_ref<'a>(&'a self,reference: TexturedMeshReference) -> &'a [TexturedMeshlet] {
+        match self.mesh_references.get(reference) {
+            Some(value) => value,
+            None => &[],
+        }
     }
 }

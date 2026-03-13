@@ -1,4 +1,5 @@
 use super::{*,pipelines::core::*};
+use slotmap::SlotMap;
 use wgpu::*;
 
 use crate::world::{CameraPerspectivePacket, WimpyCamera};
@@ -63,7 +64,6 @@ pub struct GraphicsContext {
     pub graphics_provider: GraphicsProvider,
     pub pipelines: RenderPipelines,
     pub frame_cache: FrameCache,
-    pub mesh_cache: MeshCache,
     pub bind_group_cache: BindGroupCache,
     pub texture_id_generator: TextureIdentityGenerator,
     pub engine_textures: EngineTextures
@@ -230,18 +230,6 @@ impl GraphicsContext {
             texture_id,
             size.into()
         ));
-    }
-
-    pub fn create_mesh_cache_entry(&mut self,gltf_data: &[u8]) -> Result<MeshCacheReference,ModelError> {
-        self.mesh_cache.create_entry(self.graphics_provider.get_queue(),gltf_data)
-    }
-
-    pub fn get_render_mesh(&self,mesh_cache_reference: MeshCacheReference) -> Option<RenderBufferReference> {
-        self.mesh_cache.entries.get(mesh_cache_reference).cloned()
-    }
-
-    pub fn get_collision_mesh<'a>(&'a self,mesh_cache_reference: MeshCacheReference) -> Option<&'a CollisionShape> {
-        self.mesh_cache.collision_shapes.get(mesh_cache_reference)
     }
 
     pub fn create_output_builder<'a>(&'a mut self,color: impl WimpyColor) -> Option<OutputBuilderContext<'a>> {
