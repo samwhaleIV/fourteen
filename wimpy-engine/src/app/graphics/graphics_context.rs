@@ -290,7 +290,10 @@ where
 
     pub fn set_pipeline_lines_3d(&mut self,uniform: UniformReference) -> LinesPipelinePass<'_,'context> { self.set_pipeline(uniform) }
 
-    pub fn draw_pipeline_3d(&mut self,diffuse_sampler: SamplerMode,uniform: UniformReference) {
+    /// Safe to call even if no meshes have been submitted, there is an early exit path
+    /// 
+    /// `output.builder.submit_batched_meshes()` must be called before this render pass was created
+    pub fn draw_submitted_meshes(&mut self,diffuse_sampler: SamplerMode,uniform: UniformReference) {
         let mut pipeline_3d_pass = self.set_pipeline::<Pipeline3DPass>(uniform);
         pipeline_3d_pass.submit(diffuse_sampler);
     }
@@ -313,11 +316,19 @@ where
 }
 
 impl OutputBuilder<'_> {
-    pub fn create_pipeline_3d_batcher<'a>(&'a mut self) -> Pipeline3DEncoderPass<'a> {
-        Pipeline3DEncoderPass::create(self.graphics_context)
+    /// Batch meshes to prepare an encoder submission. This must happen before a render pass is created
+    /// 
+    /// Before the render pass, `submit_batched_meshes()` must be called. Later, `render_pass.draw_submitted_meshes()` can be used during an active render pass
+    pub fn batch_meshes<'a,I>(&'a mut self,texture_strategy: TextureStrategy,draw_data: I)
+    where
+        I: IntoIterator<Item = DrawData3D>
+    {
+        let mut batcher = Pipeline3DBatcher::create(self.graphics_context);
+        batcher.push(texture_strategy,draw_data);
     }
 
-    pub fn submit_3d_batcher(&mut self) {
+    /// Must be called before the first render pass that will draw meshes executes
+    pub fn submit_batched_meshes(&mut self) {
         self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
     }
 

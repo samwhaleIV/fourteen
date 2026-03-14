@@ -223,18 +223,18 @@ impl Pipeline3D {
     }
 }
 
-pub struct Pipeline3DEncoderPass<'pass> {
+pub struct Pipeline3DBatcher<'pass> {
     context: &'pass mut GraphicsContext
 }
 
-impl<'a> Pipeline3DEncoderPass<'a> {
+impl<'a> Pipeline3DBatcher<'a> {
     pub fn create(context: &'a mut GraphicsContext) -> Self {
         Self {
             context
         }
     }
 
-    pub fn draw<I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
+    pub fn push<I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
     where
         I: IntoIterator<Item = DrawData3D>,
     {
@@ -242,7 +242,7 @@ impl<'a> Pipeline3DEncoderPass<'a> {
 
         for draw_data in draw_data.into_iter() {
 
-            let meshlets = self.context.mesh_cache.get_textured_mesh_ref(draw_data.meshlets);
+            let meshlets = self.context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
 
             let transform_0 = draw_data.transform.x_axis.into();
             let transform_1 = draw_data.transform.y_axis.into();
@@ -323,7 +323,7 @@ impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline3DPass<'pass,'cont
 
 pub struct DrawData3D {
     pub transform: Mat4,
-    pub meshlets: TexturedMeshReference
+    pub mesh: TexturedMeshReference
 }
 
 #[derive(Copy,Clone)]
@@ -335,8 +335,11 @@ pub enum TextureStrategy {
 
 impl Pipeline3DPass<'_,'_> {
     pub fn submit(&mut self,diffuse_sampler: SamplerMode) {
-
         let pipeline = &self.context.pipelines.pipeline_3d;
+
+        if pipeline.instance_buckets.instance_count <= 0 {
+            return;
+        }
 
         self.render_pass.set_pipeline(pipeline.variants.select(self.variant_key));
 

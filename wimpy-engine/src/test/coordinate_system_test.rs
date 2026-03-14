@@ -1,12 +1,12 @@
 use glam::{Mat4, Vec3};
 
-use crate::{app::{graphics::{pipelines::pipeline_3d::TextureStrategy, *}, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, wam::ModelData, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
+use crate::{app::{graphics::{pipelines::pipeline_3d::TextureStrategy, *}, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
 
 pub struct CoordinateSystemTest {
     in_movement_mode: bool,
     camera: WimpyCamera,
     lines: Vec<LinePoint3D>,
-    model: ModelData,
+    mesh: Option<TexturedMeshReference>,
 }
 
 const LINE_COUNT: usize = 11;
@@ -127,13 +127,13 @@ where
             })
         };
 
-        let model = context.get_model::<IO>("wimpy/models/test-room").await;
+        let mesh = context.get_model::<IO>("wimpy/models/test-room").await;
 
         Self {
             in_movement_mode: false,
             camera: Default::default(),
             lines: generate_lines(),
-            model,
+            mesh,
         }
     }
 
@@ -197,6 +197,14 @@ where
             return;
         };
 
+        if let Some(mesh) = self.mesh {
+            output.builder.batch_meshes(TextureStrategy::Standard,[DrawData3D {
+                transform: Mat4::IDENTITY,
+                mesh,
+            }]);
+            output.builder.submit_batched_meshes();
+        }
+
         'output_pass: {
             let Ok(mut render_pass) = output.builder.create_render_pass(&output.frame) else {
                 break 'output_pass;
@@ -205,12 +213,7 @@ where
             let mut lines_pass = render_pass.set_pipeline_lines_3d(camera_uniform);
             lines_pass.draw_list(&self.lines);
 
-            let mut model_pass = render_pass.submit_pipeline_3d(camera_uniform);
-            model_pass.batch(&self.model,SamplerMode::NearestClamp,TextureStrategy::Standard,std::iter::once(DrawData3D {
-                transform: Mat4::IDENTITY,
-                diffuse_color: WimpyColorLinear::WHITE,
-                lightmap_color: WimpyColorLinear::WHITE,
-            }));
+            render_pass.draw_submitted_meshes(SamplerMode::NearestClamp,camera_uniform);
 
             context.debug.render(&mut render_pass);
         }
