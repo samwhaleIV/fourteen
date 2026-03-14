@@ -22,9 +22,7 @@ use input::InputManager;
 
 use wam::*;
 
-use crate::app::graphics::{
-    FrameReference, GraphicsContextConfig, GraphicsProvider, MeshCache, TextureFrame, TexturedMeshReference
-};
+use crate::app::graphics::{FrameReference, GraphicsContextConfig, GraphicsProvider, TextureFrame, TexturedMeshReference};
 
 use crate::app::input::InputType;
 
@@ -111,52 +109,65 @@ impl WimpyContext {
         self.graphics.engine_textures.font_mono_elf =        self.get_image::<IO>(FONT_MONO_ELF).await;
     }
 
-    async fn get_asset<IO,T,F>(&mut self,name: &str,fallback: F) -> T::UserAsset
-    where
-        IO: WimpyIO,
-        T: UserAssetMapping,
-        F: FnOnce(AssetLoadingContext) -> T::UserAsset
-    {
-        let mut context = AssetLoadingContext {
-            asset_manager: &mut self.assets,
-            graphics_context: &mut self.graphics,
-            missing_text: &self.missing_text
-        };
-        let Ok(virtual_asset) = context.asset_manager.get_virtual_asset::<T::VirtualReference>(&Rc::from(name)) else {
-            return fallback(context);
-        };
-        let Ok(user_asset) = T::get_user_asset::<IO>(virtual_asset,&mut context).await else {
-            return fallback(context);
-        };
-        user_asset
+    pub async fn get_image<IO: WimpyIO>(&mut self,name: &'static str) -> TextureFrame {
+        match ImageAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+            Ok(frame_view) => frame_view.texture,
+            Err(error) => {
+                log::error!("Image asset load failure: {:?}",error);
+                self.graphics.engine_textures.missing
+            },
+        }
     }
 
-    pub async fn get_image<IO: WimpyIO>(&mut self,name: &str) -> TextureFrame {
-        self.get_asset::<IO,generic_types::Image,_>(name,|context|context.graphics_context.engine_textures.missing).await
-    }
-
-    pub async fn get_image_slice<IO: WimpyIO>(&mut self,name: &str) -> ImageSliceData {
-        self.get_asset::<IO,generic_types::ImageSlice,_>(name,|context|{
-            let texture = context.graphics_context.engine_textures.missing;
-            let size = texture.size();
-            ImageSliceData {
-                texture,
-                area: ImageArea {
-                    x: 0,
-                    y: 0,
-                    width: size.x,
-                    height: size.y,
+    pub async fn get_image_slice<IO: WimpyIO>(&mut self,name: &'static str) -> TextureFrameView {
+        match ImageAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+            Ok(frame_view) => frame_view,
+            Err(error) => {
+                log::error!("Image slice asset load failure: {:?}",error);
+                let texture = self.graphics.engine_textures.missing;
+                let image_area = texture.get_input_size();
+                TextureFrameView {
+                    texture,
+                    view: Some(ImageArea {
+                        x: 0,
+                        y: 0,
+                        width: image_area.x,
+                        height: image_area.y,
+                    }),
                 }
-            }
-        }).await
+            },
+        }
     }
 
-    pub async fn get_text<IO: WimpyIO>(&mut self,name: &str) -> Rc<str> {
-        self.get_asset::<IO,generic_types::Text,_>(name,|context|context.missing_text.clone()).await
+    pub async fn get_text<IO: WimpyIO>(&mut self,name: &'static str) -> Rc<str> {
+        match TextAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+            Ok(text) => text,
+            Err(error) => {
+                log::error!("Text asset load failure: {:?}",error);
+                self.missing_text.clone()
+            },
+        }
     }
 
-    pub async fn get_model<IO: WimpyIO>(&mut self,name: &str) -> TexturedMeshReference {
-        self.get_asset::<IO,generic_types::Model,_>(name,|_|TexturedMeshReference::default()).await
+    // TODO: Create fallback textured mesh inside the mesh cache
+    pub async fn get_model<IO: WimpyIO>(&mut self,name: &'static str) -> Option<TexturedMeshReference> {
+        match ModelAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+            Ok(mesh) => Some(mesh),
+            Err(error) => {
+                log::error!("Model asset load failure: {:?}",error);
+                None
+            },
+        }
+    }
+}
+
+impl<'a> From<&'a mut WimpyContext> for AssetLoadingContext<'a> {
+    fn from(value: &'a mut WimpyContext) -> Self {
+        AssetLoadingContext {
+            asset_manager: &mut value.assets,
+            graphics_context: &mut value.graphics,
+            missing_text: &value.missing_text
+        }
     }
 }
 

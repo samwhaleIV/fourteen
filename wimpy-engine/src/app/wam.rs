@@ -2,11 +2,8 @@ mod wam_manifest;
 mod virtual_asset_translator;
 mod file_type_definitions;
 mod asset_manager;
-mod macro_traits;
 
 mod prelude {
-    pub use macro_traits::*;
-    pub use crate::impl_asset_reference_resolver;
     pub use std::path::PathBuf;
     pub use std::path::Path;
     pub use serde::Deserialize;
@@ -22,3 +19,4 @@ mod prelude {
 
 pub use asset_manager::*;
 pub use wam_manifest::*;
+pub use file_type_definitions::*;

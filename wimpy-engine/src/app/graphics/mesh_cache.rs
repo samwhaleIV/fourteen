@@ -19,7 +19,6 @@ use gltf::{
 };
 
 const TEXTURED_MESH_REFERENCE_START_CAPACITY: usize = 8;
-const MESHLET_ITERATOR_START_SIZE: usize = 8;
 
 slotmap::new_key_type! {
     pub struct TexturedMeshReference;
@@ -27,14 +26,13 @@ slotmap::new_key_type! {
 
 pub struct MeshCache {
     mesh_references: SlotMap<TexturedMeshReference,Vec<TexturedMeshlet>>,
-    meshlet_range_buffer: Vec<MeshletRange>,
     vertices: TypedBuffer<MeshVertex>,
     indices: TypedBuffer<u32>
 }
 
 #[derive(Debug)]
 pub struct TexturedMeshlet {
-    pub meshlet: MeshletRange,
+    pub range: MeshletRange,
     pub diffuse: TextureFrame,
     pub lightmap: TextureFrame,
 }
@@ -246,13 +244,12 @@ impl MeshCache {
 
         return Self {
             mesh_references: SlotMap::with_capacity_and_key(TEXTURED_MESH_REFERENCE_START_CAPACITY),
-            meshlet_range_buffer: Vec::with_capacity(MESHLET_ITERATOR_START_SIZE),
             indices,
             vertices,
         }
     }
 
-    fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<(usize,std::vec::Drain<MeshletRange>),ModelError> {
+    fn create_entry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<Vec<MeshletRange>,ModelError> {
         let (document, buffers, _) = match gltf::import_slice(gltf_data) {
             Ok(value) => value,
             Err(error) => {
@@ -269,18 +266,20 @@ impl MeshCache {
 
         //todo... find vis portals/cell bounds
 
+        let mut buffer: Vec<MeshletRange> = Vec::with_capacity(model_mesh.primitives().len());
+
         for primitive in model_mesh.primitives() {
             match self.import_render_primitive(&buffers,queue,primitive) {
-                Ok(value) => self.meshlet_range_buffer.push(value),
+                Ok(value) => {
+                    buffer.push(value)
+                },
                 Err(error) => {
-                    self.meshlet_range_buffer.clear();
                     return Err(error);
                 },
             }
         }
 
-        let buffer = &mut self.meshlet_range_buffer;
-        Ok((buffer.len(),buffer.drain(..)))
+        Ok(buffer)
     }
 
     pub fn get_index_buffer_slice(&self) -> BufferSlice<'_> {
@@ -302,7 +301,7 @@ impl MeshCache {
     /// Geometry feedback from the mesh cache
     /// 
     /// Reroute back to the mesh cache to provide the meshlets with texture information
-    pub fn insert_geometry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<(usize,std::vec::Drain<MeshletRange>),ModelError> {
+    pub fn insert_geometry(&mut self,queue: &Queue,gltf_data: &[u8]) -> Result<Vec<MeshletRange>,ModelError> {
         self.create_entry(queue,gltf_data)
     }
 

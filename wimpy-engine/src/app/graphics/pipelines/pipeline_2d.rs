@@ -3,7 +3,7 @@ use wgpu::util::{BufferInitDescriptor,DeviceExt};
 use std::borrow::Borrow;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear,WimpyRect};
+use crate::{WimpyColorLinear,WimpyRect, WimpyVec};
 use crate::app::graphics::*;
 use super::core::*;
 
@@ -121,9 +121,9 @@ impl Pipeline2D {
     }
 }
 
-pub struct Pipeline2DPass<'pass,'context> {
-    context: &'pass mut RenderPassContext<'context>,
-    render_pass: RenderPass<'pass>,
+pub struct Pipeline2DPass<'pass,'encoder> {
+    context: &'pass mut GraphicsContext,
+    render_pass: &'pass mut RenderPass<'encoder>,
     needs_sampler_update: bool,
     sampler_mode: SamplerMode,
     current_sampling_frame: FrameCacheReference,
@@ -155,16 +155,15 @@ impl PipelineFlush for Pipeline2D {
 
 impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline2DPass<'pass,'context> {
     fn create(
-        encoder: &'pass mut CommandEncoder,
-        context: &'pass mut RenderPassContext<'context>,
+        render_pass: &'pass mut RenderPass<'context>,
+        context: &'pass mut GraphicsContext,
+        variant_key: PipelineVariantKey,
         uniform_reference: UniformReference
     ) -> Self {
         let pipeline_2d = &context.pipelines.pipeline_2d;
 
-        let mut render_pass = context.create_render_pass(encoder);
-
-        render_pass.set_pipeline(&pipeline_2d.variants.select(context.variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut render_pass,uniform_reference);
+        render_pass.set_pipeline(&pipeline_2d.variants.select(variant_key));
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),
@@ -181,7 +180,7 @@ impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline2DPass<'pass,'cont
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
 
-        let current_sampling_frame = context.textures.transparent_black.get_ref();
+        let current_sampling_frame = context.engine_textures.transparent_black.get_ref();
 
         return Self {
             context,
@@ -204,7 +203,7 @@ impl Pipeline2DPass<'_,'_> {
 
         return match self.context.frame_cache.get(reference) {
             Ok(texture_container) => {
-                let bind_group = self.context.bind_groups.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
+                let bind_group = self.context.bind_group_cache.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: self.sampler_mode,
                         texture: texture_container,
@@ -220,17 +219,14 @@ impl Pipeline2DPass<'_,'_> {
         };
     }
 
-    pub fn draw<'a,I>(&mut self,frame_reference: &impl FrameReference,draw_data: I)
+    fn draw_internal<I>(&mut self,frame_ref: FrameCacheReference,uv_scale: WimpyVec,draw_data: I)
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>
     {
-        let reference = frame_reference.get_ref();
-        if let Err(()) = self.update_sampler_if_needed(reference) {
+        if let Err(()) = self.update_sampler_if_needed(frame_ref) {
             return;
         }
-
-        let uv_scale = frame_reference.get_uv_scale();
 
         let range = self.context.pipelines.pipeline_2d.instance_buffer.push_set(draw_data.into_iter().map(|item|{
             let item = item.borrow();
@@ -254,12 +250,21 @@ impl Pipeline2DPass<'_,'_> {
         });
     }
 
-    pub fn draw_untextured<'a,I>(&mut self,draw_data: I)
+    pub fn draw<I>(&mut self,frame: &impl FrameReference,draw_data: I)
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>
     {
-        self.draw(&self.context.textures.opaque_white,draw_data);
+        self.draw_internal(frame.get_ref(),frame.get_uv_scale(),draw_data);
+    }
+
+    pub fn draw_untextured<I>(&mut self,draw_data: I)
+    where
+        I: IntoIterator,
+        I::Item: Borrow<DrawData2D>
+    {
+        let frame = &self.context.engine_textures.opaque_white;
+        self.draw_internal(frame.get_ref(),frame.get_uv_scale(),draw_data);
     }
 
     pub fn set_sampler_mode(&mut self,sampler_mode: SamplerMode) {

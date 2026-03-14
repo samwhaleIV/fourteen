@@ -24,51 +24,11 @@ pub struct OutputBuilderContext<'a> {
 
 pub trait PipelinePass<'pass,'context> {
     fn create(
-        encoder: &'pass mut CommandEncoder,
-        context: &'pass mut RenderPassContext<'context>,
+        render_pass: &'pass mut RenderPass<'context>,
+        context: &'pass mut GraphicsContext,
+        variant_key: PipelineVariantKey,
         uniform_reference: UniformReference
     ) -> Self;
-}
-
-pub struct RenderPassContext<'a> {
-    frame_texture_view: &'a TextureView,
-    frame_clear_color: Option<wgpu::Color>,
-    frame_input_size: UWimpyPoint,
-    pub variant_key: PipelineVariantKey,
-    pub mesh_cache: &'a MeshCache,
-    pub frame_cache: &'a FrameCache,
-    pub pipelines: &'a mut RenderPipelines,
-    pub textures: &'a EngineTextures,
-    pub bind_groups: &'a mut BindGroupCache,
-    pub graphics_provider: &'a GraphicsProvider,
-}
-
-impl RenderPassContext<'_> {
-    pub fn create_render_pass<'encoder>(&self,encoder: &'encoder mut CommandEncoder) -> RenderPass<'encoder> {
-        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: self.frame_texture_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: match self.frame_clear_color {
-                        Some(color) => wgpu::LoadOp::Clear(color),
-                        None => wgpu::LoadOp::Load,
-                    },
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        let frame_size = WimpyVec::from(self.frame_input_size);
-        render_pass.set_viewport(0.0,0.0,frame_size.x,frame_size.y,0.0,1.0);
-
-        render_pass
-    }
 }
 
 pub enum AvailableControls {
@@ -129,14 +89,6 @@ impl Default for CameraPerspective {
 }
 
 impl GraphicsContext {
-    pub fn get_graphics_provider(&self) -> &GraphicsProvider {
-        return &self.graphics_provider;
-    }
-
-    pub fn get_graphics_provider_mut(&mut self) -> &mut GraphicsProvider {
-        return &mut self.graphics_provider;
-    }
-
     pub async fn create<TConfig>(graphics_provider: GraphicsProvider) -> Self
     where
         TConfig: GraphicsContextConfig
@@ -307,39 +259,41 @@ impl GraphicsContext {
 }
 
 pub struct RenderPassBuilder<'a,TFrame> {
-    encoder: &'a mut CommandEncoder,
-    context: RenderPassContext<'a>,
+    render_pass: RenderPass<'a>,
+    context: &'a mut GraphicsContext,
     frame: &'a TFrame,
     ortho_uniform: UniformReference,
+    variant_key: PipelineVariantKey,
 }
 
 impl<'context,TFrame> RenderPassBuilder<'context,TFrame>
 where
     TFrame: MutableFrame
 {
-    fn set_pipeline<'pass,TPipelinePass>(
-        &'pass mut self,
-        uniform_reference: UniformReference
-    ) -> TPipelinePass
+    fn set_pipeline<'pass,TPipelinePass>(&'pass mut self,uniform_reference: UniformReference) -> TPipelinePass
     where
         TPipelinePass: PipelinePass<'pass,'context>
     {
         TPipelinePass::create(
-            &mut self.encoder,
+            &mut self.render_pass,
             &mut self.context,
+            self.variant_key,
             uniform_reference
         )
     }
 
-    pub fn set_pipeline_2d<'pass>(&'pass mut self) -> Pipeline2DPass<'pass,'context> { self.set_pipeline(self.ortho_uniform) }
+    pub fn set_pipeline_2d(&mut self) -> Pipeline2DPass<'_,'context> { self.set_pipeline(self.ortho_uniform) }
 
-    pub fn set_pipeline_3d<'pass>(&'pass mut self,uniform: UniformReference) -> Pipeline3DPass<'pass,'context> { self.set_pipeline(uniform) }
+    pub fn set_pipeline_text<TFont: FontDefinition>(&mut self) -> PipelineTextPass<'_,'context,TFont> { self.set_pipeline(self.ortho_uniform) }
 
-    pub fn set_pipeline_text<'pass,TFont: FontDefinition>(&'pass mut self) -> PipelineTextPass<'pass,'context,TFont> { self.set_pipeline(self.ortho_uniform) }
+    pub fn set_pipeline_lines_2d(&mut self) -> LinesPipelinePass<'_,'context> { self.set_pipeline(self.ortho_uniform) }
 
-    pub fn set_pipeline_lines_2d<'pass>(&'pass mut self) -> LinesPipelinePass<'pass,'context> { self.set_pipeline(self.ortho_uniform) }
+    pub fn set_pipeline_lines_3d(&mut self,uniform: UniformReference) -> LinesPipelinePass<'_,'context> { self.set_pipeline(uniform) }
 
-    pub fn set_pipeline_lines_3d<'pass>(&'pass mut self,uniform: UniformReference) -> LinesPipelinePass<'pass,'context> { self.set_pipeline(uniform) }
+    pub fn draw_pipeline_3d(&mut self,diffuse_sampler: SamplerMode,uniform: UniformReference) {
+        let mut pipeline_3d_pass = self.set_pipeline::<Pipeline3DPass>(uniform);
+        pipeline_3d_pass.submit(diffuse_sampler);
+    }
 
     pub fn create_camera_uniform(
         &mut self,
@@ -359,6 +313,13 @@ where
 }
 
 impl OutputBuilder<'_> {
+    pub fn create_pipeline_3d_batcher<'a>(&'a mut self) -> Pipeline3DEncoderPass<'a> {
+        Pipeline3DEncoderPass::create(self.graphics_context)
+    }
+
+    pub fn submit_3d_batcher(&mut self) {
+        self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
+    }
 
     pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
     where
@@ -371,25 +332,35 @@ impl OutputBuilder<'_> {
             false => PipelineVariantKey::InternalTarget,
         };
 
-        let context = RenderPassContext {
-            frame_texture_view: view,
-            frame_clear_color: frame.get_clear_color(),
-            frame_input_size: frame.get_input_size(),
-            mesh_cache: &self.graphics_context.mesh_cache,
-            frame_cache: &self.graphics_context.frame_cache,
-            pipelines: &mut self.graphics_context.pipelines,
-            textures: &self.graphics_context.engine_textures,
-            bind_groups: &mut self.graphics_context.bind_group_cache,
-            graphics_provider: &self.graphics_context.graphics_provider,
-            variant_key: pipeline_variant,
-        };
+        let mut render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: match frame.get_clear_color() {
+                        Some(color) => wgpu::LoadOp::Clear(color),
+                        None => wgpu::LoadOp::Load,
+                    },
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
 
-        let ortho_uniform = context.pipelines.shared.create_uniform_ortho(frame.size());
+        let frame_size = WimpyVec::from(frame.get_input_size());
+        render_pass.set_viewport(0.0,0.0,frame_size.x,frame_size.y,0.0,1.0);
+
+        let ortho_uniform = self.graphics_context.pipelines.shared.create_uniform_ortho(frame.size());
 
         return Ok(RenderPassBuilder {
-            encoder: &mut self.encoder,
-            context,
+            render_pass,
+            context: self.graphics_context,
             frame,
+            variant_key: pipeline_variant,
             ortho_uniform,
         })
     }

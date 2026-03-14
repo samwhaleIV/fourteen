@@ -2,6 +2,7 @@ use super::prelude::*;
 
 const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;
 const DEFAULT_HARD_ASSET_CAPACITY: usize = 32;
+const DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY: usize = 32;
 
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -26,7 +27,11 @@ pub struct HardAsset {
 #[derive(Debug,Default)]
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
-    pub virtual_assets: HashMap<Rc<str>,AssetReference>,
+
+    pub text_assets: HashMap<Rc<str>,TextAssetReference>,
+    pub image_assets: HashMap<Rc<str>,ImageAssetReference>,
+    pub model_assets: HashMap<Rc<str>,ModelAssetReference>,
+
     string_builder: String,
 }
 
@@ -133,8 +138,10 @@ impl WamManifest {
 
         let mut manifest = Self {
             hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_capacity_and_key(DEFAULT_HARD_ASSET_CAPACITY),
-            virtual_assets: Default::default(),
-            string_builder: String::with_capacity(DEFAULT_NAME_STRING_BUILDER_CAPACITY)
+            string_builder: String::with_capacity(DEFAULT_NAME_STRING_BUILDER_CAPACITY),
+            text_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            image_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            model_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
         };
 
         let item_count = namespace_table.len();
@@ -159,10 +166,6 @@ impl WamManifest {
         local_name.push_str(&self.string_builder);
         self.string_builder.clear();
         return Rc::from(local_name);
-    }
-
-    pub fn add_virtual_asset(&mut self,asset: AssetReference,name: Rc<str>) {
-        self.virtual_assets.insert(name,asset);
     }
 
     fn add_namespace(&mut self,namespace: InputNamespace,namespace_name: &str) -> Result<(),WamManifestError> {

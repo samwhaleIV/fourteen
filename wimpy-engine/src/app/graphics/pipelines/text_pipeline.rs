@@ -139,9 +139,9 @@ impl TextPipeline {
     }
 }
 
-pub struct PipelineTextPass<'pass,'context,TFont> {
-    context: &'pass mut RenderPassContext<'context>,
-    render_pass: RenderPass<'pass>,
+pub struct PipelineTextPass<'pass,'encoder,TFont> {
+    context: &'pass mut GraphicsContext,
+    render_pass: &'pass mut RenderPass<'encoder>,
     texture_valid: bool,
     range_start: usize,
     uv_scalar: WimpyVec,
@@ -189,14 +189,13 @@ where
     TFont: FontDefinition
 {
     fn create(
-        encoder: &'pass mut CommandEncoder,
-        context: &'pass mut RenderPassContext<'context>,
+        render_pass: &'pass mut RenderPass<'context>,
+        context: &'pass mut GraphicsContext,
+        variant_key: PipelineVariantKey,
         uniform_reference: UniformReference
     ) -> Self {
-        let mut render_pass = context.create_render_pass(encoder);
-
-        render_pass.set_pipeline(context.pipelines.text.variants.select(context.variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut render_pass,uniform_reference);
+        render_pass.set_pipeline(context.pipelines.text.variants.select(variant_key));
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             context.pipelines.text.index_buffer.slice(..),
@@ -213,14 +212,14 @@ where
             context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
-        let target_texture = TFont::get_texture(context.textures);
+        let target_texture = TFont::get_texture(&context.engine_textures);
         let target_texture_ref = target_texture.get_ref();
 
         let mut texture_valid = false;
 
         match context.frame_cache.get(target_texture_ref) {
             Ok(texture_container) => {
-                let bind_group = context.bind_groups.get(context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
+                let bind_group = context.bind_group_cache.get(context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
                         mode: SamplerMode::NearestClamp,
                         texture: texture_container,

@@ -170,7 +170,7 @@ where
             //     rotation: 0.0,
             // }]);
 
-            context.debug.render(&mut render_pass);
+            //context.debug.render(&mut render_pass);
 
             let mut lines_pass = render_pass.set_pipeline_lines_2d();
             lines_pass.draw_list(&self.lines);

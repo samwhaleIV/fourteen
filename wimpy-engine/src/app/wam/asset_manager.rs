@@ -9,24 +9,23 @@ const START_CACHE_ENTRY_CAPACITY: usize = 8;
 
 #[derive(Default)]
 pub struct AssetManager {
-    manifest: WamManifest,
+    pub manifest: WamManifest,
     root: PathBuf,
-    // texture_frame_cache: SlotMap<ImageCacheKey,CacheState<TextureFrame>>,
     text_cache: SparseSecondaryMap<HardAssetKey,Rc<str>>,
-    image_cache: SparseSecondaryMap<HardAssetKey,TextureFrame>,
-    model_cache: SparseSecondaryMap<HardAssetKey,TextAssetReference>,
+    image_cache: SparseSecondaryMap<HardAssetKey,TextureFrameView>,
+    model_cache: SparseSecondaryMap<HardAssetKey,TexturedMeshReference>,
 }
 
-pub struct ImageSliceData {
+#[derive(Copy,Clone)]
+pub struct TextureFrameView {
     pub texture: TextureFrame,
-    pub area: ImageArea
+    pub view: Option<ImageArea>
 }
 
 #[derive(Debug)]
 pub enum AssetManagerError {
-    VirtualAssetNotFound(Rc<str>),
-    MissingHardAsset(Rc<str>),
-    AssetNotLoaded(Rc<str>),
+    VirtualAssetNotFound(&'static str),
+    MissingHardAsset(&'static str),
     MismatchedType {
         expected: HardAssetType,
         found: HardAssetType
@@ -36,18 +35,29 @@ pub enum AssetManagerError {
     TextureImportError(TextureError),
 }
 
-fn get_full_path(root: &PathBuf,virtual_path: &str) -> PathBuf {
+fn get_full_path(root: &PathBuf,hard_asset_path: &str) -> PathBuf {
     let mut path_buffer = PathBuf::new();
     path_buffer.push(root);
-    for component in virtual_path.split('/') {
+    for component in hard_asset_path.split('/') {
         path_buffer.push(component);
     }
     return path_buffer;
 }
 
+fn validate_hard_asset_type(hard_asset: &HardAsset,expected_type: HardAssetType) -> Result<(),AssetManagerError> {
+    if hard_asset.data_type != expected_type {
+        Err(AssetManagerError::MismatchedType {
+            expected: expected_type,
+            found: hard_asset.data_type 
+        })
+    } else {
+        Ok(())
+    }
+}
+
 impl AssetManager {
     pub async fn load_or_default<IO: WimpyIO>(manifest_path: Option<&Path>) -> Self {
-        return match manifest_path {
+        match manifest_path {
             Some(path) => match IO::load_text_file(path).await {
                 Ok(json_text) => match WamManifest::create(&json_text) {
                     Ok(manifest) => {
@@ -72,40 +82,20 @@ impl AssetManager {
                 },
             },
             None => Default::default(),
-        };
+        }
     }
 
-    pub fn get_virtual_asset<TReferenceResolver>(&self,name: &Rc<str>) -> Result<TReferenceResolver,AssetManagerError>
-    where
-        TReferenceResolver: AssetReferenceResolver + Clone
-    {
-        return match self.manifest.virtual_assets.get(name) {
-            Some(virtual_asset) => match TReferenceResolver::type_check(virtual_asset) {
-                Some(typed_virtual_asset) => Ok(typed_virtual_asset.clone()),
-                None => return Err(AssetManagerError::MismatchedType {
-                    expected: HardAssetType::Text,
-                    found: virtual_asset.get_type()
-                })
-            },
-            None => return Err(AssetManagerError::VirtualAssetNotFound(name.clone()))
-        };
-    }
-
-    async fn get_text<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &Rc<str>) -> Result<Rc<str>,AssetManagerError> {
+    async fn get_text_cached<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &'static str) -> Result<Rc<str>,AssetManagerError> {
         if let Some(text) = self.text_cache.get(key) {
             return Ok(text.clone());
         }
+
         let hard_asset = match self.manifest.hard_assets.get(key) {
             Some(value) => value,
-            None => return Err(AssetManagerError::MissingHardAsset(name.clone())),
+            None => return Err(AssetManagerError::MissingHardAsset(name)),
         };
 
-        if hard_asset.data_type != HardAssetType::Text {
-            return Err(AssetManagerError::MismatchedType {
-                expected: HardAssetType::Text,
-                found: hard_asset.data_type 
-            })
-        }
+        validate_hard_asset_type(hard_asset,HardAssetType::Text)?;
 
         let path = get_full_path(&self.root,&hard_asset.file_source);
         let text_data: Rc<str> = Rc::from(match IO::load_text_file(path.as_path()).await {
@@ -118,146 +108,135 @@ impl AssetManager {
         Ok(text_data)
     }
 
-    async fn get_image_cached<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &Rc<str>,graphics_context: &mut GraphicsContext) -> Result<TextureFrame,AssetManagerError> {
-
-        match image.0.state {
-            AssetCacheState::Unloaded => {
-                let path = get_full_path(&self.root,image.1.as_ref());
-                let image_data = match IO::load_image_file(path.as_path()).await {
-                    Ok(data) => data,
-                    Err(error) => return Err(AssetManagerError::FileError(error)),
-                };
-                let texture_frame = match graphics_context.create_texture_frame(image_data) {
-                    Ok(value) => value,
-                    Err(error) => return Err(AssetManagerError::TextureImportError(error)),
-                };
-                image.0.state = AssetCacheState::Loaded(texture_frame);
-                Ok(texture_frame)
-            },
-            AssetCacheState::Loaded(cache_ref) => Ok(cache_ref),
+    async fn get_image_cached<IO: WimpyIO>(
+        &mut self,key: HardAssetKey,
+        name: &'static str,
+        texture_view: Option<ImageArea>,
+        graphics_context: &mut GraphicsContext
+    ) -> Result<TextureFrameView,AssetManagerError> {
+        if let Some(image) = self.image_cache.get(key) {
+            return Ok(image.clone());
         }
+
+        let hard_asset = match self.manifest.hard_assets.get(key) {
+            Some(value) => value,
+            None => return Err(AssetManagerError::MissingHardAsset(name)),
+        };
+
+        validate_hard_asset_type(hard_asset,HardAssetType::Image)?;
+
+        let path = get_full_path(&self.root,&hard_asset.file_source);
+
+        let image_data = match IO::load_image_file(path.as_path()).await {
+            Ok(data) => data,
+            Err(error) => return Err(AssetManagerError::FileError(error)),
+        };
+        let texture_frame = match graphics_context.create_texture_frame(image_data) {
+            Ok(value) => value,
+            Err(error) => return Err(AssetManagerError::TextureImportError(error)),
+        };
+
+        let texture_frame_view = TextureFrameView {
+            texture: texture_frame.clone(),
+            view: texture_view
+        };
+
+        self.image_cache.insert(key,texture_frame_view.clone());
+
+        Ok(texture_frame_view)
     }
-
-    // async fn get_image_anonymous<IO: WimpyIO>(&mut self,key: HardAssetKey,name: &Rc<str>,graphics_context: &mut GraphicsContext) -> Result<TextureFrame,AssetManagerError> {
-    //     let image = Self::get_hard_asset_container::<HardImageAsset>(&mut self.manifest.hard_assets,key,name)?;
-
-    //     match image.0.state {
-    //         HardAssetState::Unloaded => {
-    //             let path = get_full_path(&self.root,image.1.as_ref());
-    //             let image_data = match IO::load_image_file(path.as_path()).await {
-    //                 Ok(data) => data,
-    //                 Err(error) => return Err(AssetManagerError::FileError(error)),
-    //             };
-    //             let texture_frame = match graphics_context.create_texture_frame(image_data) {
-    //                 Ok(value) => value,
-    //                 Err(error) => return Err(AssetManagerError::TextureImportError(error)),
-    //             };
-    //             image.0.state = HardAssetState::Loaded(texture_frame);
-    //             Ok(texture_frame)
-    //         },
-    //         HardAssetState::Loaded(cache_ref) => Ok(cache_ref),
-    //     }
-    // }
-}
-
-pub mod generic_types {
-    pub struct Image;
-    pub struct ImageSlice;
-    pub struct Model;
-    pub struct Text;
 }
 
 pub trait UserAssetMapping {
-    type VirtualReference: AssetReferenceResolver;
     type UserAsset;
-    fn get_user_asset<IO: WimpyIO>(asset: Self::VirtualReference,context: &mut AssetLoadingContext<'_>) -> impl Future<Output = Result<Self::UserAsset,AssetManagerError>>;
+    fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> impl Future<Output = Result<Self::UserAsset,AssetManagerError>>;
 }
 
-impl UserAssetMapping for generic_types::Model {
-
-    type VirtualReference = ModelAssetReference;
+impl UserAssetMapping for ModelAssetReference {
     type UserAsset = TexturedMeshReference;
 
-    async fn get_user_asset<IO: WimpyIO>(asset: Self::VirtualReference,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        // A .gltf file
-        let model = AssetManager::get_hard_asset_container::<HardModelAsset>(&mut context.asset_manager.manifest.hard_assets,asset.key,&asset.name)?;
+    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
 
-        if let HardAssetState::Loaded(meshlets) = model.0.state {
-            return Ok(meshlets);
+        let (hard_asset_key,meshlet_descriptors) = {
+            let Some(virtual_asset) = context.asset_manager.manifest.model_assets.get(name) else {
+                return Err(AssetManagerError::VirtualAssetNotFound(name.clone()));
+            };
+            // I was so profoundly pissed off by the borrow checker that I threw in a clone here
+            (virtual_asset.key,virtual_asset.meshlet_descriptors.clone())
         };
 
-        let path = get_full_path(&context.asset_manager.root,model.1.as_ref());
+        /* We can't use 'entry()' because we mutate the slotmap cache after this to get textures */
+        if let Some(mesh) = context.asset_manager.model_cache.get(hard_asset_key) {
+            return Ok(mesh.clone());
+        }
+
+        let hard_asset = match context.asset_manager.manifest.hard_assets.get(hard_asset_key) {
+            Some(value) => value,
+            None => return Err(AssetManagerError::MissingHardAsset(name.clone())),
+        };
+        validate_hard_asset_type(hard_asset,HardAssetType::Model)?;
+
+        let path = get_full_path(&context.asset_manager.root,&hard_asset.file_source);
         let gltf_data = match IO::load_binary_file(path.as_path()).await {
             Ok(data) => data,
             Err(error) => return Err(AssetManagerError::FileError(error)),
         };
 
-        let queue = context.graphics_context.get_graphics_provider().get_queue();
-        let (meshlet_count,mesh) = match context.mesh_cache.insert_geometry(queue,&gltf_data) {
+        let queue = context.graphics_context.graphics_provider.get_queue();
+        let mesh = match context.graphics_context.mesh_cache.insert_geometry(queue,&gltf_data) {
             Ok(value) => value,
             Err(error) => return Err(AssetManagerError::ModelImportError(error)),
         };
 
         // There may be more meshlet descriptions than meshlet geometry, or vice versa
-        let limit = meshlet_count.min(asset.meshlet_descriptors.len());
+        let limit = mesh.len().min(meshlet_descriptors.len());
 
         let mut textured_mesh: Vec<TexturedMeshlet> = Vec::with_capacity(limit);
 
-        for (i,meshlet) in mesh.enumerate() {
-            let descriptor = &asset.meshlet_descriptors[i];
+        for (i,meshlet) in mesh.into_iter().enumerate() {
+            let descriptor = &meshlet_descriptors[i];
 
             let diffuse = match descriptor.diffuse {
-                Some(key) => context.asset_manager.get_image_anonymous::<IO>(key,&asset.name,context.graphics_context).await?,
+                Some(key) => context.asset_manager.get_image_cached::<IO>(key,&name,None,context.graphics_context).await?.texture,
                 None => context.graphics_context.engine_textures.missing,
             };
 
             let lightmap = match descriptor.lightmap {
-                Some(key) => context.asset_manager.get_image_anonymous::<IO>(key,&asset.name,context.graphics_context).await?,
+                Some(key) => context.asset_manager.get_image_cached::<IO>(key,&name,None,context.graphics_context).await?.texture,
                 None => context.graphics_context.engine_textures.opaque_white,
             };
 
             textured_mesh.push(TexturedMeshlet {
-                meshlet,
+                range: meshlet,
                 diffuse,
                 lightmap,
             });
         }
 
-        let reference = context.mesh_cache.create_textured_mesh_reference(textured_mesh);
-        model.0.state = HardAssetState::Loaded(reference);
+        let reference = context.graphics_context.mesh_cache.create_textured_mesh_reference(textured_mesh);
+        context.asset_manager.model_cache.insert(hard_asset_key,reference.clone());
         Ok(reference)
     }
 }
 
-impl UserAssetMapping for generic_types::Text {
-
-    type VirtualReference = TextAssetReference;
+impl UserAssetMapping for TextAssetReference {
     type UserAsset = Rc<str>;
 
-    async fn get_user_asset<IO: WimpyIO>(asset: Self::VirtualReference,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        Ok(context.asset_manager.get_text::<IO>(asset.key,&asset.name).await?)
+    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
+        let Some(virtual_asset) = context.asset_manager.manifest.text_assets.get(name) else {
+            return Err(AssetManagerError::VirtualAssetNotFound(name));
+        };
+        Ok(context.asset_manager.get_text_cached::<IO>(virtual_asset.key,name).await?)
     }
 }
 
-impl UserAssetMapping for generic_types::Image {
+impl UserAssetMapping for ImageAssetReference {
+    type UserAsset = TextureFrameView;
 
-    type VirtualReference = ImageAssetReference;
-    type UserAsset = TextureFrame;
-
-    async fn get_user_asset<IO: WimpyIO>(asset: Self::VirtualReference,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        Ok(context.asset_manager.get_image_cached::<IO>(asset.key,&asset.name,context.graphics_context).await?)
-    }
-}
-
-impl UserAssetMapping for generic_types::ImageSlice {
-
-    type VirtualReference = ImageSliceAssetReference;
-    type UserAsset = ImageSliceData;
-
-    async fn get_user_asset<IO: WimpyIO>(asset: Self::VirtualReference,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        Ok(ImageSliceData {
-            texture: context.asset_manager.get_image_cached::<IO>(asset.key,&asset.name,context.graphics_context).await?,
-            area: asset.area
-        })
+    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
+        let Some(virtual_asset) = context.asset_manager.manifest.image_assets.get(name) else {
+            return Err(AssetManagerError::VirtualAssetNotFound(name));
+        };
+        Ok(context.asset_manager.get_image_cached::<IO>(virtual_asset.key,name,virtual_asset.area,context.graphics_context).await?)
     }
 }

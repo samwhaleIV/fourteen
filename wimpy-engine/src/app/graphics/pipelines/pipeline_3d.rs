@@ -1,8 +1,8 @@
 use glam::Mat4;
 use wgpu::*;
-use std::{borrow::Borrow, num::NonZero};
+use std::num::NonZero;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear,app::{graphics::*,wam::{MeshReference, Meshlet}}};
+use crate::app::{graphics::*};
 use super::core::*;
 use constants::pipeline_3d::*;
 
@@ -216,6 +216,80 @@ impl Pipeline3D {
             instance_buckets: instance_buffer_buckets,
         }
     }
+
+    pub fn flush_encoder(&mut self,encoder: &mut CommandEncoder) {
+        self.diffuse_atlas.flush(encoder);
+        self.lightmap_atlas.flush(encoder);
+    }
+}
+
+pub struct Pipeline3DEncoderPass<'pass> {
+    context: &'pass mut GraphicsContext
+}
+
+impl<'a> Pipeline3DEncoderPass<'a> {
+    pub fn create(context: &'a mut GraphicsContext) -> Self {
+        Self {
+            context
+        }
+    }
+
+    pub fn draw<I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
+    where
+        I: IntoIterator<Item = DrawData3D>,
+    {
+        let pipeline_3d = &mut self.context.pipelines.pipeline_3d;
+
+        for draw_data in draw_data.into_iter() {
+
+            let meshlets = self.context.mesh_cache.get_textured_mesh_ref(draw_data.meshlets);
+
+            let transform_0 = draw_data.transform.x_axis.into();
+            let transform_1 = draw_data.transform.y_axis.into();
+            let transform_2 = draw_data.transform.z_axis.into();
+            let transform_3 = draw_data.transform.w_axis.into();
+
+            for meshlet in meshlets {
+                let (diffuse,lightmap) = match texture_strategy {
+                    TextureStrategy::Standard => (meshlet.diffuse,meshlet.lightmap),
+                    TextureStrategy::LightmapToDiffuse => (
+                        meshlet.lightmap,
+                        self.context.engine_textures.opaque_white
+                    ),
+                    TextureStrategy::NoLightmap => (
+                        meshlet.diffuse,
+                        self.context.engine_textures.opaque_white
+                    )
+                };
+
+                let uv_diffuse = pipeline_3d.diffuse_atlas.set_texture(
+                    &self.context.frame_cache,
+                    diffuse.get_ref()
+                );
+
+                let uv_lightmap = pipeline_3d.lightmap_atlas.set_texture(
+                    &self.context.frame_cache,
+                    lightmap.get_ref()
+                );
+
+                let range = &meshlet.range;
+
+                pipeline_3d.instance_buckets.push(MeshInstance {
+                    uv_diffuse: uv_diffuse.into(),
+                    uv_lightmap: uv_lightmap.into(),
+
+                    transform_0,
+                    transform_1,
+                    transform_2,
+                    transform_3,
+
+                    base_vertex: range.base_vertex,
+                    index_start: range.index_start,
+                    index_count: range.index_count,
+                });
+            }
+        }
+    }
 }
 
 impl PipelineFlush for Pipeline3D {
@@ -224,21 +298,24 @@ impl PipelineFlush for Pipeline3D {
     }
 }
 
-pub struct Pipeline3DPass<'pass,'context> {
-    encoder: &'pass mut CommandEncoder,
-    context: &'pass mut RenderPassContext<'context>,
+pub struct Pipeline3DPass<'pass,'encoder> {
+    render_pass: &'pass mut RenderPass<'encoder>,
+    context: &'pass mut GraphicsContext,
+    variant_key: PipelineVariantKey,
     uniform_reference: UniformReference
 }
 
 impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline3DPass<'pass,'context> {
     fn create(
-        encoder: &'pass mut CommandEncoder,
-        context: &'pass mut RenderPassContext<'context>,
-        uniform_reference: UniformReference
+        render_pass: &'pass mut RenderPass<'context>,
+        context: &'pass mut GraphicsContext,
+        variant_key: PipelineVariantKey,
+        uniform_reference: UniformReference,
     ) -> Self {
         Self {
-            encoder,
+            render_pass,
             context,
+            variant_key,
             uniform_reference,
         }
     }
@@ -257,72 +334,16 @@ pub enum TextureStrategy {
 }
 
 impl Pipeline3DPass<'_,'_> {
-
-    pub fn batch<'a,I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
-    where
-        I: IntoIterator<Item = DrawData3D>,
-    {
-        // for meshlet in draw_data.into_iter() {
-
-        //     let meshlets = self.context.m
-
-        //     let transform_0 = meshlet.transform.x_axis.into();
-        //     let transform_1 = meshlet.transform.y_axis.into();
-        //     let transform_2 = meshlet.transform.z_axis.into();
-        //     let transform_3 = meshlet.transform.w_axis.into();
-
-        //     for meshlet in meshlet.meshlets {
-        //         let (diffuse,lightmap) = match texture_strategy {
-        //             TextureStrategy::Standard => (meshlet.diffuse,meshlet.lightmap),
-        //             TextureStrategy::LightmapToDiffuse => (meshlet.lightmap,self.context.textures.opaque_white),
-        //             TextureStrategy::NoLightmap => (meshlet.diffuse,self.context.textures.opaque_white)
-        //         };
-
-        //         let uv_diffuse = self.context.pipelines.pipeline_3d.diffuse_atlas.set_texture(
-        //             self.context.frame_cache,
-        //             diffuse.get_ref()
-        //         );
-
-        //         let uv_lightmap = self.context.pipelines.pipeline_3d.lightmap_atlas.set_texture(
-        //             self.context.frame_cache,
-        //             lightmap.get_ref()
-        //         );
-
-        //         self.context.pipelines.pipeline_3d.instance_buckets.push(MeshInstance {
-        //             uv_diffuse: uv_diffuse.into(),
-        //             uv_lightmap: uv_lightmap.into(),
-
-        //             transform_0,
-        //             transform_1,
-        //             transform_2,
-        //             transform_3,
-
-        //             base_vertex: meshlet.range.base_vertex,
-        //             index_start: meshlet.range.index_start,
-        //             index_count: meshlet.range.index_count,
-        //         });
-        //     }
-        // }
-    }
-
-    fn flush_encoder(&mut self) {
-        let pipeline = &mut self.context.pipelines.pipeline_3d;
-        pipeline.diffuse_atlas.flush(self.encoder);
-        pipeline.lightmap_atlas.flush(self.encoder);
-    }
-
     pub fn submit(&mut self,diffuse_sampler: SamplerMode) {
 
-        self.flush_encoder();
         let pipeline = &self.context.pipelines.pipeline_3d;
 
-        let mut render_pass = self.context.create_render_pass(self.encoder);
-        render_pass.set_pipeline(pipeline.variants.select(self.context.variant_key));
+        self.render_pass.set_pipeline(pipeline.variants.select(self.variant_key));
 
-        self.context.pipelines.shared.bind_uniform::<UNIFORM_BG>(&mut render_pass,self.uniform_reference);
-        render_pass.set_bind_group(STORAGE_BG,&pipeline.storage_bind_group,&[]);
+        self.context.pipelines.shared.bind_uniform::<UNIFORM_BG>(self.render_pass,self.uniform_reference);
+        self.render_pass.set_bind_group(STORAGE_BG,&pipeline.storage_bind_group,&[]);
 
-        let bind_group = self.context.bind_groups.get(
+        let bind_group = self.context.bind_group_cache.get(
             self.context.graphics_provider.get_device(),
             &BindGroupCacheIdentity::DualChannel {
                 ch_0: BindGroupChannelConfig {
@@ -335,7 +356,7 @@ impl Pipeline3DPass<'_,'_> {
                 }
             }
         );
-        render_pass.set_bind_group(TEXTURE_BG,bind_group,&[]);
+        self.render_pass.set_bind_group(TEXTURE_BG,bind_group,&[]);
 
         let buckets = &pipeline.instance_buckets.buckets;
         let mut offset: u32 = 0;
@@ -346,13 +367,13 @@ impl Pipeline3DPass<'_,'_> {
             if instances <= 0 {
                 continue;
             }
-            render_pass.draw(0..bucket.largest,offset..offset + instances);
+            self.render_pass.draw(0..bucket.largest,offset..offset + instances);
             offset += instances;
         }
 
         // Very large meshes, high potential for extreme vertex discards
         for instance in &buckets[buckets.len() - 1].buffer {
-            render_pass.draw(0..instance.index_count,offset..offset + 1);
+            self.render_pass.draw(0..instance.index_count,offset..offset + 1);
             offset += 1;
         }
     }

@@ -32,22 +32,28 @@ impl VirtualAssetTranslator<'_> {
             };
 
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
-            let value = match hard_asset.data_type {
-                HardAssetType::Text => AssetReference::Text(TextAssetReference {
-                    name: rc_name.clone(),
-                    key: *key
-                }),
-                HardAssetType::Image => AssetReference::Image(ImageAssetReference {
-                    name: rc_name.clone(),
-                    key: *key
-                }),
-                HardAssetType::Model => return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
-                    name: rc_name,
-                    id: asset.id,
-                    found_type: hard_asset.data_type
-                }))
+            match hard_asset.data_type {
+                HardAssetType::Text => {
+                    self.manifest.text_assets.insert(rc_name.clone(),TextAssetReference {
+                        name: rc_name,
+                        key: *key
+                    });
+                },
+                HardAssetType::Image => {
+                    self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+                        name: rc_name,
+                        key: *key,
+                        area: None
+                    });
+                },
+                HardAssetType::Model => {
+                    return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
+                        name: rc_name,
+                        id: asset.id,
+                        found_type: hard_asset.data_type
+                    }));
+                }
             };
-            self.manifest.add_virtual_asset(value,rc_name);
         }
         return Ok(())
     }
@@ -70,14 +76,11 @@ impl VirtualAssetTranslator<'_> {
                     found_type: hard_asset.data_type
                 }));
             }
-            self.manifest.add_virtual_asset(
-                AssetReference::ImageSlice(ImageSliceAssetReference {
-                    name: rc_name.clone(),
-                    key: *key,
-                    area: image.area,
-                }),
-                rc_name
-            );
+            self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+                name: rc_name,
+                key: *key,
+                area: Some(image.area)
+            });
         }
         return Ok(());
     }
@@ -141,14 +144,11 @@ impl VirtualAssetTranslator<'_> {
                 meshlets.push(ref_meshlet);
             }
 
-            self.manifest.add_virtual_asset(
-                AssetReference::Model(ModelAssetReference {
-                    name: rc_name.clone(),
-                    key: *key,
-                    meshlet_descriptors: meshlets
-                }),
-                rc_name.clone()
-            );
+            self.manifest.model_assets.insert(rc_name.clone(),ModelAssetReference {
+                name: rc_name,
+                key: *key,
+                meshlet_descriptors: meshlets
+            });
         }
 
         return Ok(());

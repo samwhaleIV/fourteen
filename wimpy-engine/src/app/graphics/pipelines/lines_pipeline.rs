@@ -101,8 +101,9 @@ impl LinesPipeline {
 }
 
 pub struct LinesPipelinePass<'pass,'context> {
-    context: &'pass mut RenderPassContext<'context>,
-    render_pass: RenderPass<'pass>,
+    context: &'pass mut GraphicsContext,
+    render_pass: &'pass mut RenderPass<'context>,
+    variant_key: PipelineVariantKey,
     lines_mode: Option<LinesMode>,
     uniform_reference: UniformReference,
 }
@@ -114,13 +115,13 @@ impl PipelineFlush for LinesPipeline {
     }
 }
 
-impl<'pass,'context> PipelinePass<'pass,'context> for LinesPipelinePass<'pass,'context> {
+impl<'pass,'encoder> PipelinePass<'pass,'encoder> for LinesPipelinePass<'pass,'encoder> {
     fn create(
-        encoder: &'pass mut CommandEncoder,
-        context: &'pass mut RenderPassContext<'context>,
+        render_pass: &'pass mut RenderPass<'encoder>,
+        context: &'pass mut GraphicsContext,
+        variant_key: PipelineVariantKey,
         uniform_reference: UniformReference
     ) -> Self {
-        let mut render_pass = context.create_render_pass(encoder);
         let lines_pipeline = &context.pipelines.lines;
 
         render_pass.set_vertex_buffer(
@@ -132,6 +133,7 @@ impl<'pass,'context> PipelinePass<'pass,'context> for LinesPipelinePass<'pass,'c
             context,
             uniform_reference,
             render_pass,
+            variant_key,
             lines_mode: None,
         }
     }
@@ -166,7 +168,7 @@ impl LinesPipelinePass<'_,'_> {
             LinesMode::List => {
                 &self.context.pipelines.lines.list_sub_variant
             },
-        }.select(self.context.variant_key));
+        }.select(self.variant_key));
         self.context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut self.render_pass,self.uniform_reference);
         self.lines_mode = Some(mode);
     }
