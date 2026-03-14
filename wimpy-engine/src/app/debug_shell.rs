@@ -365,7 +365,7 @@ impl DebugShell {
         label.clear();
     }
 
-    fn draw_graphs<'a,'rp,TFrame>(&'a mut self,render_pass: &'a mut RenderPassBuilder<'rp,TFrame>)
+    fn draw_graphs<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
     where
         TFrame: MutableFrame
     {
@@ -398,7 +398,7 @@ impl DebugShell {
         }
     }
 
-    fn draw_labels<'a,'rp,TFrame>(&'a mut self,render_pass: &'a mut RenderPassBuilder<'rp,TFrame>)
+    fn draw_labels<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
     where
         TFrame: MutableFrame
     {
@@ -432,7 +432,7 @@ impl DebugShell {
         text_pipeline.submit();
     }
 
-    fn draw_backgrounds<'a,'rp,TFrame>(&'a mut self,render_pass: &'a mut RenderPassBuilder<'rp,TFrame>)
+    fn draw_backgrounds<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
     where
         TFrame: MutableFrame
     {
@@ -450,7 +450,7 @@ impl DebugShell {
         }));
     }
 
-    pub fn render<'a,'rp,TFrame>(&'a mut self,render_pass: &'a mut RenderPassBuilder<'rp,TFrame>)
+    pub fn render<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
     where
         TFrame: MutableFrame
     {

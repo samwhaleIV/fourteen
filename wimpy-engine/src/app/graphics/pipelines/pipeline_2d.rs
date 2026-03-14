@@ -121,9 +121,9 @@ impl Pipeline2D {
     }
 }
 
-pub struct Pipeline2DPass<'a,'frame> {
-    context: &'a mut RenderPassContext<'frame>,
-    render_pass: &'a mut RenderPass<'frame>,
+pub struct Pipeline2DPass<'pass,'context> {
+    context: &'pass mut RenderPassContext<'context>,
+    render_pass: RenderPass<'pass>,
     needs_sampler_update: bool,
     sampler_mode: SamplerMode,
     current_sampling_frame: FrameCacheReference,
@@ -148,21 +148,23 @@ impl Default for DrawData2D {
 }
 
 impl PipelineFlush for Pipeline2D {
-    fn flush(&mut self,context: &mut PipelineFlushContext) {
-        self.instance_buffer.flush(context.queue);
+    fn flush(&mut self,queue: &Queue) {
+        self.instance_buffer.flush(queue);
     }
 }
 
-impl<'a,'frame> PipelinePass<'a,'frame> for Pipeline2DPass<'a,'frame> {
+impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline2DPass<'pass,'context> {
     fn create(
-        render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>,
+        encoder: &'pass mut CommandEncoder,
+        context: &'pass mut RenderPassContext<'context>,
         uniform_reference: UniformReference
     ) -> Self {
         let pipeline_2d = &context.pipelines.pipeline_2d;
 
+        let mut render_pass = context.create_render_pass(encoder);
+
         render_pass.set_pipeline(&pipeline_2d.variants.select(context.variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),

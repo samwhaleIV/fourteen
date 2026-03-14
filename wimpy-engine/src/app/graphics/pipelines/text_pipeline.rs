@@ -139,9 +139,9 @@ impl TextPipeline {
     }
 }
 
-pub struct PipelineTextPass<'a,'frame,TFont> {
-    context: &'a mut RenderPassContext<'frame>,
-    render_pass: &'a mut RenderPass<'frame>,
+pub struct PipelineTextPass<'pass,'context,TFont> {
+    context: &'pass mut RenderPassContext<'context>,
+    render_pass: RenderPass<'pass>,
     texture_valid: bool,
     range_start: usize,
     uv_scalar: WimpyVec,
@@ -179,22 +179,24 @@ fn validate_scale(scale: f32) -> f32 {
 }
 
 impl PipelineFlush for TextPipeline {
-    fn flush(&mut self,context: &mut PipelineFlushContext) {
-        self.instance_buffer.flush(context.queue);
+    fn flush(&mut self,queue: &Queue) {
+        self.instance_buffer.flush(queue);
     }
 }
 
-impl<'a,'frame,TFont> PipelinePass<'a,'frame> for PipelineTextPass<'a,'frame,TFont>
+impl<'pass,'context,TFont> PipelinePass<'pass,'context> for PipelineTextPass<'pass,'context,TFont>
 where
     TFont: FontDefinition
 {
     fn create(
-        render_pass: &'a mut RenderPass<'frame>,
-        context: &'a mut RenderPassContext<'frame>,
-        uniform_reference: UniformReference,
+        encoder: &'pass mut CommandEncoder,
+        context: &'pass mut RenderPassContext<'context>,
+        uniform_reference: UniformReference
     ) -> Self {
+        let mut render_pass = context.create_render_pass(encoder);
+
         render_pass.set_pipeline(context.pipelines.text.variants.select(context.variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             context.pipelines.text.index_buffer.slice(..),
@@ -423,7 +425,7 @@ where
         r.draw_text_centered(text);
     }
 
-    pub fn submit(self) {
+    pub fn submit(mut self) {
         if !self.texture_valid {
             return;
         }
@@ -431,6 +433,7 @@ where
         if self.range_start == range_end {
             return;
         }
+        // TODO: don't create the render pass until a submission
         self.render_pass.draw_indexed(0..INDEX_BUFFER_SIZE,0,Range {
             start: self.range_start as u32,
             end: range_end as u32

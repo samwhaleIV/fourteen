@@ -18,16 +18,11 @@ pub struct RenderPipelines {
     pub shared: SharedPipeline
 }
 
-pub struct PipelineFlushContext<'a> {
-    pub queue: &'a Queue,
-    pub encoder: &'a mut CommandEncoder
-}
-
 pub trait PipelineFlush {
-    /// Write out and clear buffers and encoders that are built frame by frame, such as instance buffers
+    /// Write out and clear buffers that are built frame by frame, such as instance buffers
     /// 
     /// Not intended for static buffers such as vertex or index buffers
-    fn flush(&mut self,context: &mut PipelineFlushContext);
+    fn flush(&mut self,queue: &Queue);
 }
 
 impl RenderPipelines {
@@ -80,13 +75,12 @@ impl RenderPipelines {
         }
     }
 
-    pub fn flush(&mut self,queue: &Queue,encoder: &mut CommandEncoder) {
-        let context = &mut PipelineFlushContext { queue, encoder };
+    pub fn flush(&mut self,queue: &Queue) {
 
-        self.pipeline_2d.flush(context);
-        self.pipeline_3d.flush(context);
-        self.text.flush(context);
-        self.lines.flush(context);
+        self.pipeline_2d.flush(queue);
+        self.pipeline_3d.flush(queue);
+        self.text.flush(queue);
+        self.lines.flush(queue);
 
         let uniform_buffer = &mut self.shared.uniform_buffer;
         uniform_buffer.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
