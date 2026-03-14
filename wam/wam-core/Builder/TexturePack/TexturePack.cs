@@ -3,7 +3,7 @@
 namespace WAM.Core.Builder.TexturePack {
 
     public readonly record struct TexturePack(
-        VirtualImageAsset[] Images,
+        VirtualImageSliceAsset[] Images,
         GeneratedFile[] Files
     );
 
@@ -11,7 +11,7 @@ namespace WAM.Core.Builder.TexturePack {
 
         private readonly List<string> imagePaths = [];
         private readonly List<GeneratedFile> generatedFiles = [];
-        private readonly List<VirtualImageAsset> virtualImageFiles = [];
+        private readonly List<VirtualImageSliceAsset> virtualImageFiles = [];
         private readonly List<Image> images = [];
 
         private readonly LayoutSurfaceGenerator layoutSurfaces = new(settings);

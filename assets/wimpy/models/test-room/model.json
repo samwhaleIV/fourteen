@@ -1,5 +1,9 @@
 {
     "model": "model.glb",
-    "diffuse": "diffuse.png",
-    "lightmap": "lightmap.jpg"
+    "meshlets": [
+        {
+            "diffuse": "diffuse.png",
+            "lightmap": "lightmap.jpg"
+        }
+    ]
 }

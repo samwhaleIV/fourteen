@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿using System.Collections.Generic;
+using System.Runtime.InteropServices.Swift;
+using System.Text.Json;
 using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
@@ -45,6 +47,8 @@ namespace WAM.Core.Builder {
         private readonly List<GeneratedFile> generatedFiles = [];
         private readonly Dictionary<uint,string> compileTimeDestinations = [];
 
+        private readonly List<VirtualModelAssetMeshletDescriptor> meshlet_builder = new(16);
+
         private void Reset() {
             namespaces.Clear();
             fileMaps.Clear();
@@ -53,6 +57,7 @@ namespace WAM.Core.Builder {
             namespaceBuilder.Reset();
             texturePackBuilder.Reset();
             compileTimeDestinations.Clear();
+            meshlet_builder.Clear();
         }
 
         public IEnumerable<FileMap> GetFileMaps() {
@@ -157,21 +162,26 @@ namespace WAM.Core.Builder {
                 return model.Error;
             }
 
-            var diffuse = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Diffuse,"diffuse",FileType.Image);
-            if(diffuse.Error != null) {
-                return diffuse.Error;
-            }
+            var meshlets = modelManifest.Meshlets ?? [];
 
-            var lightmap = TryGetModelItem(manifest,directory,runtimeFileName,modelManifest.Lightmap,"lightmap",FileType.Image);
-            if(lightmap.Error != null) {
-                return lightmap.Error;
+            meshlet_builder.Clear();
+
+            foreach(var meshlet in meshlets) {
+                var diffuse = TryGetModelItem(manifest,directory,runtimeFileName,meshlet.Diffuse,"diffuse",FileType.Image);
+                if(diffuse.Error != null) {
+                    return diffuse.Error;
+                }
+
+                var lightmap = TryGetModelItem(manifest,directory,runtimeFileName,meshlet.Lightmap,"lightmap",FileType.Image);
+                if(lightmap.Error != null) {
+                    return lightmap.Error;
+                }
+                meshlet_builder.Add(new VirtualModelAssetMeshletDescriptor(diffuse.ID,lightmap.ID));
             }
 
             namespaceBuilder.AddVirtualModelAsset(new() {
                 Name = runtimeFileName,
-                ModelID = model.ID,
-                DiffuseID = diffuse.ID,
-                LightmapID = lightmap.ID
+                Meshlets = [.. meshlet_builder]
             });
 
             return null;

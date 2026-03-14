@@ -2,7 +2,7 @@
     internal sealed class NamespaceBuilder {
         private List<HardAsset> HardAssets { get; init; } = [];
         private List<VirtualAsset> VirtualAssets { get; init; } = [];
-        private List<VirtualImageAsset> VirtualImageAssets { get; init; } = [];
+        private List<VirtualImageSliceAsset> VirtualImageSliceAssets { get; init; } = [];
         private List<VirtualModelAsset> VirtualModelAssets { get; init; } = [];
 
         private readonly Dictionary<string,int> usedNames = [];
@@ -15,8 +15,8 @@
             VirtualAssets.Add(virtualAsset);
         }
 
-        public void AddVirtualImageAsset(VirtualImageAsset virtualImageAsset) {
-            VirtualImageAssets.Add(virtualImageAsset);
+        public void AddVirtualImageAsset(VirtualImageSliceAsset virtualImageAsset) {
+            VirtualImageSliceAssets.Add(virtualImageAsset);
         }
 
         public void AddVirtualModelAsset(VirtualModelAsset virtualModelAsset) {
@@ -37,7 +37,7 @@
             return new() {
                 Name = name,
                 HardAssets = [..HardAssets],
-                VirtualImageAssets = [..VirtualImageAssets],
+                VirtualImageSliceAssets = [..VirtualImageSliceAssets],
                 VirtualAssets = [..VirtualAssets],
                 VirtualModelAssets = [..VirtualModelAssets],
             };
@@ -45,7 +45,7 @@
 
         public void Reset() {
             VirtualAssets.Clear();
-            VirtualImageAssets.Clear();
+            VirtualImageSliceAssets.Clear();
             HardAssets.Clear();
             usedNames.Clear();
             VirtualModelAssets.Clear();

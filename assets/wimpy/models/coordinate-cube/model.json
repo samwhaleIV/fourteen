@@ -1,4 +1,8 @@
 {
     "model": "model.glb",
-    "diffuse": "diffuse.png"
+    "meshlets": [
+        {
+            "diffuse": "diffuse.png"
+        }
+    ]
 }

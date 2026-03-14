@@ -10,7 +10,7 @@ const DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY: usize = 32;
 pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
-    pub virtual_image_assets: Vec<VirtualImageAssetInput>,
+    pub virtual_image_slice_assets: Vec<VirtualImageAssetInput>,
     pub virtual_model_assets: Vec<VirtualModelAssetInput>
 }
 
@@ -65,9 +65,9 @@ pub struct ImageArea {
 
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
-pub struct MeshletDescriptionInput {
-    pub diffuse_id: Option<u32>,
-    pub lightmap_id: Option<u32>,
+pub struct MeshletDescriptorInput {
+    pub diffuse: Option<u32>,
+    pub lightmap: Option<u32>,
 }
 
 #[derive(Deserialize,Debug)]
@@ -76,7 +76,7 @@ pub struct VirtualModelAssetInput {
     pub id: u32,
     pub name: String,
     #[serde(default)]
-    pub meshlets: Vec<MeshletDescriptionInput>
+    pub meshlets: Vec<MeshletDescriptorInput>
 }
 
 #[derive(Debug)]
@@ -184,7 +184,7 @@ impl WamManifest {
 
         translator.load_hard_assets(namespace.hard_assets)?;
         translator.load_untyped_assets(namespace.virtual_assets)?;
-        translator.load_images(namespace.virtual_image_assets)?;
+        translator.load_images(namespace.virtual_image_slice_assets)?;
         translator.load_models(namespace.virtual_model_assets)?;
 
         return Ok(());

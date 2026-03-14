@@ -114,8 +114,8 @@ impl VirtualAssetTranslator<'_> {
                     lightmap: None,
                 };
                 let fields = [
-                    (meshlet.diffuse_id,MeshletField::Diffuse),
-                    (meshlet.lightmap_id,MeshletField::Lightmap)
+                    (meshlet.diffuse,MeshletField::Diffuse),
+                    (meshlet.lightmap,MeshletField::Lightmap)
                 ];
                 for (id,field) in fields {
                     let Some(id) = id else {

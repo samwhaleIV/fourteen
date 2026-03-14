@@ -9,10 +9,14 @@ namespace WAM.Core.Builder {
         public string[]? Includes { get; set; }
     }
 
-    public sealed class ModelManifest {
-        public string? Model { get; set; }
+    public sealed class ModelManifestMeshletDescriptor {
         public string? Diffuse { get; set; }
         public string? Lightmap { get; set; }
+    }
+
+    public sealed class ModelManifest {
+        public string? Model { get; set; }
+        public ModelManifestMeshletDescriptor[]? Meshlets { get; set; }
     }
 
     public readonly record struct FileMap(
@@ -38,20 +42,23 @@ namespace WAM.Core.Builder {
         string Name
     );
 
-    public readonly record struct VirtualImageAsset(
+    public readonly record struct VirtualImageSliceAsset(
         uint ID,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
         Area Area
     );
 
+    public readonly record struct VirtualModelAssetMeshletDescriptor(
+        uint? Diffuse,
+        uint? Lightmap
+    );
+
     public readonly record struct VirtualModelAsset(
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
-        uint? ModelID,
-        uint? DiffuseID,
-        uint? LightmapID,
-        uint? CollisionID
+        VirtualModelAssetMeshletDescriptor[] Meshlets
+        //TODO: string? CollisionName
     );
 
     public readonly record struct HardAsset(
@@ -64,7 +71,7 @@ namespace WAM.Core.Builder {
     public readonly record struct Namespace(
         HardAsset[] HardAssets,
         VirtualAsset[] VirtualAssets,
-        VirtualImageAsset[] VirtualImageAssets,
+        VirtualImageSliceAsset[] VirtualImageSliceAssets,
         VirtualModelAsset[] VirtualModelAssets,
         [property: JsonIgnore] string Name
     );
