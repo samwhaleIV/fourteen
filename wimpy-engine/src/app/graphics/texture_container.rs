@@ -37,8 +37,7 @@ impl TextureIdentityGenerator {
                 self.counter = next_id;
             },
             None => {
-                log::warn!("Texture ID counter overflow. How do you have the RAM to make millions of textures? Wrapping the counter...");
-                self.counter = NonZeroU32::MIN;
+                log::warn!("Texture ID counter overflow. How do you have the RAM to make millions of textures?");
             },
         };
         return TextureContainerIdentity::Known(current_id);
@@ -52,7 +51,7 @@ struct TextureCreationParameters {
     render_target: bool,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     with_queue_data: bool,
-    texture_format: TextureFormat
+    //texture_format: TextureFormat,
 }
 
 pub struct TextureDataWriteParameters<'a> {
@@ -67,7 +66,7 @@ pub struct TextureDataWriteParameters<'a> {
 pub trait TextureData {
     fn write_to_queue(self,parameters: &TextureDataWriteParameters);
     fn size(&self) -> UWimpyPoint;
-    fn get_format(&self) -> TextureFormat;
+    //fn get_format(&self) -> TextureFormat;
 }
 
 impl TextureContainer {
@@ -85,12 +84,13 @@ impl TextureContainer {
 
         #[cfg(not(target_arch = "wasm32"))]
         let usage_flags = {
-            let mut flags = TextureUsages::TEXTURE_BINDING;
+            let mut flags = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC;
             if parameters.with_queue_data {
                 flags |= TextureUsages::COPY_DST;
             }
             if parameters.render_target {
-                flags |= TextureUsages::RENDER_ATTACHMENT;
+                //TODO: only add dst when requested
+                flags |= TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST;
             }
             flags
         };
@@ -98,7 +98,11 @@ impl TextureContainer {
         //Explanation... https://github.com/gpuweb/gpuweb/issues/3357#issuecomment-1223400585
         // https://github.com/hansjm10/Idle-Game-Engine/issues/846
         #[cfg(target_arch = "wasm32")]
-        let usage_flags = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+        let usage_flags = {
+            // TODO: Determine if this is an internal render target. If it is, we don't need all these flags
+            let mut flags = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
+            flags
+        };
 
         let device = graphics_provider.get_device();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -107,7 +111,7 @@ impl TextureContainer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
 
-            format: parameters.texture_format,
+            format: INTERNAL_RENDER_TARGET_FORMAT,
 
             usage: usage_flags,
             label: Some("Texture"),
@@ -143,9 +147,8 @@ impl TextureContainer {
         Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
-            texture_format: INTERNAL_RENDER_TARGET_FORMAT,
             with_queue_data: false,
-            render_target: true
+            render_target: true,
         })
     }
 
@@ -159,9 +162,8 @@ impl TextureContainer {
         let texture_container = Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
-            texture_format: texture_data.get_format(),
             with_queue_data: true,
-            render_target: false
+            render_target: false,
         });
 
         texture_data.write_to_queue(&TextureDataWriteParameters {

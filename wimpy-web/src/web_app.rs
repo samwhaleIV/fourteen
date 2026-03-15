@@ -217,7 +217,7 @@ where
             return;
         };
 
-        let graphics_provider = self.wimpy_context.graphics.get_graphics_provider_mut();
+        let graphics_provider = &mut self.wimpy_context.graphics.graphics_provider;
 
         let inner_width = translate_html_size(window.inner_width());
         let inner_height = translate_html_size(window.inner_height());

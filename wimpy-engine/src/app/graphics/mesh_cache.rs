@@ -3,7 +3,6 @@ use crate::app::graphics::TextureFrame;
 use super::pipelines::pipeline_3d::MeshVertex;
 use std::{marker::PhantomData, num::NonZero};
 use bytemuck::{Pod,Zeroable};
-use glam::Vec3;
 use slotmap::SlotMap;
 use wgpu::*;
 
@@ -12,10 +11,6 @@ use gltf::{
     Mesh,
     Primitive,
     buffer::Data,
-    mesh::util::{
-        ReadIndices,
-        ReadPositions
-    }
 };
 
 const TEXTURED_MESH_REFERENCE_START_CAPACITY: usize = 8;
@@ -39,14 +34,17 @@ pub struct TexturedMeshlet {
 
 pub struct TypedBuffer<T> {
     value: wgpu::Buffer,
+    // How many instances are in the buffer
     logical_length: usize,
-    physical_length: usize,
+
+    /// The offset for the next write to the buffer
+    physical_length: BufferAddress,
     phantom: PhantomData<T>,
 }
 
 struct BufferWriteFrame {
     view: QueueWriteBufferView,
-    stride: usize
+    stride: BufferAddress
 }
 
 impl<T> TypedBuffer<T>
@@ -63,11 +61,11 @@ where
     }
 
     fn get_view(&self,queue: &Queue,length: usize) -> Option<BufferWriteFrame> {
-        let stride = length * size_of::<T>();
+        let stride = (length * size_of::<T>()) as BufferAddress;
         match queue.write_buffer_with(
             &self.value,
-            (self.physical_length * size_of::<T>()) as BufferAddress,
-            match NonZero::new(stride as BufferAddress) {
+            self.physical_length,
+            match NonZero::new(stride) {
                 Some(value) => value,
                 None => return None
             }
@@ -81,14 +79,15 @@ where
     }
 
     fn write(&mut self,queue: &Queue,values: &[T]) -> bool {
-        let Some(mut frame) = self.get_view(queue,values.len()) else {
+        let num_of_instances = values.len();
+        let Some(mut frame) = self.get_view(queue,num_of_instances) else {
             return false;
         };
 
         frame.view.copy_from_slice(bytemuck::cast_slice(&values));
 
-        self.logical_length += values.len();
-        self.physical_length += frame.stride * values.len();
+        self.logical_length += num_of_instances;
+        self.physical_length += frame.stride;
 
         return true;
     }
@@ -173,6 +172,7 @@ impl MeshCache {
                 uv_diffuse: diffuse_uvs[i],
                 uv_lightmap:lightmap_uvs[i],
                 position: positions[i],
+                _padding: 0.0
             };
             vertices.push(vertex);
         }
@@ -205,25 +205,6 @@ fn find_model_mesh<'a>(document: &'a Document) -> Option<Mesh<'a>> {
         return Some(mesh)
     }
     return None;
-}
-
-fn read_indices_for_trimesh(values: ReadIndices<'_>) -> Vec<[u32;3]> {
-    values.into_u32()
-        .collect::<Vec<u32>>()
-        .chunks_exact(3)
-        .map(|triangle|[
-            triangle[0],
-            triangle[1],
-            triangle[2]
-        ]).collect()
-}
-
-fn read_vertices_for_trimesh(values: ReadPositions<'_>) -> Vec<Vec3> {
-    values.map(|vertex|Vec3 {
-        x: vertex[0],
-        y: vertex[1],
-        z: vertex[2],
-    }).collect()
 }
 
 impl MeshCache {

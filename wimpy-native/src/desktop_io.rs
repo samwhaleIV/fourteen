@@ -40,10 +40,6 @@ impl TextureData for DynamicImageWrapper {
             parameters.texture_size,
         );
     }
-    
-    fn get_format(&self) -> wgpu::TextureFormat {
-        return wgpu::TextureFormat::Rgba8UnormSrgb;
-    }
 }
 
 fn map_std_io_error(error: std::io::ErrorKind) -> FileError {

@@ -213,7 +213,7 @@ where
             None => Default::default(),
         };
 
-        let size = self.wimpy_context.graphics.get_graphics_provider().get_size();
+        let size = self.wimpy_context.graphics.graphics_provider.get_size();
 
         let shell_state = self.wimpy_context.input.update(
             self.mouse_cache,
@@ -264,7 +264,7 @@ where
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
                 } if window_id == self.window.id() => {
-                    self.wimpy_context.graphics.get_graphics_provider_mut().set_size(
+                    self.wimpy_context.graphics.graphics_provider.set_size(
                         width as u32,
                         height as u32
                     );

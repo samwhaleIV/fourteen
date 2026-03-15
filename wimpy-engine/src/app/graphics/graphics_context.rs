@@ -323,8 +323,7 @@ impl OutputBuilder<'_> {
     where
         I: IntoIterator<Item = DrawData3D>
     {
-        let mut batcher = Pipeline3DBatcher::create(self.graphics_context);
-        batcher.push(texture_strategy,draw_data);
+        Pipeline3D::batch(self.graphics_context,texture_strategy,draw_data);
     }
 
     /// Must be called before the first render pass that will draw meshes executes

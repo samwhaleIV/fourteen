@@ -3,10 +3,10 @@ mod key_code;
 mod wimpy_web_io;
 mod gamepad_manager;
 
-pub use web_app::*;
-pub use key_code::*;
-pub use wimpy_web_io::*;
-pub use gamepad_manager::*;
+use web_app::*;
+use key_code::*;
+use wimpy_web_io::*;
+use gamepad_manager::*;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -15,7 +15,6 @@ use wimpy_engine::test::*;
 
 const MANIFEST_PATH: &'static str = "assets/wam.json";
 
-#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 fn main() {
     console_log::init_with_level(log::Level::Trace).unwrap_throw();

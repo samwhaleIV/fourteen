@@ -159,7 +159,7 @@ impl UserAssetMapping for ModelAssetReference {
 
         let (hard_asset_key,meshlet_descriptors) = {
             let Some(virtual_asset) = context.asset_manager.manifest.model_assets.get(name) else {
-                return Err(AssetManagerError::VirtualAssetNotFound(name.clone()));
+                return Err(AssetManagerError::VirtualAssetNotFound(name));
             };
             // I was so profoundly pissed off by the borrow checker that I threw in a clone here
             (virtual_asset.key,virtual_asset.meshlet_descriptors.clone())
@@ -172,7 +172,7 @@ impl UserAssetMapping for ModelAssetReference {
 
         let hard_asset = match context.asset_manager.manifest.hard_assets.get(hard_asset_key) {
             Some(value) => value,
-            None => return Err(AssetManagerError::MissingHardAsset(name.clone())),
+            None => return Err(AssetManagerError::MissingHardAsset(name)),
         };
         validate_hard_asset_type(hard_asset,HardAssetType::Model)?;
 

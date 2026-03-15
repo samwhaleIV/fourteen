@@ -144,10 +144,7 @@ impl Pipeline3D {
             graphics_provider,
             render_pipeline_layout,
             shader,
-            vertex_buffer_layout: &[
-                MeshVertex::get_buffer_layout(),
-                MeshInstance::get_buffer_layout()
-            ],
+            vertex_buffer_layout: &[],
             primitive_state: &wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
@@ -221,28 +218,16 @@ impl Pipeline3D {
         self.diffuse_atlas.flush(encoder);
         self.lightmap_atlas.flush(encoder);
     }
-}
 
-pub struct Pipeline3DBatcher<'pass> {
-    context: &'pass mut GraphicsContext
-}
-
-impl<'a> Pipeline3DBatcher<'a> {
-    pub fn create(context: &'a mut GraphicsContext) -> Self {
-        Self {
-            context
-        }
-    }
-
-    pub fn push<I>(&mut self,texture_strategy: TextureStrategy,draw_data: I)
+    pub fn batch<I>(context: &mut GraphicsContext,texture_strategy: TextureStrategy,draw_data: I)
     where
         I: IntoIterator<Item = DrawData3D>,
     {
-        let pipeline_3d = &mut self.context.pipelines.pipeline_3d;
+        let pipeline_3d = &mut context.pipelines.pipeline_3d;
 
         for draw_data in draw_data.into_iter() {
 
-            let meshlets = self.context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
+            let meshlets = context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
 
             let transform_0 = draw_data.transform.x_axis.into();
             let transform_1 = draw_data.transform.y_axis.into();
@@ -254,21 +239,21 @@ impl<'a> Pipeline3DBatcher<'a> {
                     TextureStrategy::Standard => (meshlet.diffuse,meshlet.lightmap),
                     TextureStrategy::LightmapToDiffuse => (
                         meshlet.lightmap,
-                        self.context.engine_textures.opaque_white
+                        context.engine_textures.opaque_white
                     ),
                     TextureStrategy::NoLightmap => (
                         meshlet.diffuse,
-                        self.context.engine_textures.opaque_white
+                        context.engine_textures.opaque_white
                     )
                 };
 
                 let uv_diffuse = pipeline_3d.diffuse_atlas.set_texture(
-                    &self.context.frame_cache,
+                    &context.frame_cache,
                     diffuse.get_ref()
                 );
 
                 let uv_lightmap = pipeline_3d.lightmap_atlas.set_texture(
-                    &self.context.frame_cache,
+                    &context.frame_cache,
                     lightmap.get_ref()
                 );
 
@@ -286,6 +271,8 @@ impl<'a> Pipeline3DBatcher<'a> {
                     base_vertex: range.base_vertex,
                     index_start: range.index_start,
                     index_count: range.index_count,
+
+                    _padding: 0.0
                 });
             }
         }
@@ -388,6 +375,7 @@ pub struct MeshVertex {
     pub uv_diffuse: [f32;2],
     pub uv_lightmap: [f32;2],
     pub position: [f32;3],
+    pub _padding: f32
 }
 
 #[repr(C)]
@@ -403,67 +391,7 @@ pub struct MeshInstance {
 
     pub base_vertex: u32,
     pub index_start: u32,
-    pub index_count: u32
-}
+    pub index_count: u32,
 
-#[non_exhaustive]
-struct ATTR;
-
-impl ATTR {
-    /* Per Vertex */
-      pub const DIFFUSE_UV: u32 = 0;
-      pub const LIGHTMAP_UV: u32 = 1;
-      pub const POSITION: u32 = 2;
-
-    /* Per Instance */
-      // -UVs
-        pub const UV_DIFFUSE: u32 = 3;
-        pub const UV_LIGHTMAP: u32 = 4;
-
-      // -Transform
-        pub const TRANSFORM_0: u32 = 5;
-        pub const TRANSFORM_1: u32 = 6;
-        pub const TRANSFORM_2: u32 = 7;
-        pub const TRANSFORM_3: u32 = 8;
-    
-      // -Storage buffer reference
-        pub const STORAGE_BUFFER_LOCATION: u32 = 9;
-}
-
-impl MeshVertex {
-    const ATTRS: [wgpu::VertexAttribute;3] = wgpu::vertex_attr_array![
-        ATTR::POSITION => Float32x3,
-        ATTR::DIFFUSE_UV => Float32x2,
-        ATTR::LIGHTMAP_UV => Float32x2,
-    ];
-
-    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        return wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRS,
-        }
-    }
-}
-
-impl MeshInstance {
-    const ATTRS: [wgpu::VertexAttribute;7] = wgpu::vertex_attr_array![
-        ATTR::UV_DIFFUSE => Float32x4,
-        ATTR::UV_LIGHTMAP => Float32x4,
-
-        ATTR::TRANSFORM_0 => Float32x4,
-        ATTR::TRANSFORM_1 => Float32x4,
-        ATTR::TRANSFORM_2 => Float32x4,
-        ATTR::TRANSFORM_3 => Float32x4,
-
-        ATTR::STORAGE_BUFFER_LOCATION => Uint32x3
-    ];
-
-    pub fn get_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        return wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRS,
-        }
-    }
+    pub _padding: f32
 }

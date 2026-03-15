@@ -180,6 +180,7 @@ namespace WAM.Core.Builder {
             }
 
             namespaceBuilder.AddVirtualModelAsset(new() {
+                ID = model.ID,
                 Name = runtimeFileName,
                 Meshlets = [.. meshlet_builder]
             });

@@ -17,4 +17,3 @@ gltf = { version = "1", features = ["utils"] }
 rapier3d = "0.32.0"
 fast-srgb8 = "1.0.0"
 glam = { version = "0.32.0", features = ["bytemuck"] }
-

@@ -6,7 +6,8 @@ pub struct CoordinateSystemTest {
     in_movement_mode: bool,
     camera: WimpyCamera,
     lines: Vec<LinePoint3D>,
-    mesh: Option<TexturedMeshReference>,
+    cube_mesh: Option<TexturedMeshReference>,
+    test_room_mesh: Option<TexturedMeshReference>,
 }
 
 const LINE_COUNT: usize = 11;
@@ -127,13 +128,15 @@ where
             })
         };
 
-        let mesh = context.get_model::<IO>("wimpy/models/test-room").await;
+        let cube_mesh = context.get_model::<IO>("wimpy/models/coordinate-cube").await;
+        let test_room_mesh = context.get_model::<IO>("wimpy/models/test-room").await;
 
         Self {
             in_movement_mode: false,
             camera: Default::default(),
             lines: generate_lines(),
-            mesh,
+            cube_mesh,
+            test_room_mesh,
         }
     }
 
@@ -197,13 +200,23 @@ where
             return;
         };
 
-        if let Some(mesh) = self.mesh {
+
+
+        if let Some(mesh) = self.test_room_mesh {
             output.builder.batch_meshes(TextureStrategy::Standard,[DrawData3D {
                 transform: Mat4::IDENTITY,
                 mesh,
             }]);
-            output.builder.submit_batched_meshes();
         }
+
+        if let Some(mesh) = self.cube_mesh {
+            output.builder.batch_meshes(TextureStrategy::Standard,[DrawData3D {
+                transform: Mat4::IDENTITY,
+                mesh,
+            }]);
+        }
+
+        output.builder.submit_batched_meshes();
 
         'output_pass: {
             let Ok(mut render_pass) = output.builder.create_render_pass(&output.frame) else {

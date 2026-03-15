@@ -124,9 +124,6 @@ impl TextureData for MissingTexture {
     fn size(&self) -> UWimpyPoint {
         return Self::SIZE.into();
     }
-    fn get_format(&self) -> TextureFormat {
-        return TextureFormat::Rgba8UnormSrgb;
-    }
 }
 
 pub struct OpaqueBlack;
@@ -182,8 +179,5 @@ impl<T: GetColor> TextureData for T {
     }
     fn size(&self) -> UWimpyPoint {
         return [1,1].into()
-    }
-    fn get_format(&self) -> TextureFormat {
-        return TextureFormat::Rgba8Unorm;
     }
 }

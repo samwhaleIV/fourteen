@@ -55,6 +55,7 @@ namespace WAM.Core.Builder {
     );
 
     public readonly record struct VirtualModelAsset(
+        uint? ID,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
         VirtualModelAssetMeshletDescriptor[] Meshlets

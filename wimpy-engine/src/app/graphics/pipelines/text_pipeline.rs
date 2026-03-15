@@ -424,7 +424,7 @@ where
         r.draw_text_centered(text);
     }
 
-    pub fn submit(mut self) {
+    pub fn submit(self) {
         if !self.texture_valid {
             return;
         }

@@ -2,13 +2,17 @@ use crate::app::graphics::GraphicsContextConfig;
 
 pub struct TestConfig;
 
+const BASE: usize = 16384;
+
 impl GraphicsContextConfig for TestConfig {
-    // If a vertex is 32 bytes, there is 31,250 vertices per megabyte.
-    const MESH_CACHE_VERTEX_BUFFER_SIZE: usize = 16384;
-    const MESH_CACHE_INDEX_BUFFER_SIZE: usize = 16384;
-    const UNIFORM_BUFFER_SIZE: usize = 16384;
-    const INSTANCE_BUFFER_SIZE_2D: usize = 16384;
-    const INSTANCE_BUFFER_SIZE_3D: usize = 16384;
-    const TEXT_PIPELINE_BUFFER_SIZE: usize = 16384;
-    const LINE_BUFFER_SIZE: usize = 16384;
+    const MESH_CACHE_VERTEX_BUFFER_SIZE: usize = BASE * 4;
+    const MESH_CACHE_INDEX_BUFFER_SIZE: usize = BASE * 4;
+
+    const UNIFORM_BUFFER_SIZE: usize = BASE;
+
+    const INSTANCE_BUFFER_SIZE_2D: usize = BASE;
+    const INSTANCE_BUFFER_SIZE_3D: usize = BASE;
+
+    const TEXT_PIPELINE_BUFFER_SIZE: usize = BASE;
+    const LINE_BUFFER_SIZE: usize = BASE;
 }

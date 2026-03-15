@@ -14,25 +14,26 @@ struct CameraUniform {
 @group(2) @binding(2) var<storage,read> instances: array<InstanceInput>;
 
 struct VertexInput {
-    @location(0) uv_diffuse: vec2<f32>,
-    @location(1) uv_lightmap: vec2<f32>,
-    @location(2) position: vec3<f32>,
+    uv_diffuse: vec2<f32>,
+    uv_lightmap: vec2<f32>,
+    position: vec3<f32>,
 };
 
 struct InstanceInput {
     // x, y, width, height
-    @location(3) uv_diffuse: vec2<f32>,
+    uv_diffuse: vec4<f32>,
 
     // x, y, width, height
-    @location(4) uv_lightmap: vec2<f32>,
+    uv_lightmap: vec4<f32>,
 
-    @location(5) transform_0: vec4<f32>,
-    @location(6) transform_1: vec4<f32>,
-    @location(7) transform_2: vec4<f32>,
-    @location(8) transform_3: vec4<f32>,
+    transform_0: vec4<f32>,
+    transform_1: vec4<f32>,
+    transform_2: vec4<f32>,
+    transform_3: vec4<f32>,
 
-    // base vertex (vertex buffer), start index (index buffer), index count (index buffer)
-    @location(9) storage_buffer_location: vec3<u32>
+    base_vertex: u32,
+    index_start: u32,
+    index_count: u32
 }
 
 struct VertexOutput {
@@ -41,22 +42,43 @@ struct VertexOutput {
     @location(1) uv_lightmap: vec2<f32>,
 };
 
-@vertex fn vs_main(vertex: VertexInput,instance: InstanceInput) -> VertexOutput {
-    // var out: VertexOutput;
+fn uv_within(vertex_uv: vec2<f32>,uv: vec4<f32>) -> vec2<f32> {
+    return fma(uv.zw,vertex_uv,uv.xy);
+}
 
-    // var transform = mat4x4<f32>(
-    //     instance.transform_0,
-    //     instance.transform_1,
-    //     instance.transform_2,
-    //     instance.transform_3
-    // );
+@vertex
+fn vs_main(
+    @builtin(vertex_index) vertex_id: u32,
+    @builtin(instance_index) instance_id: u32
+) -> VertexOutput {
+    var out: VertexOutput;
 
-    // out.clip_position = camera.view_projection * transform * vec4<f32>(vertex.position,1.0);
+    let instance: InstanceInput = instances[instance_id];
 
-    // out.uv_diffuse = vertex.uv_diffuse;
-    // out.uv_lightmap = vertex.uv_lightmap;
+    let index_id = instance.index_start + vertex_id;
 
-    // return out;
+    if vertex_id >= instance.index_count {
+        out.clip_position = vec4<f32>(0.0);
+        out.uv_diffuse = vec2<f32>(0.0);
+        out.uv_lightmap = vec2<f32>(0.0);
+        return out;
+    }
+
+    let vertex: VertexInput = vertices[indices[index_id] + instance.base_vertex];
+
+    let transform = mat4x4<f32>(
+        instance.transform_0,
+        instance.transform_1,
+        instance.transform_2,
+        instance.transform_3
+    );
+
+    out.clip_position = camera.view_projection * transform * vec4<f32>(vertex.position, 1.0);
+
+    out.uv_diffuse = uv_within(vertex.uv_diffuse,instance.uv_diffuse);
+    out.uv_lightmap = uv_within(vertex.uv_lightmap,instance.uv_lightmap);
+
+    return out;
 }
 
 fn get_fragment_color(fragment: VertexOutput) -> vec4<f32> {
@@ -75,7 +97,8 @@ fn get_fragment_color(fragment: VertexOutput) -> vec4<f32> {
     return diffuse_sample * lightmap_sampler;
 }
 
-@fragment fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
+@fragment
+fn fs_main(fragment: VertexOutput) -> @location(0) vec4<f32> {
     let color = get_fragment_color(fragment);
     return color;
 }

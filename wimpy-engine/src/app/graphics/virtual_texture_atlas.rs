@@ -78,7 +78,6 @@ impl VirtualTextureAtlas {
     }
 
     pub fn flush(&mut self,encoder: &mut CommandEncoder) {
-        let atlas_texture = &self.atlas_texture_container.get_texture().clone();
         for command in self.encoder_commands.drain(..) {
             let src = TexelCopyTextureInfo {
                 texture: &command.texture,
@@ -88,7 +87,7 @@ impl VirtualTextureAtlas {
             };
 
             let dst = TexelCopyTextureInfo {
-                texture: atlas_texture,
+                texture: self.atlas_texture_container.get_texture(),
                 mip_level: 0,
                 origin: Origin3d {
                     x: command.dst_origin.x,
@@ -127,13 +126,13 @@ impl VirtualTextureAtlas {
         let mut src_size = UWimpyPoint::from(source_texture.size());
 
         if src_size.x > slot_size {
-            src_size.x = src_size.x.min(slot_size);
             log::warn!("Texture width '{}' too big for atlas slot '{}'",src_size.x,slot_size);
+            src_size.x = src_size.x.min(slot_size);
         }
 
         if src_size.y > slot_size {
-            src_size.y = src_size.y.min(slot_size);
             log::warn!("Texture height '{}' too big for atlas slot '{}'",src_size.y,slot_size);
+            src_size.y = src_size.y.min(slot_size);
         }
 
         let dst_origin = get_slot_origin(self.slot_length,slot as u32);

@@ -4,18 +4,17 @@ const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;
 const DEFAULT_HARD_ASSET_CAPACITY: usize = 32;
 const DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY: usize = 32;
 
+slotmap::new_key_type! {
+    pub struct HardAssetKey;
+}
+
 #[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
-
 pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
     pub virtual_image_slice_assets: Vec<VirtualImageAssetInput>,
     pub virtual_model_assets: Vec<VirtualModelAssetInput>
-}
-
-slotmap::new_key_type! {
-    pub struct HardAssetKey;
 }
 
 #[derive(Debug)]
