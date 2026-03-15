@@ -1,6 +1,9 @@
+use std::marker::PhantomData;
+
 use super::{*,pipelines::core::*};
 use wgpu::*;
 
+use crate::app::graphics::constants::DEPTH_STENCIL_TEXTURE_FORMAT;
 use crate::world::{CameraPerspectivePacket, WimpyCamera};
 use crate::{UWimpyPoint, WimpyColor, WimpyVec};
 
@@ -58,6 +61,44 @@ pub struct GraphicsContext {
     pub texture_id_generator: TextureIdentityGenerator,
     pub engine_textures: EngineTextures,
     pub mesh_cache: MeshCache,
+    ///A depth stencil exclusively for the output surface
+    /// 
+    /// This avoids possible churn when using render targets that use depth stencil render passes
+    output_depth_stencil: Option<DepthStencil>,
+    depth_stencil: Option<DepthStencil>
+}
+
+struct DepthStencil {
+    texture: Texture,
+    view: TextureView,
+}
+
+impl DepthStencil {
+    fn create(device: &Device,size: UWimpyPoint) -> Self {
+        let size = Extent3d {
+            width: size.x,
+            height: size.y,
+            depth_or_array_layers: 1,
+        };
+        let descriptor = TextureDescriptor {
+            label: Some("Depth Stencil Texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: DEPTH_STENCIL_TEXTURE_FORMAT,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        };
+
+        let texture = device.create_texture(&descriptor);
+        let view = texture.create_view(&TextureViewDescriptor::default());
+
+        Self {
+            texture,
+            view,
+        }
+    }
 }
 
 pub trait GraphicsContextConfig {
@@ -126,6 +167,8 @@ impl GraphicsContext {
             frame_cache,
             engine_textures,
             bind_group_cache,
+            output_depth_stencil: None,
+            depth_stencil: None
         }
     }
 
@@ -290,14 +333,6 @@ where
 
     pub fn set_pipeline_lines_3d(&mut self,uniform: UniformReference) -> LinesPipelinePass<'_,'context> { self.set_pipeline(uniform) }
 
-    /// Safe to call even if no meshes have been submitted, there is an early exit path
-    /// 
-    /// `output.builder.submit_batched_meshes()` must be called before this render pass was created
-    pub fn draw_submitted_meshes(&mut self,diffuse_sampler: SamplerMode,uniform: UniformReference) {
-        let mut pipeline_3d_pass = self.set_pipeline::<Pipeline3DPass>(uniform);
-        pipeline_3d_pass.submit(diffuse_sampler);
-    }
-
     pub fn create_camera_uniform(
         &mut self,
         camera: &WimpyCamera,
@@ -312,7 +347,21 @@ where
         self.context.pipelines.shared.create_uniform(matrix)
     }
 
+    /// Safe to call even if no meshes have been submitted, there is an early exit path
+    /// 
+    /// `output.builder.submit_batched_meshes()` must be called before this render pass was created
+    pub fn draw_submitted_meshes(&mut self,diffuse_sampler: SamplerMode,uniform: UniformReference) {
+        let mut pipeline_3d_pass = self.set_pipeline::<Pipeline3DPass>(uniform);
+        pipeline_3d_pass.submit(diffuse_sampler);
+    }
+
     pub fn frame(&self) -> &TFrame { self.frame }
+}
+
+#[derive(Copy,Clone)]
+enum DepthStencilConfig {
+    None,
+    Standard
 }
 
 impl OutputBuilder<'_> {
@@ -331,15 +380,51 @@ impl OutputBuilder<'_> {
         self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
     }
 
-    pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    fn create_render_pass_internal<'a,TFrame>(&'a mut self,frame: &'a TFrame,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
     where
         TFrame: MutableFrame
     {
         let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_texture_view();
 
-        let pipeline_variant = match frame.is_output_surface() {
-            true => PipelineVariantKey::OutputSurface,
-            false => PipelineVariantKey::InternalTarget,
+        let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
+            (true, DepthStencilConfig::None) =>         PipelineVariantKey::OutputSurface,
+            (true, DepthStencilConfig::Standard) =>     PipelineVariantKey::OutputSurfaceWithDepth,
+            (false, DepthStencilConfig::None) =>        PipelineVariantKey::RenderTarget,
+            (false, DepthStencilConfig::Standard) =>    PipelineVariantKey::InternalTargetWithDepth,
+        };
+
+        let depth_stencil_attachment = match depth_stencil_config {
+            DepthStencilConfig::None => None,
+            DepthStencilConfig::Standard => {
+                let target = match frame.is_output_surface() {
+                    true => &mut self.graphics_context.output_depth_stencil,
+                    // A more sophicated per-target approach may be wise for depth stencils against render targets, if more than one target is used per frame
+                    false => &mut self.graphics_context.depth_stencil,
+                };
+                let needed_size = frame.get_output_size();
+                if let Some(depth_stencil) = target {
+                    let current_size = UWimpyPoint::from(depth_stencil.texture.size());
+                    if current_size != needed_size {
+                        target.take();
+                    }
+                }
+                let depth_stencil = target.get_or_insert_with(||{
+                    let device = self.graphics_context.graphics_provider.get_device();
+                    DepthStencil::create(device,needed_size)
+                });
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_stencil.view,
+                    depth_ops: Some(wgpu::Operations {
+                        // '1.0' is the far plane when rendering 'standard' z; i.e., near = '0.0', far = '1.0' [CompareFunction::Less].
+                        // Change to '0.0' if using 'reverse' z;               i.e., near = '1.0', far = '0.0' [CompareFunction::Greater]
+                        // The clip space in the camera projecton much match this convention as well
+                        // (Keep in mind, z world space is not equal to z clip space because we use Z up world space and WGPU uses Y up)
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                })
+            }
         };
 
         let mut render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
@@ -356,7 +441,7 @@ impl OutputBuilder<'_> {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment,
             occlusion_query_set: None,
             timestamp_writes: None,
         });
@@ -366,13 +451,27 @@ impl OutputBuilder<'_> {
 
         let ortho_uniform = self.graphics_context.pipelines.shared.create_uniform_ortho(frame.size());
 
-        return Ok(RenderPassBuilder {
+        Ok(RenderPassBuilder {
             render_pass,
             context: self.graphics_context,
             frame,
             variant_key: pipeline_variant,
             ortho_uniform,
         })
+    }
+
+    pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    where
+        TFrame: MutableFrame
+    {
+        self.create_render_pass_internal(frame,DepthStencilConfig::None)
+    }
+
+    pub fn create_render_pass_with_depth_stencil<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    where
+        TFrame: MutableFrame
+    {
+        self.create_render_pass_internal(frame,DepthStencilConfig::Standard)
     }
 }
 

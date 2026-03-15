@@ -219,7 +219,7 @@ where
         output.builder.submit_batched_meshes();
 
         'output_pass: {
-            let Ok(mut render_pass) = output.builder.create_render_pass(&output.frame) else {
+            let Ok(mut render_pass) = output.builder.create_render_pass_with_depth_stencil(&output.frame) else {
                 break 'output_pass;
             };
             let camera_uniform = render_pass.create_camera_uniform(&self.camera,CameraPerspective::default());

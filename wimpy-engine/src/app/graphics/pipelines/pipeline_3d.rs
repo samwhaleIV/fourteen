@@ -2,7 +2,7 @@ use glam::Mat4;
 use wgpu::*;
 use std::num::NonZero;
 use bytemuck::{Pod,Zeroable};
-use crate::app::{graphics::*};
+use crate::app::graphics::{constants::DEPTH_STENCIL_TEXTURE_FORMAT, *};
 use super::core::*;
 use constants::pipeline_3d::*;
 
@@ -156,6 +156,7 @@ impl Pipeline3D {
             },
             label: "Pipeline 3D",
         };
+
         let pipelines = pipeline_creator.create_pipeline_set();
 
         let instance_buffer = device.create_buffer(&BufferDescriptor{

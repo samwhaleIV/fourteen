@@ -14,6 +14,8 @@ pub const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
 pub const PREFER_SRGB_OUTPUT_SURFACE: bool = true;
 pub const INTERNAL_RENDER_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb; // We can bump this up in the future
 
+pub const DEPTH_STENCIL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+
 pub mod assets {
     pub const FONT_CLASSIC:             &'static str = "wimpy/font/classic";
     pub const FONT_CLASSIC_OUTLINE:     &'static str = "wimpy/font/classic-outline";

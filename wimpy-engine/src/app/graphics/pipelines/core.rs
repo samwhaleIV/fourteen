@@ -127,10 +127,16 @@ pub struct PipelineCreator<'a> {
     pub label: &'static str,
 }
 
+enum DepthStencilMode {
+    None,
+    Standard
+}
+
 impl PipelineCreator<'_> {
     fn create_pipeline(
         &self,
-        texture_format: TextureFormat
+        texture_format: TextureFormat,
+        depth_stencil_mode: DepthStencilMode
     ) -> RenderPipeline {
         let pipeline = self.graphics_provider.get_device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(self.label),
@@ -163,8 +169,16 @@ impl PipelineCreator<'_> {
                 })]
             }),
             primitive: self.primitive_state.clone(),
-            // TODO: enable depth stencil
-            depth_stencil: None,
+            depth_stencil: match depth_stencil_mode {
+                DepthStencilMode::None => None,
+                DepthStencilMode::Standard => Some(DepthStencilState {
+                    format: DEPTH_STENCIL_TEXTURE_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: CompareFunction::Less,
+                    stencil: StencilState::default(),
+                    bias: DepthBiasState::default(),
+                })
+            },
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -179,10 +193,20 @@ impl PipelineCreator<'_> {
     pub fn create_pipeline_set(&self) -> PipelineVariants {
         PipelineVariants {
             internal_target_pipeline: self.create_pipeline(
-                INTERNAL_RENDER_TARGET_FORMAT
+                INTERNAL_RENDER_TARGET_FORMAT,
+                DepthStencilMode::None
             ),
             output_surface_pipeline: self.create_pipeline(
-                self.graphics_provider.get_output_view_format()
+                self.graphics_provider.get_output_view_format(),
+                DepthStencilMode::None
+            ),
+            internal_target_pipeline_with_depth: self.create_pipeline(
+                INTERNAL_RENDER_TARGET_FORMAT,
+                DepthStencilMode::Standard
+            ),
+            output_surface_pipeline_with_depth: self.create_pipeline(
+                self.graphics_provider.get_output_view_format(),
+                DepthStencilMode::Standard
             ),
         }
     }
@@ -190,22 +214,36 @@ impl PipelineCreator<'_> {
 
 #[derive(Copy,Clone)]
 pub enum PipelineVariantKey {
-    InternalTarget,
-    OutputSurface
+    RenderTarget,
+    OutputSurface,
+    InternalTargetWithDepth,
+    OutputSurfaceWithDepth
 }
 
 /// Provides variadic pipeline selection for handling format mismatches between internal render targets and the ultimate output surface
 pub struct PipelineVariants {
     internal_target_pipeline: RenderPipeline,
-    output_surface_pipeline: RenderPipeline
+    output_surface_pipeline: RenderPipeline,
+    internal_target_pipeline_with_depth: RenderPipeline,
+    output_surface_pipeline_with_depth: RenderPipeline
 }
 
 impl PipelineVariants {
     pub fn select(&self,key: PipelineVariantKey) -> &RenderPipeline {
         use PipelineVariantKey::*;
         match key {
-            OutputSurface => &self.output_surface_pipeline,
-            InternalTarget => &self.internal_target_pipeline,
+            OutputSurface => {
+                &self.output_surface_pipeline
+            },
+            RenderTarget => {
+                &self.internal_target_pipeline
+            },
+            InternalTargetWithDepth => {
+                &self.internal_target_pipeline_with_depth
+            },
+            OutputSurfaceWithDepth => {
+                &self.output_surface_pipeline_with_depth
+            },
         }
     }
 }
