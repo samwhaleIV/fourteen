@@ -200,8 +200,6 @@ where
             return;
         };
 
-
-
         if let Some(mesh) = self.test_room_mesh {
             output.builder.batch_meshes(TextureStrategy::Standard,[DrawData3D {
                 transform: Mat4::IDENTITY,

@@ -35,13 +35,6 @@ pub struct VirtualTextureAtlas {
     uv_cache: Vec<WimpyRect>,
 }
 
-const fn get_slot_origin(slot_length: u32,slot_id: u32) -> UWimpyPoint {
-    UWimpyPoint {
-        x: slot_id % slot_length,
-        y: slot_id / slot_length,
-    }
-}
-
 struct EncoderTextureCopyCommand {
     texture: wgpu::Texture,
     src_size: UWimpyPoint,
@@ -85,7 +78,6 @@ impl VirtualTextureAtlas {
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             };
-
             let dst = TexelCopyTextureInfo {
                 texture: self.atlas_texture_container.get_texture(),
                 mip_level: 0,
@@ -102,6 +94,13 @@ impl VirtualTextureAtlas {
                 depth_or_array_layers: 1,
             };
             encoder.copy_texture_to_texture(src,dst,copy_size);
+        }
+    }
+
+    fn get_slot_origin(&self,slot_id: u32) -> UWimpyPoint {
+        UWimpyPoint {
+            x: slot_id % self.slot_length * self.slot_size,
+            y: slot_id / self.slot_length * self.slot_size,
         }
     }
 
@@ -135,7 +134,7 @@ impl VirtualTextureAtlas {
             src_size.y = src_size.y.min(slot_size);
         }
 
-        let dst_origin = get_slot_origin(self.slot_length,slot as u32);
+        let dst_origin = self.get_slot_origin(slot as u32);
 
         self.encoder_commands.push(EncoderTextureCopyCommand {
             texture: source_texture.clone(),
