@@ -1,3 +1,4 @@
+use crate::UWimpyPoint;
 use super::prelude::*;
 
 pub struct VirtualAssetTranslator<'a> {
@@ -7,7 +8,7 @@ pub struct VirtualAssetTranslator<'a> {
 }
 
 impl VirtualAssetTranslator<'_> {
-    pub fn load_hard_assets(&mut self,hard_assets: Vec<HardAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_hard_assets(&mut self,hard_assets: Vec<HardAssetInput>) -> Result<(),WamManifestError> {
         for hard_asset_input in hard_assets.into_iter() {
             let id = hard_asset_input.id;
 
@@ -21,7 +22,20 @@ impl VirtualAssetTranslator<'_> {
         return Ok(());
     }
 
-    pub fn load_untyped_assets(&mut self,assets: Vec<VirtualAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_size_hints(&mut self,size_hints: Vec<SizeHintInput>) -> Result<(),WamManifestError> {
+        for size_hint in size_hints.into_iter() {
+            let Some(key) = self.namespaces_ids.get(&size_hint.id) else {
+                return Err(WamManifestError::ImageSizeHintMissingOwner { id: size_hint.id });
+            };
+            self.manifest.size_hints.insert(*key,UWimpyPoint {
+                x: size_hint.x,
+                y: size_hint.y,
+            });
+        }
+        return Ok(());
+    }
+
+    pub fn parse_generic_assets(&mut self,assets: Vec<VirtualAssetInput>) -> Result<(),WamManifestError> {
         for asset in assets.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(asset.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&asset.id) else {
@@ -65,7 +79,7 @@ impl VirtualAssetTranslator<'_> {
         return Ok(())
     }
 
-    pub fn load_images(&mut self,images: Vec<VirtualImageAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_slice_images(&mut self,images: Vec<VirtualImageAssetInput>) -> Result<(),WamManifestError> {
         for image in images.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(image.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&image.id) else {
@@ -93,13 +107,13 @@ impl VirtualAssetTranslator<'_> {
                 },
                 name: rc_name,
                 key: *key,
-                slice: Some(image.area)
+                slice: Some(image.slice)
             });
         }
         return Ok(());
     }
 
-    pub fn load_models(&mut self,models: Vec<VirtualModelAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_models(&mut self,models: Vec<VirtualModelAssetInput>) -> Result<(),WamManifestError> {
         for model in models.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
 

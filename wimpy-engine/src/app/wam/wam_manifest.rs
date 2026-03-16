@@ -13,7 +13,8 @@ slotmap::new_key_type! {
 }
 
 #[derive(Deserialize,Debug)]
-pub struct ImageSizeInput {
+#[serde(rename_all = "kebab-case")]
+pub struct SizeHintInput {
     pub id: u32,
     pub x: u32,
     pub y: u32,
@@ -23,7 +24,7 @@ pub struct ImageSizeInput {
 #[serde(rename_all = "kebab-case")]
 pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
-    pub image_sizes: Vec<ImageSizeInput>,
+    pub image_size_hints: Vec<SizeHintInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
     pub virtual_image_slice_assets: Vec<VirtualImageAssetInput>,
     pub virtual_model_assets: Vec<VirtualModelAssetInput>
@@ -65,7 +66,7 @@ pub struct VirtualAssetInput {
 pub struct VirtualImageAssetInput {
     pub id: u32,
     pub name: String,
-    pub area: WimpyPointRect
+    pub slice: WimpyPointRect
 }
 
 #[derive(Deserialize,Debug)]
@@ -122,6 +123,7 @@ pub struct MismatchedMeshletFieldInfo {
 #[derive(Debug)]
 pub enum WamManifestError {
     MissingAsset(AssetInfo),
+    ImageSizeHintMissingOwner { id: u32 },
     UnexpectedType(UnexpectedTypeInfo),
     AssetTypeMismatch(TypeMismatchInfo),
     MismatchedMeshletField(MismatchedMeshletFieldInfo),
@@ -189,10 +191,11 @@ impl WamManifest {
             namespace_name,
         };
 
-        translator.load_hard_assets(namespace.hard_assets)?;
-        translator.load_untyped_assets(namespace.virtual_assets)?;
-        translator.load_images(namespace.virtual_image_slice_assets)?;
-        translator.load_models(namespace.virtual_model_assets)?;
+        translator.parse_hard_assets(namespace.hard_assets)?;
+        translator.parse_size_hints(namespace.size_hints);
+        translator.parse_generic_assets(namespace.virtual_assets)?;
+        translator.parse_slice_images(namespace.virtual_image_slice_assets)?;
+        translator.parse_models(namespace.virtual_model_assets)?;
 
         return Ok(());
     }

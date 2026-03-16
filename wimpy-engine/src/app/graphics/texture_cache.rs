@@ -2,7 +2,7 @@ use slotmap::SlotMap;
 
 use super::TextureContainer;
 
-use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, graphics::TextureFrame, wam::{HardAsset, WimpyTexture}}, collections::cache_arena::*};
+use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, wam::{HardAsset, WimpyTexture}}, collections::cache_arena::*};
 pub struct FrameCacheConfig;
 
 impl CacheArenaConfig for FrameCacheConfig {

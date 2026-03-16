@@ -46,7 +46,7 @@ namespace WAM.Core.Builder {
         uint ID,
         [property: JsonConverter(typeof(ForwardSlashConverter))]
         string Name,
-        Area Area
+        Area Slice
     );
 
     public readonly record struct VirtualModelAssetMeshletDescriptor(
@@ -69,11 +69,18 @@ namespace WAM.Core.Builder {
         string Source
     );
 
+    public readonly record struct ImageSizeHint(
+        uint ID,
+        uint X,
+        uint Y
+    );
+
     public readonly record struct Namespace(
         HardAsset[] HardAssets,
         VirtualAsset[] VirtualAssets,
         VirtualImageSliceAsset[] VirtualImageSliceAssets,
         VirtualModelAsset[] VirtualModelAssets,
+        ImageSizeHint[] ImageSizeHints,
         [property: JsonIgnore] string Name
     );
 

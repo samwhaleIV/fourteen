@@ -4,6 +4,7 @@
         private List<VirtualAsset> VirtualAssets { get; init; } = [];
         private List<VirtualImageSliceAsset> VirtualImageSliceAssets { get; init; } = [];
         private List<VirtualModelAsset> VirtualModelAssets { get; init; } = [];
+        private List<ImageSizeHint> ImageSizeHints { get; init; } = [];
 
         private readonly Dictionary<string,int> usedNames = [];
 
@@ -23,6 +24,10 @@
             VirtualModelAssets.Add(virtualModelAsset);
         }
 
+        public void AddImageSizeHint(ImageSizeHint imageSizeHint) {
+            ImageSizeHints.Add(imageSizeHint);
+        }
+
         public string QualifyAssetName(string name) {
             if(usedNames.TryGetValue(name,out int value)) {
                 name = $"{name} - {value}";
@@ -40,6 +45,7 @@
                 VirtualImageSliceAssets = [..VirtualImageSliceAssets],
                 VirtualAssets = [..VirtualAssets],
                 VirtualModelAssets = [..VirtualModelAssets],
+                ImageSizeHints = [..ImageSizeHints],
             };
         }
 
@@ -49,6 +55,7 @@
             HardAssets.Clear();
             usedNames.Clear();
             VirtualModelAssets.Clear();
+            ImageSizeHints.Clear();
         }
     }
 }

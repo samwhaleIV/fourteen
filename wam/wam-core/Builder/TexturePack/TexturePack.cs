@@ -4,15 +4,17 @@ namespace WAM.Core.Builder.TexturePack {
 
     public readonly record struct TexturePack(
         VirtualImageSliceAsset[] Images,
-        GeneratedFile[] Files
+        GeneratedFile[] Files,
+        ImageSizeHint[] ImageSizeHints
     );
 
-    public sealed class TexturePackBuilder(TexturePackSettings settings) {
+    public sealed class TexturePackBuilder(TexturePackSettings settings):IDisposable {
 
         private readonly List<string> imagePaths = [];
         private readonly List<GeneratedFile> generatedFiles = [];
         private readonly List<VirtualImageSliceAsset> virtualImageFiles = [];
         private readonly List<Image> images = [];
+        private readonly List<ImageSizeHint> imageSizeHints = [];
 
         private readonly LayoutSurfaceGenerator layoutSurfaces = new(settings);
 
@@ -20,6 +22,8 @@ namespace WAM.Core.Builder.TexturePack {
             imagePaths.Clear();
             generatedFiles.Clear();
             virtualImageFiles.Clear();
+            imageSizeHints.Clear();
+            DisposeSKObjects();
         }
 
         public void AddImage(string file) {
@@ -72,9 +76,9 @@ namespace WAM.Core.Builder.TexturePack {
                 bool success = false;
                 for(int j = secondAttempt ? layoutSurfaces.Count - 1 : 0;j < layoutSurfaces.Count;j++) {
                     var surface = layoutSurfaces[j];
-                    if(surface.TryAddBitmap(image.Bitmap,settings.Padding,out Area area)) {
+                    if(surface.TryAddBitmap(image.Bitmap,settings.Padding,out Area slice)) {
                         virtualImageFiles.Add(new() {
-                            Area = area,
+                            Slice = slice,
                             Name = Path.Combine(
                                 runtimeFileName,
                                 Path.GetFileNameWithoutExtension(image.FilePath)
@@ -117,6 +121,11 @@ namespace WAM.Core.Builder.TexturePack {
                 if(data.Length < 1) {
                     return Result<TexturePack>.Err($"could not create pack for '{destination}': no canvas surface");
                 }
+                imageSizeHints.Add(new() {
+                    ID = surface.ID,
+                    X = (uint)surface.Size,
+                    Y = (uint)surface.Size
+                });
                 generatedFiles.Add(new() {
                     Destination = destination,
                     Data = data
@@ -125,13 +134,17 @@ namespace WAM.Core.Builder.TexturePack {
 
             return Result<TexturePack>.Ok(new() {
                 Images = [.. virtualImageFiles],
-                Files = [.. generatedFiles]
+                Files = [.. generatedFiles],
+                ImageSizeHints = [..imageSizeHints]
             });
         }
 
         public Result<TexturePack> Build(string runtimeFileName,string @namespace,WamManifest assetGenerator) {
-            DisposeSKObjects();
             return InnerBuild(runtimeFileName,@namespace,assetGenerator);
+        }
+
+        public void Dispose() {
+            DisposeSKObjects();
         }
     }
 }

@@ -1,10 +1,10 @@
-﻿using System.Collections.Generic;
-using System.Runtime.InteropServices.Swift;
+﻿using SkiaSharp;
 using System.Text.Json;
 using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
 namespace WAM.Core.Builder {
+    using static System.Net.Mime.MediaTypeNames;
     using InputManifestResult = Result<InputManifest>;
     using ModelManifestResult = Result<ModelManifest>;
 
@@ -125,6 +125,7 @@ namespace WAM.Core.Builder {
             string itemKey,
             FileType requiredType
         ) {
+            //TODO: the manifest needs to be able to reference local namespace items
             uint? assetID = null;
             if(!string.IsNullOrWhiteSpace(item)) {
                 var itemPath = Path.Combine(directory,item);
@@ -200,7 +201,6 @@ namespace WAM.Core.Builder {
                 }
                 texturePackBuilder.AddImage(file);
             }
-
             var runtimeFileName = Path.GetRelativePath(manifest.Path,directory);
             var buildResult = texturePackBuilder.Build(runtimeFileName,manifest.Name,this);
             if(buildResult.IsErr) {
@@ -213,7 +213,9 @@ namespace WAM.Core.Builder {
             foreach(var generatedFile in texturePack.Files) {
                 generatedFiles.Add(generatedFile);
             }
-            
+            foreach(var imageSizeHint in texturePack.ImageSizeHints) {
+                namespaceBuilder.AddImageSizeHint(imageSizeHint);
+            }
             return null;
         }
 
@@ -248,6 +250,22 @@ namespace WAM.Core.Builder {
                         Name = runtimeFileName,
                         ID = id
                     });
+                    if(type == FileType.Image) {
+                        using var fileStream = File.OpenRead(file);
+                        int width, height;
+                        try {
+                            var skImageInfo = SKBitmap.DecodeBounds(fileStream);
+                            width = skImageInfo.Width;
+                            height = skImageInfo.Height;
+                        } catch(Exception exception) {
+                            return Error.Create($"Could not decode image bounds: {exception}");
+                        }
+                        namespaceBuilder.AddImageSizeHint(new() {
+                            ID = id,
+                            X = (uint)width,
+                            Y = (uint)height
+                        });
+                    }
                 }
             }
             return null;

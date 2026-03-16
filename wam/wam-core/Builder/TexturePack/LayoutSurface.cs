@@ -133,15 +133,15 @@ namespace WAM.Core.Builder.TexturePack {
 
         private void DrawEdgeExtended(SKBitmap bitmap,int x,int y) {
             var (w,h) = (bitmap.Width,bitmap.Height);
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,w,h),       new SKRect(x+1,y+1,x+w+1,y+h+1)); //Center
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,1,h),       new SKRect(x,y+1,x+1,y+h+1)); //Left Column
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,w,1),       new SKRect(x+1,y,x+w+1,y+1)); //Top Row
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,0,w,h),     new SKRect(x+w+1,y+1,x+w+2,y+h+1)); //Right Column
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,h-1,w,h),     new SKRect(x+1,y+h+1,x+1+w,y+h+2)); //Bottom Row
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,1,1),       new SKRect(x,y,x+1,y+1)); //Top Left
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,h-1,1,h),     new SKRect(x,y+h+1,x+1,y+h+2)); //Bottom Left
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,0,w,1),     new SKRect(x+w+1,y,x+w+2,y+1)); //Top Right
-            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,h-1,w,h),   new SKRect(x+w+1,y+h+1,x+w+2,y+h+2)); //Bottom Right
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,w,h),       new SKRect(x+1,y+1,x+w+1,y+h+1));        //Center
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,1,h),       new SKRect(x,y+1,x+1,y+h+1));            //Left Column
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,w,1),       new SKRect(x+1,y,x+w+1,y+1));            //Top Row
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,0,w,h),     new SKRect(x+w+1,y+1,x+w+2,y+h+1));      //Right Column
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,h-1,w,h),     new SKRect(x+1,y+h+1,x+1+w,y+h+2));      //Bottom Row
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,0,1,1),       new SKRect(x,y,x+1,y+1));                //Top Left
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(0,h-1,1,h),     new SKRect(x,y+h+1,x+1,y+h+2));          //Bottom Left
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,0,w,1),     new SKRect(x+w+1,y,x+w+2,y+1));          //Top Right
+            surface.Canvas.DrawBitmap(bitmap,   new SKRect(w-1,h-1,w,h),   new SKRect(x+w+1,y+h+1,x+w+2,y+h+2));    //Bottom Right
         }
     }
 }
