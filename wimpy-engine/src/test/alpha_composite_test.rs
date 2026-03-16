@@ -7,7 +7,7 @@ use crate::{app::{graphics::*, *},*};
 /// 
 /// Linear alpha compositing is desired rather than the all-too-common but incorrect post-sRGB/gamma-on-gamma blend
 pub struct SrgbTest {
-    srgb_test_texture: TextureFrame
+    srgb_test_texture: WimpyTextureKey
 }
 
 const STRIP_COUNT: usize = 8;
@@ -37,7 +37,7 @@ where
 {
     async fn load(context: &mut WimpyContext) -> Self {
         Self {
-            srgb_test_texture: context.get_image::<IO>("wimpy/srgb-test").await,
+            srgb_test_texture: context.get_image::<IO>("wimpy/srgb-test"),
         }
     }
 

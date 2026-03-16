@@ -21,7 +21,7 @@ pub struct TextPipeline {
 }
 
 pub trait FontDefinition {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame;
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture;
     fn get_glyph(character: char) -> GlyphArea;
 
     const LINE_HEIGHT: f32;

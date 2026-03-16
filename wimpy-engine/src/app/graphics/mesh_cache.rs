@@ -1,4 +1,4 @@
-use crate::app::graphics::TextureFrame;
+use crate::app::graphics::WimpyTextureKey;
 
 use super::pipelines::pipeline_3d::MeshVertex;
 use std::{marker::PhantomData, num::NonZero};
@@ -28,8 +28,8 @@ pub struct MeshCache {
 #[derive(Debug)]
 pub struct TexturedMeshlet {
     pub range: MeshletRange,
-    pub diffuse: TextureFrame,
-    pub lightmap: TextureFrame,
+    pub diffuse: WimpyTextureKey,
+    pub lightmap: WimpyTextureKey,
 }
 
 pub struct TypedBuffer<T> {

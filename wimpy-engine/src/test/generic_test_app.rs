@@ -1,7 +1,7 @@
 use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, *},*};
 
 pub struct GenericTestApp {
-    test_texture: TextureFrame,
+    test_texture: WimpyTextureKey,
     line_start: Option<WimpyVec>,
     lines: Vec<LinePoint2D>,
     offset: WimpyVec,
@@ -64,7 +64,7 @@ where
         return Self {
             in_movement_mode: false,
             lines: Vec::with_capacity(64),
-            test_texture: context.get_image::<IO>("wimpy/blend-test").await,
+            test_texture: context.get_image::<IO>("wimpy/blend-test"),
             line_start: None,
             offset: WimpyVec::ZERO
         };

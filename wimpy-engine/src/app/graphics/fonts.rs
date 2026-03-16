@@ -1,3 +1,5 @@
+use crate::app::{graphics::WimpyTextureKey, wam::WimpyTexture};
+
 use super::{
     EngineTextures,
     TextureFrame,
@@ -27,7 +29,7 @@ macro_rules! area {
 }
 
 impl FontDefinition for FontClassic {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame {
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
         textures.font_classic
     }
 
@@ -101,7 +103,7 @@ impl FontDefinition for FontClassic {
 }
 
 impl FontDefinition for FontClassicOutlined {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame {
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
         textures.font_classic_outline
     }
     fn get_glyph(character: char) -> GlyphArea {
@@ -262,7 +264,7 @@ fn get_twelven_glyph_area(character: char) -> GlyphArea {
 }
 
 impl FontDefinition for FontTwelven {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame {
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
         textures.font_twelven
     }
     fn get_glyph(character: char) -> GlyphArea {
@@ -274,7 +276,7 @@ impl FontDefinition for FontTwelven {
 }
 
 impl FontDefinition for FontTwelvenShaded {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame {
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
         textures.font_twelven_shaded
     }
     fn get_glyph(character: char) -> GlyphArea {
@@ -286,7 +288,7 @@ impl FontDefinition for FontTwelvenShaded {
 }
 
 impl FontDefinition for FontMonoElf {
-    fn get_texture(textures: &EngineTextures) -> TextureFrame {
+    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
         textures.font_mono_elf
     }
 

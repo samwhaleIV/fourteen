@@ -13,16 +13,14 @@ use serde::Deserialize;
 use std::path::Path;
 use std::rc::Rc;
 
-use graphics::{
-    TextureData,
-    GraphicsContext
-};
+use graphics::GraphicsContext;
 
 use input::InputManager;
 
 use wam::*;
 
-use crate::app::graphics::{FrameReference, GraphicsContextConfig, GraphicsProvider, TextureFrame, TexturedMeshReference};
+use crate::UWimpyPoint;
+use crate::app::graphics::{GraphicsContextConfig, GraphicsProvider, TextureStreamingHint, TextureStreamPolicy, TexturedMeshReference};
 
 use crate::app::input::InputType;
 
@@ -41,6 +39,14 @@ pub enum FileError {
 
 const MISSING_TEXT_ASSET: &'static str = "<missing text asset>";
 
+/// Textured data expected to be provided in [u8;4] RGBA
+/// 
+/// TODO: Determine if the input format should be linear or gamma space
+pub struct WimpyIOImageData {
+    pub size: UWimpyPoint,
+    pub data: Vec<u8>
+}
+
 pub trait WimpyIO {
     fn save_key_value_store(data: &[u8]) -> impl Future<Output = Result<(),FileError>>;
     fn load_key_value_store() -> impl Future<Output = Result<Vec<u8>,FileError>>;
@@ -48,7 +54,7 @@ pub trait WimpyIO {
     fn load_binary_file(path: &Path) -> impl Future<Output = Result<Vec<u8>,FileError>>;
     fn load_text_file(path: &Path) -> impl Future<Output = Result<String,FileError>>;
 
-    fn load_image_file(path: &Path) -> impl Future<Output = Result<impl TextureData + 'static,FileError>>;
+    fn load_image_file(path: &Path) -> impl Future<Output = Result<WimpyIOImageData,FileError>>;
 }
 
 pub struct WimpyContext {
@@ -63,12 +69,34 @@ pub struct WimpyContext {
 pub struct WimpyContextCreationConfig<'a> {
     pub manifest_path: Option<&'a Path>,
     pub input_type_hint: InputType,
-    pub graphics_provider: GraphicsProvider
+    pub graphics_provider: GraphicsProvider,
+    pub texture_stream_policy: TextureStreamPolicy
 }
 
 pub struct AssetLoadingContext<'a> {
-    asset_manager: &'a mut AssetManager,
-    graphics_context: &'a mut GraphicsContext,
+    assets: &'a mut AssetManager,
+    graphics: &'a mut GraphicsContext,
+    texture_streaming_hint: TextureStreamingHint
+}
+
+impl<'a> AssetLoadingContext<'a> {
+    fn create(app: &'a mut WimpyContext,texture_streaming_hint: TextureStreamingHint) -> Self {
+        Self {
+            assets: &mut app.assets,
+            graphics: &mut app.graphics,
+            texture_streaming_hint,
+        }
+    }
+}
+
+impl<'a> From<&'a mut WimpyContext> for AssetLoadingContext<'a> {
+    fn from(value: &'a mut WimpyContext) -> Self {
+        AssetLoadingContext {
+            assets: &mut value.assets,
+            graphics: &mut value.graphics,
+            texture_streaming_hint: TextureStreamingHint::None,
+        }
+    }
 }
 
 impl WimpyContext {
@@ -77,8 +105,14 @@ impl WimpyContext {
         IO: WimpyIO,
         TConfig: GraphicsContextConfig
     {
-        let assets = AssetManager::load_or_default::<IO>(config.manifest_path).await;
-        let graphics = GraphicsContext::create::<TConfig>(config.graphics_provider).await;
+        let assets = AssetManager::load_or_default::<IO>(
+            config.manifest_path
+        ).await;
+
+        let graphics = GraphicsContext::create::<TConfig>(
+            config.graphics_provider,
+            config.texture_stream_policy
+        ).await;
 
         let input = InputManager::with_input_type_hint(config.input_type_hint);
         let storage = KeyValueStore::default();
@@ -93,24 +127,24 @@ impl WimpyContext {
             missing_text: Rc::from(MISSING_TEXT_ASSET),
         };
 
-        context.load_engine_assets::<IO>().await;
+        context.bind_engine_assets();
 
         Some(context)
     }
 
     // A series of assets that are 'always' expected to be a part of the runtime, such as fonts
-    async fn load_engine_assets<IO: WimpyIO>(&mut self) {
+    fn bind_engine_assets(&mut self) {
         use graphics::constants::assets::*;
-        self.graphics.engine_textures.font_classic =         self.get_image::<IO>(FONT_CLASSIC).await;
-        self.graphics.engine_textures.font_classic_outline = self.get_image::<IO>(FONT_CLASSIC_OUTLINE).await;
-        self.graphics.engine_textures.font_twelven =         self.get_image::<IO>(FONT_TWELVEN).await;
-        self.graphics.engine_textures.font_twelven_shaded =  self.get_image::<IO>(FONT_TWELVEN_SHADED).await;
-        self.graphics.engine_textures.font_mono_elf =        self.get_image::<IO>(FONT_MONO_ELF).await;
+        self.graphics.engine_textures.font_classic =         self.get_image(FONT_CLASSIC,           TextureStreamingHint::Static);
+        self.graphics.engine_textures.font_classic_outline = self.get_image(FONT_CLASSIC_OUTLINE,   TextureStreamingHint::Static);
+        self.graphics.engine_textures.font_twelven =         self.get_image(FONT_TWELVEN,           TextureStreamingHint::Static);
+        self.graphics.engine_textures.font_twelven_shaded =  self.get_image(FONT_TWELVEN_SHADED,    TextureStreamingHint::Static);
+        self.graphics.engine_textures.font_mono_elf =        self.get_image(FONT_MONO_ELF,          TextureStreamingHint::Static);
     }
 
-    pub async fn get_image<IO: WimpyIO>(&mut self,name: &'static str) -> TextureFrame {
-        match ImageAssetReference::get_cached::<IO>(name,&mut self.into()).await {
-            Ok(frame_view) => frame_view.texture,
+    pub fn get_image(&mut self,name: &'static str,texture_streaming_hint: TextureStreamingHint) -> WimpyTexture {
+        match get_image_asset(name,&mut AssetLoadingContext::create(self,texture_streaming_hint)) {
+            Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image asset load failure: {:?}",error);
                 self.graphics.engine_textures.missing
@@ -118,28 +152,18 @@ impl WimpyContext {
         }
     }
 
-    pub async fn get_image_slice<IO: WimpyIO>(&mut self,name: &'static str) -> TextureFrameView {
-        match ImageAssetReference::get_cached::<IO>(name,&mut self.into()).await {
-            Ok(frame_view) => frame_view,
+    pub fn get_image_slice(&mut self,name: &'static str,texture_streaming_hint: TextureStreamingHint) -> WimpyTexture {
+        match get_image_asset(name,&mut AssetLoadingContext::create(self,texture_streaming_hint)) {
+            Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image slice asset load failure: {:?}",error);
-                let texture = self.graphics.engine_textures.missing;
-                let image_area = texture.get_input_size();
-                TextureFrameView {
-                    texture,
-                    view: Some(ImageArea {
-                        x: 0,
-                        y: 0,
-                        width: image_area.x,
-                        height: image_area.y,
-                    }),
-                }
+                self.graphics.engine_textures.missing
             },
         }
     }
 
     pub async fn get_text<IO: WimpyIO>(&mut self,name: &'static str) -> Rc<str> {
-        match TextAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+        match get_text_asset::<IO>(name,&mut self.into()).await {
             Ok(text) => text,
             Err(error) => {
                 log::error!("Text asset load failure: {:?}",error);
@@ -150,21 +174,12 @@ impl WimpyContext {
 
     // TODO: Create fallback textured mesh inside the mesh cache
     pub async fn get_model<IO: WimpyIO>(&mut self,name: &'static str) -> Option<TexturedMeshReference> {
-        match ModelAssetReference::get_cached::<IO>(name,&mut self.into()).await {
+        match get_model_asset::<IO>(name,&mut self.into()).await {
             Ok(mesh) => Some(mesh),
             Err(error) => {
                 log::error!("Model asset load failure: {:?}",error);
                 None
             },
-        }
-    }
-}
-
-impl<'a> From<&'a mut WimpyContext> for AssetLoadingContext<'a> {
-    fn from(value: &'a mut WimpyContext) -> Self {
-        AssetLoadingContext {
-            asset_manager: &mut value.assets,
-            graphics_context: &mut value.graphics,
         }
     }
 }

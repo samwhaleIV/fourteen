@@ -1,3 +1,7 @@
+use slotmap::SparseSecondaryMap;
+
+use crate::{UWimpyPoint, WimpyPointRect};
+
 use super::prelude::*;
 
 const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;
@@ -9,15 +13,23 @@ slotmap::new_key_type! {
 }
 
 #[derive(Deserialize,Debug)]
+pub struct ImageSizeInput {
+    pub id: u32,
+    pub x: u32,
+    pub y: u32,
+}
+
+#[derive(Deserialize,Debug)]
 #[serde(rename_all = "kebab-case")]
 pub struct InputNamespace {
     pub hard_assets: Vec<HardAssetInput>,
+    pub image_sizes: Vec<ImageSizeInput>,
     pub virtual_assets: Vec<VirtualAssetInput>,
     pub virtual_image_slice_assets: Vec<VirtualImageAssetInput>,
     pub virtual_model_assets: Vec<VirtualModelAssetInput>
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct HardAsset {
     pub file_source: Rc<str>,
     pub data_type: HardAssetType,
@@ -26,6 +38,8 @@ pub struct HardAsset {
 #[derive(Debug,Default)]
 pub struct WamManifest {
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
+
+    pub size_hints: SparseSecondaryMap<HardAssetKey,UWimpyPoint>,
 
     pub text_assets: HashMap<Rc<str>,TextAssetReference>,
     pub image_assets: HashMap<Rc<str>,ImageAssetReference>,
@@ -51,15 +65,7 @@ pub struct VirtualAssetInput {
 pub struct VirtualImageAssetInput {
     pub id: u32,
     pub name: String,
-    pub area: ImageArea
-}
-
-#[derive(Deserialize,Debug,Copy,Clone)]
-pub struct ImageArea {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32
+    pub area: WimpyPointRect
 }
 
 #[derive(Deserialize,Debug)]
@@ -79,7 +85,7 @@ pub struct VirtualModelAssetInput {
 }
 
 #[derive(Debug)]
-pub struct MissingAssetInfo {
+pub struct AssetInfo {
     pub id: u32,
     pub name: Rc<str>,
 }
@@ -115,12 +121,13 @@ pub struct MismatchedMeshletFieldInfo {
 
 #[derive(Debug)]
 pub enum WamManifestError {
-    MissingAsset(MissingAssetInfo),
+    MissingAsset(AssetInfo),
     UnexpectedType(UnexpectedTypeInfo),
     AssetTypeMismatch(TypeMismatchInfo),
     MismatchedMeshletField(MismatchedMeshletFieldInfo),
     IOError(std::io::Error),
-    JsonError(String)
+    JsonError(String),
+    ImageMissingSizeHint(AssetInfo)
 }
 
 impl WamManifest {
@@ -141,6 +148,7 @@ impl WamManifest {
             text_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
             image_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
             model_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            size_hints: SparseSecondaryMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
         };
 
         let item_count = namespace_table.len();

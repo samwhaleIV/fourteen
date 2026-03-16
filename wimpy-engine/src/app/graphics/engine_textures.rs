@@ -1,25 +1,37 @@
-use crate::UWimpyPoint;
+use crate::{UWimpyPoint, app::wam::WimpyTexture};
 
 use super::*;
-use wgpu::*;
+
+const OPAQUE_BLACK: &[u8;4] = &[0,0,0,255];
+const OPAQUE_WHITE: &[u8;4] = &[255,255,255,255];
+const TRANSPARENT_WHITE: &[u8;4] = &[255,255,255,0];
+const TRANSPARENT_BLACK: &[u8;4] = &[0,0,0,0];
 
 struct TextureFrameBuilder<'a> {
     graphics_provider: &'a GraphicsProvider,
-    frame_cache: &'a mut FrameCache,
+    texture_cache: &'a mut TextureCache,
     id_generator: &'a mut TextureIdentityGenerator
 }
 
 impl TextureFrameBuilder<'_> {
-    fn create(&mut self,data: impl TextureData) -> TextureFrame {
+    fn create(&mut self,size: UWimpyPoint,data: &[u8]) -> WimpyTexture {
         let texture_container = TextureContainer::from_image_unchecked(
             self.graphics_provider,
             self.id_generator.next(),
+            size,
             data
         );
-        return FrameFactory::create_texture(
-            texture_container.size(),
-            self.frame_cache.insert_keyless(texture_container)
+        self.texture_cache.create_static_gpu_texture(texture_container)
+    }
+    fn create_pixel(&mut self,data: &[u8;4]) -> WimpyTexture {
+        let size = UWimpyPoint::ONE;
+        let texture_container = TextureContainer::from_image_unchecked(
+            self.graphics_provider,
+            self.id_generator.next(),
+            size,
+            data
         );
+        self.texture_cache.create_static_gpu_texture(texture_container)
     }
 }
 
@@ -27,23 +39,27 @@ impl EngineTextures {
     pub fn create(
         graphics_provider: &GraphicsProvider,
         id_generator: &mut TextureIdentityGenerator,
-        frame_cache: &mut FrameCache,
+        texture_cache: &mut TextureCache,
     ) -> Self {
 
         let mut builder = TextureFrameBuilder {
             graphics_provider,
             id_generator,
-            frame_cache,
+            texture_cache,
         };
 
-        let missing_texture = builder.create(MissingTexture::create());
+        let missing_texture = builder.create(
+            UWimpyPoint::from(MissingTexture::SIZE),
+            &MissingTexture::create().data
+        );
 
         return Self {
             missing: missing_texture,
-            opaque_white: builder.create(OpaqueWhite),
-            opaque_black: builder.create(OpaqueBlack),
-            transparent_white: builder.create(TransparentWhite),
-            transparent_black: builder.create(TransparentBlack),
+            opaque_white: builder.create_pixel(OPAQUE_WHITE),
+            opaque_black: builder.create_pixel(OPAQUE_BLACK),
+            transparent_white: builder.create_pixel(TRANSPARENT_WHITE),
+            transparent_black: builder.create_pixel(TRANSPARENT_BLACK),
+
             font_classic: missing_texture.clone(),
             font_classic_outline: missing_texture.clone(),
             font_twelven: missing_texture.clone(),
@@ -100,84 +116,5 @@ impl MissingTexture {
         return Self {
             data
         }
-    }
-}
-
-impl TextureData for MissingTexture {
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-            },
-            &self.data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(Self::SIZE as u32 * 4), 
-                rows_per_image: Some(Self::SIZE as u32),
-            },
-            parameters.texture_size,
-        );
-    }
-    fn size(&self) -> UWimpyPoint {
-        return Self::SIZE.into();
-    }
-}
-
-pub struct OpaqueBlack;
-pub struct OpaqueWhite;
-pub struct TransparentWhite;
-pub struct TransparentBlack;
-
-trait GetColor {
-    fn get_color() -> &'static [u8;4];
-}
-
-impl GetColor for OpaqueBlack {
-    fn get_color() -> &'static [u8;4] {
-        return &[0,0,0,255];
-    }
-}
-
-impl GetColor for OpaqueWhite {
-    fn get_color() -> &'static [u8;4] {
-        return &[255,255,255,255];
-    }
-}
-
-impl GetColor for TransparentWhite {
-    fn get_color() -> &'static [u8;4] {
-        return &[255,255,255,0];
-    }
-}
-
-impl GetColor for TransparentBlack {
-    fn get_color() -> &'static [u8;4] {
-        return &[0,0,0,0];
-    }
-}
-
-impl<T: GetColor> TextureData for T {
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-            },
-            T::get_color(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4), 
-                rows_per_image: Some(1),
-            },
-            parameters.texture_size,
-        )
-    }
-    fn size(&self) -> UWimpyPoint {
-        return [1,1].into()
     }
 }

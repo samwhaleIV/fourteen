@@ -2,6 +2,7 @@ use super::{*,pipelines::core::*};
 use wgpu::*;
 
 use crate::app::graphics::constants::DEPTH_STENCIL_TEXTURE_FORMAT;
+use crate::app::wam::WimpyTexture;
 use crate::world::{CameraPerspectivePacket, WimpyCamera};
 use crate::{UWimpyPoint, WimpyColor, WimpyVec};
 
@@ -38,23 +39,23 @@ pub enum AvailableControls {
 }
 
 pub struct EngineTextures {
-    pub font_classic: TextureFrame,
-    pub font_classic_outline: TextureFrame,
-    pub font_twelven: TextureFrame,
-    pub font_twelven_shaded: TextureFrame,
-    pub font_mono_elf: TextureFrame,
+    pub font_classic: WimpyTexture,
+    pub font_classic_outline: WimpyTexture,
+    pub font_twelven: WimpyTexture,
+    pub font_twelven_shaded: WimpyTexture,
+    pub font_mono_elf: WimpyTexture,
 
-    pub missing: TextureFrame,
-    pub opaque_white: TextureFrame,
-    pub opaque_black: TextureFrame,
-    pub transparent_white: TextureFrame,
-    pub transparent_black: TextureFrame,
+    pub missing: WimpyTexture,
+    pub opaque_white: WimpyTexture,
+    pub opaque_black: WimpyTexture,
+    pub transparent_white: WimpyTexture,
+    pub transparent_black: WimpyTexture,
 }
 
 pub struct GraphicsContext {
     pub graphics_provider: GraphicsProvider,
     pub pipelines: RenderPipelines,
-    pub frame_cache: FrameCache,
+    pub texture_cache: TextureCache,
     pub bind_group_cache: BindGroupCache,
     pub texture_id_generator: TextureIdentityGenerator,
     pub engine_textures: EngineTextures,
@@ -128,7 +129,7 @@ impl Default for CameraPerspective {
 }
 
 impl GraphicsContext {
-    pub async fn create<TConfig>(graphics_provider: GraphicsProvider) -> Self
+    pub async fn create<TConfig>(graphics_provider: GraphicsProvider,stream_policy: TextureStreamPolicy) -> Self
     where
         TConfig: GraphicsContextConfig
     {
@@ -149,12 +150,12 @@ impl GraphicsContext {
             &mut mesh_cache
         );
 
-        let mut frame_cache = FrameCache::default();
+        let mut texture_cache = TextureCache::new(stream_policy);
 
         let engine_textures = EngineTextures::create(
             &graphics_provider,
             &mut texture_id_generator,
-            &mut frame_cache,
+            &mut texture_cache,
         );
 
         Self {
@@ -162,7 +163,7 @@ impl GraphicsContext {
             texture_id_generator,
             pipelines,
             mesh_cache,
-            frame_cache,
+            texture_cache,
             engine_textures,
             bind_group_cache,
             output_depth_stencil: None,
@@ -170,27 +171,14 @@ impl GraphicsContext {
         }
     }
 
-    pub fn create_texture_frame(&mut self,texture_data: impl TextureData) -> Result<TextureFrame,TextureError> {
-        let texture_id = self.texture_id_generator.next();
-        let texture_container = TextureContainer::from_image(
-            &self.graphics_provider,
-            texture_id,
-            texture_data
-        )?;
-        return Ok(FrameFactory::create_texture(
-            texture_container.size(),
-            self.frame_cache.insert_keyless(texture_container)
-        ));
-    }
-
     pub fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
         let size = cache_size.output_length;
-        let cache_reference = match self.frame_cache.start_lease(size) {
+        let cache_reference = match self.texture_cache.frames.start_lease(size) {
             Ok(value) => value, 
             Err(error) => {
                 log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
                 let texture_id = self.texture_id_generator.next();
-                self.frame_cache.insert_with_lease(size,TextureContainer::create_render_target(
+                self.texture_cache.frames.insert_with_lease(size,TextureContainer::create_render_target(
                     &self.graphics_provider,
                     texture_id,
                     size.into()
@@ -206,7 +194,7 @@ impl GraphicsContext {
 
     pub fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),FrameCacheError> {
         let cache_reference = frame.get_ref();
-        self.frame_cache.end_lease(cache_reference)?;
+        self.texture_cache.frames.end_lease(cache_reference)?;
         Ok(())
     }
 
@@ -218,7 +206,7 @@ impl GraphicsContext {
                 input: size,
                 output
             },
-            self.frame_cache.insert_keyless(TextureContainer::create_render_target(
+            self.texture_cache.frames.insert_keyless(TextureContainer::create_render_target(
                 &self.graphics_provider,
                 texture_id,
                 output
@@ -228,7 +216,7 @@ impl GraphicsContext {
 
     pub fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),FrameCacheError> {
         let cache_reference = frame.get_ref();
-        self.frame_cache.remove(cache_reference)?;
+        self.texture_cache.frames.remove(cache_reference)?;
         Ok(())
     }
 
@@ -245,11 +233,11 @@ impl GraphicsContext {
 
     pub fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
         let size = cache_size.output_length;
-        if self.frame_cache.has_available_items(size) {
+        if self.texture_cache.frames.has_available_items(size) {
             return;
         }
         let texture_id = self.texture_id_generator.next();
-        self.frame_cache.insert(size,TextureContainer::create_render_target(
+        self.texture_cache.frames.insert(size,TextureContainer::create_render_target(
             &self.graphics_provider,
             texture_id,
             size.into()
@@ -274,7 +262,7 @@ impl GraphicsContext {
             size
         );
 
-        let cache_reference = self.frame_cache.insert_keyless(texture_container);
+        let cache_reference = self.texture_cache.frames.insert_keyless(texture_container);
 
         let encoder = self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
             label: Some("Render Encoder")
@@ -382,7 +370,7 @@ impl OutputBuilder<'_> {
     where
         TFrame: MutableFrame
     {
-        let view = self.graphics_context.frame_cache.get(frame.get_ref())?.get_texture_view();
+        let view = self.graphics_context.texture_cache.frames.get(frame.get_ref())?.get_texture_view();
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
             (true, DepthStencilConfig::None) =>         PipelineVariantKey::OutputSurface,
@@ -482,7 +470,7 @@ impl OutputBuilderContext<'_> {
         graphics_context.pipelines.flush(queue);
         queue.submit(std::iter::once(self.builder.encoder.finish()));
 
-        if let Err(error) = graphics_context.frame_cache.remove(self.frame.get_ref()) {
+        if let Err(error) = graphics_context.texture_cache.frames.remove(self.frame.get_ref()) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
         self.builder.output_surface.present();

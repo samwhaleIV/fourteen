@@ -1,3 +1,5 @@
+use crate::{UWimpyPoint, WimpyPointRect};
+
 use super::prelude::*;
 
 #[derive(Deserialize,Debug,Copy,Clone,PartialEq,Eq)]
@@ -9,9 +11,15 @@ pub enum HardAssetType {
 }
 
 #[derive(Debug,Copy,Clone)]
+pub struct MeshletDescriptorTexture {
+    pub key: HardAssetKey,
+    pub size_hint: UWimpyPoint
+}
+
+#[derive(Debug,Copy,Clone)]
 pub struct MeshletDescriptor {
-    pub diffuse: Option<HardAssetKey>,
-    pub lightmap: Option<HardAssetKey>,
+    pub diffuse: Option<MeshletDescriptorTexture>,
+    pub lightmap: Option<MeshletDescriptorTexture>,
 }
 
 #[derive(Debug)]
@@ -26,7 +34,8 @@ pub struct ModelAssetReference {
 pub struct ImageAssetReference {
     pub name: Rc<str>,
     pub key: HardAssetKey,
-    pub area: Option<ImageArea>
+    pub size_hint: UWimpyPoint,
+    pub slice: Option<WimpyPointRect>
 }
 
 #[derive(Debug,Clone)]

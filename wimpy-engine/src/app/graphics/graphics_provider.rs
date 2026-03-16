@@ -182,7 +182,7 @@ impl GraphicsProvider {
         return self.max_texture_power_of_two
     }
 
-    pub fn test_size(&self,size: UWimpyPoint) -> Result<(),TextureError> {
+    pub fn validate_size(&self,size: UWimpyPoint) -> Result<(),TextureError> {
         if size.x < 1 || size.y < 1 {
             return Err(TextureError::ZeroSizeDimension);
         }

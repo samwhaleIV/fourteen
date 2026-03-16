@@ -25,7 +25,7 @@ impl VirtualAssetTranslator<'_> {
         for asset in assets.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(asset.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&asset.id) else {
-                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                return Err(WamManifestError::MissingAsset(AssetInfo {
                     name: rc_name,
                     id: asset.id
                 }));
@@ -41,9 +41,16 @@ impl VirtualAssetTranslator<'_> {
                 },
                 HardAssetType::Image => {
                     self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+                        size_hint: match self.manifest.size_hints.get(*key) {
+                            Some(value) => *value,
+                            None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                                id: asset.id,
+                                name: rc_name
+                            })),
+                        },
                         name: rc_name,
                         key: *key,
-                        area: None
+                        slice: None,
                     });
                 },
                 HardAssetType::Model => {
@@ -62,7 +69,7 @@ impl VirtualAssetTranslator<'_> {
         for image in images.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(image.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&image.id) else {
-                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                return Err(WamManifestError::MissingAsset(AssetInfo {
                     name: rc_name,
                     id: image.id
                 }));
@@ -77,9 +84,16 @@ impl VirtualAssetTranslator<'_> {
                 }));
             }
             self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+                size_hint: match self.manifest.size_hints.get(*key) {
+                    Some(value) => *value,
+                    None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                        id: image.id,
+                        name: rc_name
+                    })),
+                },
                 name: rc_name,
                 key: *key,
-                area: Some(image.area)
+                slice: Some(image.area)
             });
         }
         return Ok(());
@@ -90,7 +104,7 @@ impl VirtualAssetTranslator<'_> {
             let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
 
             let Some(key) = self.namespaces_ids.get(&model.id) else {
-                return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                return Err(WamManifestError::MissingAsset(AssetInfo {
                     name: rc_name,
                     id: model.id
                 }));
@@ -122,7 +136,7 @@ impl VirtualAssetTranslator<'_> {
                         continue;
                     };
                     let Some(key) = self.namespaces_ids.get(&id) else {
-                        return Err(WamManifestError::MissingAsset(MissingAssetInfo {
+                        return Err(WamManifestError::MissingAsset(AssetInfo {
                             name: rc_name,
                             id
                         }));
@@ -136,9 +150,19 @@ impl VirtualAssetTranslator<'_> {
                             found_type: hard_asset.data_type
                         }));
                     }
+                    let descriptor = Some(MeshletDescriptorTexture {
+                        size_hint: match self.manifest.size_hints.get(*key) {
+                            Some(value) => *value,
+                            None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                                id,
+                                name: rc_name
+                            })),
+                        },
+                        key: *key,
+                    });
                     match field {
-                        MeshletField::Diffuse => ref_meshlet.diffuse = Some(*key),
-                        MeshletField::Lightmap => ref_meshlet.lightmap = Some(*key),
+                        MeshletField::Diffuse => ref_meshlet.diffuse = descriptor,
+                        MeshletField::Lightmap => ref_meshlet.lightmap = descriptor,
                     }
                 }
                 meshlets.push(ref_meshlet);

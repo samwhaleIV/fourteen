@@ -11,6 +11,7 @@ pub enum TextureContainerIdentity {
     Known(NonZeroU32)
 }
 
+/// An online texture container for textures that are on the GPU
 pub struct TextureContainer {
     identity: TextureContainerIdentity,
     size: Extent3d,
@@ -52,21 +53,6 @@ struct TextureCreationParameters {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     with_queue_data: bool,
     //texture_format: TextureFormat,
-}
-
-pub struct TextureDataWriteParameters<'a> {
-    pub queue: &'a Queue,
-    pub texture: &'a Texture,
-    pub texture_size: Extent3d,
-    pub aspect: TextureAspect,
-    pub mip_level: u32,
-    pub origin: Origin3d,
-}
-
-pub trait TextureData {
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters);
-    fn size(&self) -> UWimpyPoint;
-    //fn get_format(&self) -> TextureFormat;
 }
 
 impl TextureContainer {
@@ -143,7 +129,7 @@ impl TextureContainer {
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
         size: UWimpyPoint // Externally validated (in graphics context)
-    ) -> TextureContainer {
+    ) -> Self {
         Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
@@ -155,50 +141,59 @@ impl TextureContainer {
     pub fn from_image_unchecked(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
-        texture_data: impl TextureData
-    ) -> TextureContainer {
-        let size = texture_data.size();
-
+        size: UWimpyPoint,
+        data: &[u8]
+    ) -> Self {
         let texture_container = Self::create(graphics_provider,TextureCreationParameters {
             size,
             identity,
             with_queue_data: true,
             render_target: false,
         });
-
-        texture_data.write_to_queue(&TextureDataWriteParameters {
-            queue: graphics_provider.get_queue(),
-            texture: texture_container.view.texture(),
-            texture_size: texture_container.size,
-            aspect: TextureAspect::All,
-            mip_level: 0,
-            origin: Origin3d::ZERO
-        });
-
+        graphics_provider.get_queue().write_texture(
+            TexelCopyTextureInfo {
+                texture: texture_container.get_texture(),
+                mip_level: 1,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * size.x),
+                rows_per_image: Some(size.y),
+            },
+            Extent3d {
+                width: size.x,
+                height: size.y,
+                depth_or_array_layers: 1,
+            },
+        );
         return texture_container;
     }
 
     pub fn from_image(
         graphics_provider: &GraphicsProvider,
         identity: TextureContainerIdentity,
-        texture_data: impl TextureData
-    ) -> Result<TextureContainer,TextureError> {
-        graphics_provider.test_size(texture_data.size())?;
+        size: UWimpyPoint,
+        data: &[u8]
+    ) -> Result<Self,TextureError> {
+        graphics_provider.validate_size(size)?;
 
-        return Ok(Self::from_image_unchecked(graphics_provider,identity,texture_data));
+        return Ok(Self::from_image_unchecked(graphics_provider,identity,size,data));
     }
 
     pub fn create_output(
         surface: &SurfaceTexture,
         texture_view_format: TextureFormat,
         size: UWimpyPoint // Externally validated (in graphics context)
-    ) -> TextureContainer {
+    ) -> Self {
         let view = surface.texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Output Surface Texture View"),
             format: Some(texture_view_format),
             ..Default::default()
         });
-        return TextureContainer {
+        Self {
             identity: TextureContainerIdentity::Anonymous,
             size: Extent3d {
                 width: size.x,
@@ -206,10 +201,13 @@ impl TextureContainer {
                 depth_or_array_layers: 1,
             },
             view
-        };
+        }
     }
 
     pub fn size(&self) -> UWimpyPoint {
-        [self.size.width,self.size.height].into()
+        UWimpyPoint {
+            x: self.size.width,
+            y: self.size.height,
+        }
     }
 }

@@ -1,9 +1,10 @@
 use slotmap::SparseSecondaryMap;
 
 use super::prelude::*;
+use crate::{UWimpyPoint, WimpyPointRect};
 use crate::app::{AssetLoadingContext, FileError};
 
-use crate::app::graphics::{GraphicsContext, ModelError, TextureError, TextureFrame, TexturedMeshReference, TexturedMeshlet};
+use crate::app::graphics::{ModelError, TextureStreamingHint, TextureError, WimpyTextureKey, TextureKeyCreationParameters, TexturedMeshReference, TexturedMeshlet};
 
 const START_CACHE_ENTRY_CAPACITY: usize = 8;
 
@@ -12,14 +13,18 @@ pub struct AssetManager {
     pub manifest: WamManifest,
     root: PathBuf,
     text_cache: SparseSecondaryMap<HardAssetKey,Rc<str>>,
-    image_cache: SparseSecondaryMap<HardAssetKey,TextureFrameView>,
+    texture_keys: SparseSecondaryMap<HardAssetKey,WimpyTexture>,
     model_cache: SparseSecondaryMap<HardAssetKey,TexturedMeshReference>,
 }
 
 #[derive(Copy,Clone)]
-pub struct TextureFrameView {
-    pub texture: TextureFrame,
-    pub view: Option<ImageArea>
+pub struct WimpyTexture {
+    /// Internal cache arena reference
+    pub key: WimpyTextureKey,
+    /// The size of the asset as suggested by WAM. Could be wrong is the asset does not match the object from storage.
+    pub size: UWimpyPoint,
+    /// If provided by WAM, this is the suggested sub-area of the texture to use, such as when WAM generates an offline atlas.
+    pub slice: Option<WimpyPointRect>
 }
 
 #[derive(Debug)]
@@ -67,7 +72,7 @@ impl AssetManager {
                             root: path_buffer,
                             manifest: manifest,
                             text_cache: SparseSecondaryMap::with_capacity(START_CACHE_ENTRY_CAPACITY),
-                            image_cache: SparseSecondaryMap::with_capacity(START_CACHE_ENTRY_CAPACITY),
+                            texture_keys: SparseSecondaryMap::with_capacity(START_CACHE_ENTRY_CAPACITY),
                             model_cache: SparseSecondaryMap::with_capacity(START_CACHE_ENTRY_CAPACITY),
                         }
                     },
@@ -107,136 +112,139 @@ impl AssetManager {
 
         Ok(text_data)
     }
+}
 
-    async fn get_image_cached<IO: WimpyIO>(
-        &mut self,key: HardAssetKey,
+struct TextureKeyCreator<'a,'context> {
+    context: &'a mut AssetLoadingContext<'context>,
+    policy_hint: TextureStreamingHint
+}
+
+impl TextureKeyCreator<'_,'_> {
+    fn get_missing(&self) -> WimpyTexture {
+        self.context.graphics.texture_cache.get_missing_texture().clone()
+    }
+
+    fn create_texture(
+        &mut self,
+        hard_asset_key: HardAssetKey,
         name: &'static str,
-        texture_view: Option<ImageArea>,
-        graphics_context: &mut GraphicsContext
-    ) -> Result<TextureFrameView,AssetManagerError> {
-        if let Some(image) = self.image_cache.get(key) {
-            return Ok(image.clone());
+        size_hint: UWimpyPoint,
+        slice: Option<WimpyPointRect>
+    ) -> WimpyTexture {
+        if let Some(image) = self.context.assets.texture_keys.get(hard_asset_key) {
+            return image.clone();
         }
 
-        let hard_asset = match self.manifest.hard_assets.get(key) {
+        let hard_asset = match self.context.assets.manifest.hard_assets.get(hard_asset_key) {
             Some(value) => value,
-            None => return Err(AssetManagerError::MissingHardAsset(name)),
+            None => {
+                log::error!("Hard asset key not found for '{name}'");
+                return self.get_missing();
+            },
         };
 
-        validate_hard_asset_type(hard_asset,HardAssetType::Image)?;
-
-        let path = get_full_path(&self.root,&hard_asset.file_source);
-
-        let image_data = match IO::load_image_file(path.as_path()).await {
-            Ok(data) => data,
-            Err(error) => return Err(AssetManagerError::FileError(error)),
-        };
-        let texture_frame = match graphics_context.create_texture_frame(image_data) {
-            Ok(value) => value,
-            Err(error) => return Err(AssetManagerError::TextureImportError(error)),
+        if let Err(error) = validate_hard_asset_type(hard_asset,HardAssetType::Image) {
+            log::error!("Texture key creation failure for key '{name}': {:?}",error);
+            return self.get_missing();
         };
 
-        let texture_frame_view = TextureFrameView {
-            texture: texture_frame.clone(),
-            view: texture_view
-        };
+        let texture = self.context.graphics.texture_cache.create_key_for_asset(TextureKeyCreationParameters {
+            identity: hard_asset.clone(),
+            policy_hint: self.policy_hint,
+            slice,
+            size_hint,
+        });
 
-        self.image_cache.insert(key,texture_frame_view.clone());
+        self.context.assets.texture_keys.insert(hard_asset_key,texture.clone());
 
-        Ok(texture_frame_view)
+        texture
     }
 }
 
-pub trait UserAssetMapping {
-    type UserAsset;
-    fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> impl Future<Output = Result<Self::UserAsset,AssetManagerError>>;
+pub async fn get_text_asset<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Rc<str>,AssetManagerError> {
+    let Some(virtual_asset) = context.assets.manifest.text_assets.get(name) else {
+        return Err(AssetManagerError::VirtualAssetNotFound(name));
+    };
+    Ok(context.assets.get_text_cached::<IO>(virtual_asset.key,name).await?)
 }
 
-impl UserAssetMapping for ModelAssetReference {
-    type UserAsset = TexturedMeshReference;
-
-    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-
-        let (hard_asset_key,meshlet_descriptors) = {
-            let Some(virtual_asset) = context.asset_manager.manifest.model_assets.get(name) else {
-                return Err(AssetManagerError::VirtualAssetNotFound(name));
-            };
-            // I was so profoundly pissed off by the borrow checker that I threw in a clone here
-            (virtual_asset.key,virtual_asset.meshlet_descriptors.clone())
-        };
-
-        /* We can't use 'entry()' because we mutate the slotmap cache after this to get textures */
-        if let Some(mesh) = context.asset_manager.model_cache.get(hard_asset_key) {
-            return Ok(mesh.clone());
-        }
-
-        let hard_asset = match context.asset_manager.manifest.hard_assets.get(hard_asset_key) {
-            Some(value) => value,
-            None => return Err(AssetManagerError::MissingHardAsset(name)),
-        };
-        validate_hard_asset_type(hard_asset,HardAssetType::Model)?;
-
-        let path = get_full_path(&context.asset_manager.root,&hard_asset.file_source);
-        let gltf_data = match IO::load_binary_file(path.as_path()).await {
-            Ok(data) => data,
-            Err(error) => return Err(AssetManagerError::FileError(error)),
-        };
-
-        let queue = context.graphics_context.graphics_provider.get_queue();
-        let mesh = match context.graphics_context.mesh_cache.insert_geometry(queue,&gltf_data) {
-            Ok(value) => value,
-            Err(error) => return Err(AssetManagerError::ModelImportError(error)),
-        };
-
-        // There may be more meshlet descriptions than meshlet geometry, or vice versa
-        let limit = mesh.len().min(meshlet_descriptors.len());
-
-        let mut textured_mesh: Vec<TexturedMeshlet> = Vec::with_capacity(limit);
-
-        for (i,meshlet) in mesh.into_iter().enumerate() {
-            let descriptor = &meshlet_descriptors[i];
-
-            let diffuse = match descriptor.diffuse {
-                Some(key) => context.asset_manager.get_image_cached::<IO>(key,&name,None,context.graphics_context).await?.texture,
-                None => context.graphics_context.engine_textures.missing,
-            };
-
-            let lightmap = match descriptor.lightmap {
-                Some(key) => context.asset_manager.get_image_cached::<IO>(key,&name,None,context.graphics_context).await?.texture,
-                None => context.graphics_context.engine_textures.opaque_white,
-            };
-
-            textured_mesh.push(TexturedMeshlet {
-                range: meshlet,
-                diffuse,
-                lightmap,
-            });
-        }
-
-        let reference = context.graphics_context.mesh_cache.create_textured_mesh_reference(textured_mesh);
-        context.asset_manager.model_cache.insert(hard_asset_key,reference.clone());
-        Ok(reference)
-    }
+pub fn get_image_asset(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<WimpyTexture,AssetManagerError> {
+    let Some(virtual_asset) = context.assets.manifest.image_assets.get(name) else {
+        return Err(AssetManagerError::VirtualAssetNotFound(name));
+    };
+    let (key,size,area) = (
+        virtual_asset.key,
+        virtual_asset.size_hint,
+        virtual_asset.slice
+    );
+    let mut texture_key_creator = TextureKeyCreator {
+        policy_hint: context.texture_streaming_hint,
+        context,
+    };
+    Ok(texture_key_creator.create_texture(key,name,size,area))
 }
 
-impl UserAssetMapping for TextAssetReference {
-    type UserAsset = Rc<str>;
+pub async fn get_model_asset<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<TexturedMeshReference,AssetManagerError> {
 
-    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        let Some(virtual_asset) = context.asset_manager.manifest.text_assets.get(name) else {
+    let (hard_asset_key,meshlet_descriptors) = {
+        let Some(virtual_asset) = context.assets.manifest.model_assets.get(name) else {
             return Err(AssetManagerError::VirtualAssetNotFound(name));
         };
-        Ok(context.asset_manager.get_text_cached::<IO>(virtual_asset.key,name).await?)
-    }
-}
+        // I was so profoundly pissed off by the borrow checker that I threw in a clone here
+        (virtual_asset.key,virtual_asset.meshlet_descriptors.clone())
+    };
 
-impl UserAssetMapping for ImageAssetReference {
-    type UserAsset = TextureFrameView;
-
-    async fn get_cached<IO: WimpyIO>(name: &'static str,context: &mut AssetLoadingContext<'_>) -> Result<Self::UserAsset,AssetManagerError> {
-        let Some(virtual_asset) = context.asset_manager.manifest.image_assets.get(name) else {
-            return Err(AssetManagerError::VirtualAssetNotFound(name));
-        };
-        Ok(context.asset_manager.get_image_cached::<IO>(virtual_asset.key,name,virtual_asset.area,context.graphics_context).await?)
+    /* We can't use 'entry()' because we mutate the slotmap cache after this to get textures */
+    if let Some(mesh) = context.assets.model_cache.get(hard_asset_key) {
+        return Ok(mesh.clone());
     }
+
+    let hard_asset = match context.assets.manifest.hard_assets.get(hard_asset_key) {
+        Some(value) => value,
+        None => return Err(AssetManagerError::MissingHardAsset(name)),
+    };
+    validate_hard_asset_type(hard_asset,HardAssetType::Model)?;
+
+    let path = get_full_path(&context.assets.root,&hard_asset.file_source);
+    let gltf_data = match IO::load_binary_file(path.as_path()).await {
+        Ok(data) => data,
+        Err(error) => return Err(AssetManagerError::FileError(error)),
+    };
+
+    let queue = context.graphics.graphics_provider.get_queue();
+    let mesh = match context.graphics.mesh_cache.insert_geometry(queue,&gltf_data) {
+        Ok(value) => value,
+        Err(error) => return Err(AssetManagerError::ModelImportError(error)),
+    };
+
+    // There may be more meshlet descriptions than meshlet geometry, or vice versa
+    let limit = mesh.len().min(meshlet_descriptors.len());
+
+    let mut textured_mesh: Vec<TexturedMeshlet> = Vec::with_capacity(limit);
+
+    let mut texture_key_creator = TextureKeyCreator {
+        context,
+        policy_hint: TextureStreamingHint::Atlas,
+    };
+
+    for (i,meshlet) in mesh.into_iter().enumerate() {
+        let descriptor = &meshlet_descriptors[i];
+
+        let [diffuse,lightmap] = [descriptor.diffuse,descriptor.lightmap].map(|texture_key|{
+            match texture_key {
+                Some(MeshletDescriptorTexture { key, size_hint }) => texture_key_creator.create_texture(key,&name,size_hint,None),
+                None => texture_key_creator.get_missing(),
+            }.key
+        });
+
+        textured_mesh.push(TexturedMeshlet {
+            range: meshlet,
+            diffuse,
+            lightmap,
+        });
+    }
+
+    let reference = context.graphics.mesh_cache.create_textured_mesh_reference(textured_mesh);
+    context.assets.model_cache.insert(hard_asset_key,reference.clone());
+    Ok(reference)
 }
