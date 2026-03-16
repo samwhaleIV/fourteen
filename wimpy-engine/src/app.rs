@@ -69,7 +69,6 @@ pub struct WimpyContextCreationConfig<'a> {
 pub struct AssetLoadingContext<'a> {
     asset_manager: &'a mut AssetManager,
     graphics_context: &'a mut GraphicsContext,
-    missing_text: &'a Rc<str>
 }
 
 impl WimpyContext {
@@ -166,7 +165,6 @@ impl<'a> From<&'a mut WimpyContext> for AssetLoadingContext<'a> {
         AssetLoadingContext {
             asset_manager: &mut value.assets,
             graphics_context: &mut value.graphics,
-            missing_text: &value.missing_text
         }
     }
 }
