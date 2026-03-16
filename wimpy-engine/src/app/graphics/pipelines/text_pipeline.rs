@@ -73,7 +73,7 @@ impl TextPipeline {
                 texture_layout,
                 uniform_layout,
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {

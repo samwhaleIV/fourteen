@@ -137,7 +137,7 @@ impl Pipeline3D {
                 uniform_layout,
                 &storage_bind_group_layout
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {

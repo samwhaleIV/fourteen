@@ -45,7 +45,7 @@ impl Pipeline2D {
                 // This is where the 'uniform bind group' is set to bind group index '1'
                 uniform_layout,
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {

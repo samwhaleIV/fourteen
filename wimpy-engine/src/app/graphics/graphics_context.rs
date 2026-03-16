@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::{*,pipelines::core::*};
 use wgpu::*;
 
@@ -441,6 +439,7 @@ impl OutputBuilder<'_> {
                     store: wgpu::StoreOp::Store,
                 },
             })],
+            multiview_mask: None,
             depth_stencil_attachment,
             occlusion_query_set: None,
             timestamp_writes: None,

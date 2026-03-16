@@ -27,7 +27,6 @@ pub enum WebAppError {
     KeyEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
-    PerformanceDoesNotExist,
     WimpyContextCreationFailure,
 }
 
@@ -86,7 +85,7 @@ where
         let gamepad_manager = GamepadManager::new();
 
         let instance = wgpu::Instance::new(&InstanceDescriptor {
-            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
+            backends: wgpu::Backends::BROWSER_WEBGPU,
             ..InstanceDescriptor::default()
         });
 
@@ -100,7 +99,7 @@ where
         };
 
         let graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
-            limits: Limits::downlevel_webgl2_defaults(),
+            limits: Limits::defaults(),
             instance,
             surface,
         }).await {

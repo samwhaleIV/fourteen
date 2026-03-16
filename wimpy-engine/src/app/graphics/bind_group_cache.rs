@@ -17,14 +17,34 @@ pub enum SamplerMode {
     LinearWrapMirror
 }
 
-const fn get_filter_and_address(sampler_mode: SamplerMode) -> (FilterMode,AddressMode) {
-    return match sampler_mode {
-        SamplerMode::NearestClamp =>        (FilterMode::Nearest,AddressMode::ClampToEdge),
-        SamplerMode::NearestWrap =>         (FilterMode::Nearest,AddressMode::Repeat),
-        SamplerMode::NearestWrapMirror =>   (FilterMode::Nearest,AddressMode::MirrorRepeat),
-        SamplerMode::LinearClamp =>         (FilterMode::Linear,AddressMode::ClampToEdge),
-        SamplerMode::LinearWrap =>          (FilterMode::Linear,AddressMode::Repeat),
-        SamplerMode::LinearWrapMirror =>    (FilterMode::Linear,AddressMode::MirrorRepeat),
+struct FilterSet {
+    filter: FilterMode,
+    mipmap_filter: MipmapFilterMode,
+    address: AddressMode
+}
+
+impl FilterSet {
+    const fn new(
+        filter: FilterMode,
+        mipmap_filter: MipmapFilterMode,
+        address: AddressMode
+    ) -> Self {
+        Self {
+            filter,
+            mipmap_filter,
+            address,
+        }
+    }
+    const fn from_sampler_mode(sampler_mode: SamplerMode) -> Self {
+        use SamplerMode::*;
+        match sampler_mode {
+            NearestClamp =>        Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::ClampToEdge),
+            NearestWrap =>         Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::Repeat),
+            NearestWrapMirror =>   Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::MirrorRepeat),
+            LinearClamp =>         Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::ClampToEdge),
+            LinearWrap =>          Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::Repeat),
+            LinearWrapMirror =>    Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::MirrorRepeat),
+        }
     }
 }
 
@@ -39,7 +59,7 @@ pub struct Samplers {
 
 impl Samplers {
     fn get(&self,sampler_mode: SamplerMode) -> &Sampler {
-        return match sampler_mode {
+        match sampler_mode {
             SamplerMode::NearestClamp => &self.nearest_clamp,
             SamplerMode::NearestWrap => &self.nearest_wrap,
             SamplerMode::NearestWrapMirror => &self.nearest_wrap_mirror,
@@ -51,14 +71,15 @@ impl Samplers {
 }
 
 fn create_sampler(device: &Device,sampler_mode: SamplerMode) -> Sampler {
-    let (filter,address) = get_filter_and_address(sampler_mode);
+    let filter_set = FilterSet::from_sampler_mode(sampler_mode);
     device.create_sampler(&SamplerDescriptor {
-        address_mode_u: address,
-        address_mode_v: address,
-        address_mode_w: address,
-        mag_filter: filter,
-        min_filter: filter,
-        mipmap_filter: filter,
+        address_mode_u: filter_set.address,
+        address_mode_v: filter_set.address,
+        address_mode_w: filter_set.address,
+        mag_filter: filter_set.filter,
+        min_filter: filter_set.filter,
+        // TODO: figure out if should be fixed to linear
+        mipmap_filter: filter_set.mipmap_filter,
         ..Default::default()
     })
 }

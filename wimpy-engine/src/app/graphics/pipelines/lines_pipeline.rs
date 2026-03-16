@@ -42,7 +42,7 @@ impl LinesPipeline {
             bind_group_layouts: &[
                 uniform_layout,
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0,
         });
 
         let strip_sub_variant = PipelineCreator {
