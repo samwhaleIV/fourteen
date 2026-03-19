@@ -63,7 +63,7 @@ async fn async_load<TWimpyApp,TConfig>(
     sdl_systems: SDLSystems,
 ) -> Option<InnerApp<TWimpyApp>>
 where
-    TConfig: GraphicsContextConfig,
+    TConfig: GraphicsConfig,
     TWimpyApp: WimpyApp<DekstopAppIO>
 {
     let mut graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
@@ -82,7 +82,7 @@ where
 
     let Some(mut wimpy_systems) = WimpyContext::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
         manifest_path,
-        input_type_hint: InputType::Unknown,
+        input_device_hint: InputDevice::Unknown,
         graphics_provider,
     }).await else {
         return None;
@@ -108,7 +108,7 @@ where
 pub fn run_desktop_app<TWimpyApp,TConfig>(manifest: Option<&Path>)
 where
     TWimpyApp: WimpyApp<DekstopAppIO>,
-    TConfig: GraphicsContextConfig
+    TConfig: GraphicsConfig
 {
     let sdl = sdl2::init().expect("sdl context creation");
     let video_subsystem = sdl.video().expect("sdl video subsystem creation");

@@ -1,17 +1,6 @@
-use super::{*,pipelines::core::*};
 use wgpu::*;
-
-use crate::app::graphics::constants::DEPTH_STENCIL_TEXTURE_FORMAT;
-use crate::app::wam::WimpyTexture;
-use crate::world::{CameraPerspectivePacket, WimpyCamera};
-use crate::{UWimpyPoint, WimpyColor, WimpyVec};
-
-use pipelines::{
-    pipeline_2d::*,
-    pipeline_3d::*,
-    text_pipeline::*,
-    lines_pipeline::*,
-};
+use crate::{UWimpyPoint, WimpyColor, WimpyVec, app::fonts::FontDefinition, world::{FrustumDescription, WimpyCamera}};
+use super::{*, textures::*, pipelines::*};
 
 pub struct OutputBuilder<'a> {
     graphics_context: &'a mut GraphicsContext,
@@ -21,50 +10,24 @@ pub struct OutputBuilder<'a> {
 
 pub struct OutputBuilderContext<'a> {
     pub builder: OutputBuilder<'a>,
-    pub frame: OutputFrame,
-}
-
-pub trait PipelinePass<'pass,'context> {
-    fn create(
-        render_pass: &'pass mut RenderPass<'context>,
-        context: &'pass mut GraphicsContext,
-        variant_key: PipelineVariantKey,
-        uniform_reference: UniformReference
-    ) -> Self;
+    pub frame: OutputRenderTarget,
 }
 
 pub enum AvailableControls {
-    StartOutputFrame,
+    StartOutpuTRenderTarget,
     RenderPassCreation
 }
 
-pub struct EngineTextures {
-    pub font_classic: WimpyTexture,
-    pub font_classic_outline: WimpyTexture,
-    pub font_twelven: WimpyTexture,
-    pub font_twelven_shaded: WimpyTexture,
-    pub font_mono_elf: WimpyTexture,
-
-    pub missing: WimpyTexture,
-    pub opaque_white: WimpyTexture,
-    pub opaque_black: WimpyTexture,
-    pub transparent_white: WimpyTexture,
-    pub transparent_black: WimpyTexture,
-}
-
 pub struct GraphicsContext {
-    pub graphics_provider: GraphicsProvider,
-    pub pipelines: RenderPipelines,
-    pub texture_cache: TextureCache,
-    pub bind_group_cache: BindGroupCache,
-    pub texture_id_generator: TextureIdentityGenerator,
-    pub engine_textures: EngineTextures,
-    pub mesh_cache: MeshCache,
+    pub graphics_provider:  GraphicsProvider,
+    pub pipelines:          RenderPipelines,
+    pub texture_manager:    TextureManager,
+    pub mesh_cache:         MeshCache,
     ///A depth stencil exclusively for the output surface
     /// 
     /// This avoids possible churn when using render targets that use depth stencil render passes
-    output_depth_stencil: Option<DepthStencil>,
-    depth_stencil: Option<DepthStencil>
+    output_depth_stencil:   Option<DepthStencil>,
+    depth_stencil:          Option<DepthStencil>
 }
 
 struct DepthStencil {
@@ -85,7 +48,7 @@ impl DepthStencil {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: DEPTH_STENCIL_TEXTURE_FORMAT,
+            format: constants::DEPTH_STENCIL_TEXTURE_FORMAT,
             usage: TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         };
@@ -100,42 +63,12 @@ impl DepthStencil {
     }
 }
 
-pub trait GraphicsContextConfig {
-    // These are in byte count
-    const UNIFORM_BUFFER_SIZE: usize;
-    const INSTANCE_BUFFER_SIZE_2D: usize;
-    const MESH_CACHE_VERTEX_BUFFER_SIZE: usize;
-    const MESH_CACHE_INDEX_BUFFER_SIZE: usize;
-    const INSTANCE_BUFFER_SIZE_3D: usize;
-    const TEXT_PIPELINE_BUFFER_SIZE: usize;
-    const LINE_BUFFER_SIZE: usize;
-}
-
-#[derive(Copy,Clone)]
-pub struct CameraPerspective {
-    pub fov: f32,
-    pub clip_near: f32,
-    pub clip_far: f32,
-}
-
-impl Default for CameraPerspective {
-    fn default() -> Self {
-        Self {
-            clip_near: 0.025,
-            clip_far: 100.0,
-            fov: 90.0
-        }
-    }
-}
-
 impl GraphicsContext {
-    pub async fn create<TConfig>(graphics_provider: GraphicsProvider,stream_policy: TextureStreamPolicy) -> Self
+    pub async fn create<TConfig>(graphics_provider: GraphicsProvider,streaming_policy: StreamingPolicy) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
-        let mut bind_group_cache = BindGroupCache::create(&graphics_provider);
-
-        let mut texture_id_generator = TextureIdentityGenerator::default();
+        let mut texture_manager = TextureManager::new(&graphics_provider,streaming_policy);
 
         let mut mesh_cache = MeshCache::create(
             graphics_provider.get_device(),
@@ -145,103 +78,70 @@ impl GraphicsContext {
 
         let pipelines = RenderPipelines::create::<TConfig>(
             &graphics_provider,
-            &mut bind_group_cache,
-            &mut texture_id_generator,
+            &mut texture_manager,
             &mut mesh_cache
-        );
-
-        let mut texture_cache = TextureCache::new(stream_policy);
-
-        let engine_textures = EngineTextures::create(
-            &graphics_provider,
-            &mut texture_id_generator,
-            &mut texture_cache,
         );
 
         Self {
             graphics_provider,
-            texture_id_generator,
             pipelines,
+            texture_manager,
             mesh_cache,
-            texture_cache,
-            engine_textures,
-            bind_group_cache,
             output_depth_stencil: None,
-            depth_stencil: None
+            depth_stencil: None,
         }
     }
 
-    pub fn get_temp_frame(&mut self,cache_size: CacheSize,clear_color: wgpu::Color) -> TempFrame {
-        let size = cache_size.output_length;
-        let cache_reference = match self.texture_cache.frames.start_lease(size) {
-            Ok(value) => value, 
-            Err(error) => {
-                log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
-                let texture_id = self.texture_id_generator.next();
-                self.texture_cache.frames.insert_with_lease(size,TextureContainer::create_render_target(
-                    &self.graphics_provider,
-                    texture_id,
-                    size.into()
-                ))
-            },
-        };
-        return FrameFactory::create_temp_frame(
-            cache_size,
-            cache_reference,
-            clear_color
-        );
-    }
-
-    pub fn return_temp_frame(&mut self,frame: TempFrame) -> Result<(),FrameCacheError> {
-        let cache_reference = frame.get_ref();
-        self.texture_cache.frames.end_lease(cache_reference)?;
-        Ok(())
-    }
-
-    pub fn get_long_life_frame(&mut self,size: UWimpyPoint) -> LongLifeFrame {
-        let output = self.graphics_provider.get_safe_texture_size(size);
-        let texture_id = self.texture_id_generator.next();
-        return FrameFactory::create_long_life(
-            RestrictedSize {
-                input: size,
-                output
-            },
-            self.texture_cache.frames.insert_keyless(TextureContainer::create_render_target(
-                &self.graphics_provider,
-                texture_id,
-                output
-            )),
-        );
-    }
-
-    pub fn return_long_life_frame(&mut self,frame: LongLifeFrame) -> Result<(),FrameCacheError> {
-        let cache_reference = frame.get_ref();
-        self.texture_cache.frames.remove(cache_reference)?;
-        Ok(())
-    }
-
-    pub fn get_cache_safe_size(&self,size: UWimpyPoint) -> CacheSize {
-        let output = self.graphics_provider.get_safe_texture_power_of_two(match size.largest().checked_next_power_of_two() {
+    pub fn get_temp_frame(&mut self,size: UWimpyPoint,clear_color: Color) -> TempRenderTarget {
+        let cache_key = self.graphics_provider.get_safe_texture_power_of_two(match size.largest().checked_next_power_of_two() {
             Some(value) => value,
             None => u32::MAX,
         });
-        CacheSize {
-            input: size,
-            output_length: output
-        }
+
+        let output_size: UWimpyPoint = cache_key.into();
+        let gpu_texture_key = self.texture_manager.borrow_render_target(&self.graphics_provider,output_size,cache_key);
+
+        TempRenderTarget::new(
+            FilteredSize {
+                input: size,
+                output: output_size
+            },
+            gpu_texture_key,
+            clear_color
+        )
     }
 
-    pub fn ensure_frame_for_cache_size(&mut self,cache_size: CacheSize) {
-        let size = cache_size.output_length;
-        if self.texture_cache.frames.has_available_items(size) {
-            return;
-        }
-        let texture_id = self.texture_id_generator.next();
-        self.texture_cache.frames.insert(size,TextureContainer::create_render_target(
-            &self.graphics_provider,
-            texture_id,
-            size.into()
-        ));
+    pub fn return_temp_frame(&mut self,frame: TempRenderTarget) -> Result<(),GPUTextureCacheError> {
+        let texture_key = frame.get_key();
+        self.texture_manager.gpu_cache.end_lease(texture_key)?;
+        Ok(())
+    }
+
+    pub fn get_long_life_frame(&mut self,size: UWimpyPoint) -> LongLifeRenderTarget {
+        let output_size = self.graphics_provider.get_safe_texture_size(size);
+        let gpu_texture_key = self.texture_manager.create_keyless_render_target(&self.graphics_provider,output_size);
+        LongLifeRenderTarget::new(
+            FilteredSize {
+                input: size,
+                output: output_size
+            },
+            gpu_texture_key,
+        )
+    }
+
+    pub fn return_long_life_frame(&mut self,frame: LongLifeRenderTarget) -> Result<(),GPUTextureCacheError> {
+        let texture_key = frame.get_key();
+        self.texture_manager.gpu_cache.remove(texture_key)?;
+        Ok(())
+    }
+
+    /// Preallocate a GPU texture for usage as a render target of this size if none exist or they are all presently leased
+    pub fn ensure_temp_frame_for_size(&mut self,size: UWimpyPoint) {
+        let cache_key = self.graphics_provider.get_safe_texture_power_of_two(match size.largest().checked_next_power_of_two() {
+            Some(value) => value,
+            None => u32::MAX,
+        });
+        self.texture_manager.ensure_cached_render_target(&self.graphics_provider,size,cache_key)
     }
 
     pub fn create_output_builder<'a>(&'a mut self,color: impl WimpyColor) -> Option<OutputBuilderContext<'a>> {
@@ -255,20 +155,15 @@ impl GraphicsContext {
 
         // Note: size is already validated by the graphics provider
         let size: UWimpyPoint = [output_surface.texture.width(),output_surface.texture.height()].into();
+        let view_format = self.graphics_provider.get_output_view_format();
 
-        let texture_container = TextureContainer::create_output(
-            &output_surface,
-            self.graphics_provider.get_output_view_format(),
-            size
-        );
-
-        let cache_reference = self.texture_cache.frames.insert_keyless(texture_container);
+        let cache_reference = self.texture_manager.bind_output_surface(&output_surface,view_format,size);
 
         let encoder = self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
             label: Some("Render Encoder")
         });
 
-        let frame = FrameFactory::create_output(
+        let frame = OutputRenderTarget::new(
             size,
             cache_reference,
             color.into_linear().into()
@@ -283,21 +178,21 @@ impl GraphicsContext {
             frame,
         };
 
-        return Some(output_builder);
+        Some(output_builder)
     }
 }
 
-pub struct RenderPassBuilder<'a,TFrame> {
+pub struct RenderPassBuilder<'a,TRenderTarget> {
     render_pass: RenderPass<'a>,
     context: &'a mut GraphicsContext,
-    frame: &'a TFrame,
+    frame: &'a TRenderTarget,
     ortho_uniform: UniformReference,
     variant_key: PipelineVariantKey,
 }
 
-impl<'context,TFrame> RenderPassBuilder<'context,TFrame>
+impl<'context,TRenderTarget> RenderPassBuilder<'context,TRenderTarget>
 where
-    TFrame: MutableFrame
+    TRenderTarget: RenderTarget
 {
     fn set_pipeline<'pass,TPipelinePass>(&'pass mut self,uniform_reference: UniformReference) -> TPipelinePass
     where
@@ -322,14 +217,9 @@ where
     pub fn create_camera_uniform(
         &mut self,
         camera: &WimpyCamera,
-        config: CameraPerspective,
+        frustum: FrustumDescription,
     ) -> UniformReference {
-        let matrix = camera.get_matrix(CameraPerspectivePacket {
-            fov: config.fov,
-            clip_near: config.clip_near,
-            clip_far: config.clip_far,
-            aspect_ratio: self.frame.aspect_ratio(),
-        });
+        let matrix = camera.get_matrix(frustum,self.frame.aspect_ratio());
         self.context.pipelines.shared.create_uniform(matrix)
     }
 
@@ -341,7 +231,7 @@ where
         pipeline_3d_pass.submit(diffuse_sampler);
     }
 
-    pub fn frame(&self) -> &TFrame { self.frame }
+    pub fn frame(&self) -> &TRenderTarget { self.frame }
 }
 
 #[derive(Copy,Clone)]
@@ -366,11 +256,11 @@ impl OutputBuilder<'_> {
         self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
     }
 
-    fn create_render_pass_internal<'a,TFrame>(&'a mut self,frame: &'a TFrame,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    fn create_render_pass_internal<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
-        let view = self.graphics_context.texture_cache.frames.get(frame.get_ref())?.get_texture_view();
+        let view = frame.get_cache_entry(&mut self.graphics_context.texture_manager).value.get_view();
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
             (true, DepthStencilConfig::None) =>         PipelineVariantKey::OutputSurface,
@@ -398,15 +288,15 @@ impl OutputBuilder<'_> {
                     let device = self.graphics_context.graphics_provider.get_device();
                     DepthStencil::create(device,needed_size)
                 });
-                Some(wgpu::RenderPassDepthStencilAttachment {
+                Some(RenderPassDepthStencilAttachment {
                     view: &depth_stencil.view,
-                    depth_ops: Some(wgpu::Operations {
+                    depth_ops: Some(Operations {
                         // '1.0' is the far plane when rendering 'standard' z; i.e., near = '0.0', far = '1.0' [CompareFunction::Less].
                         // Change to '0.0' if using 'reverse' z;               i.e., near = '1.0', far = '0.0' [CompareFunction::Greater]
                         // The clip space in the camera projecton much match this convention as well
                         // (Keep in mind, z world space is not equal to z clip space because we use Z up world space and WGPU uses Y up)
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
                     }),
                     stencil_ops: None,
                 })
@@ -415,16 +305,16 @@ impl OutputBuilder<'_> {
 
         let mut render_pass = self.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: None,
-                ops: wgpu::Operations {
+                ops: Operations {
                     load: match frame.get_clear_color() {
-                        Some(color) => wgpu::LoadOp::Clear(color),
-                        None => wgpu::LoadOp::Load,
+                        Some(color) => LoadOp::Clear(color),
+                        None => LoadOp::Load,
                     },
-                    store: wgpu::StoreOp::Store,
+                    store: StoreOp::Store,
                 },
             })],
             multiview_mask: None,
@@ -447,16 +337,16 @@ impl OutputBuilder<'_> {
         })
     }
 
-    pub fn create_render_pass<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    pub fn create_render_pass<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         self.create_render_pass_internal(frame,DepthStencilConfig::None)
     }
 
-    pub fn create_render_pass_with_depth_stencil<'a,TFrame>(&'a mut self,frame: &'a TFrame) -> Result<RenderPassBuilder<'a,TFrame>,FrameCacheError>
+    pub fn create_render_pass_with_depth_stencil<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         self.create_render_pass_internal(frame,DepthStencilConfig::Standard)
     }
@@ -470,7 +360,8 @@ impl OutputBuilderContext<'_> {
         graphics_context.pipelines.flush(queue);
         queue.submit(std::iter::once(self.builder.encoder.finish()));
 
-        if let Err(error) = graphics_context.texture_cache.frames.remove(self.frame.get_ref()) {
+        let texture_key = self.frame.get_key();
+        if let Err(error) = graphics_context.texture_manager.gpu_cache.remove(texture_key) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
         self.builder.output_surface.present();

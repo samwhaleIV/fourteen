@@ -1,6 +1,6 @@
 use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
-use crate::{UWimpyPoint, WimpyRect, WimpyVec, app::graphics::FrameCache, collections::ClockCache};
-use super::{FrameCacheReference, TextureContainer, GraphicsProvider, TextureContainerIdentity};
+use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache, app::graphics::GraphicsProvider};
+use super::{GPUTextureKey, GPUTexture, gpu_texture, GPUTextureCache};
 
 pub struct VirtualTextureAtlasConfig {
     /// How big a slot is (e.g., 16 pixels)
@@ -22,12 +22,12 @@ pub struct VirtualTextureAtlas {
     size_recip: WimpyVec,
 
     /// The surface provided to a shader
-    atlas_texture_container: TextureContainer,
+    atlas_texture_container: GPUTexture,
 
     /// Backend cache for key/ownership logisitics
     /// 
     /// Does not contain cache values, only provides feedback for coordinated movements (inserted, dropped, or maintained)
-    residency_cache: ClockCache<FrameCacheReference>,
+    residency_cache: ClockCache<GPUTextureKey>,
 
     encoder_commands: Vec<EncoderTextureCopyCommand>,
 
@@ -43,15 +43,15 @@ struct EncoderTextureCopyCommand {
 
 impl VirtualTextureAtlas {
     pub fn create(
-        graphics_provider: &GraphicsProvider,
-        texture_identity: TextureContainerIdentity,
-        config: &VirtualTextureAtlasConfig
+        graphics_provider:  &GraphicsProvider,
+        texture_identity:   gpu_texture::GPUTextureIdentity,
+        config:             &VirtualTextureAtlasConfig
     ) -> Self {
 
         let pixel_length = config.slot_length * config.slot_size;
         let pixel_size = graphics_provider.get_safe_texture_dimension_value(pixel_length);
 
-        let texture_container = TextureContainer::create_render_target(
+        let texture_container = GPUTexture::create_render_target(
             graphics_provider,
             texture_identity, // Used so we can use the texture as a bind group target
             UWimpyPoint::from(pixel_size)
@@ -106,8 +106,8 @@ impl VirtualTextureAtlas {
 
     fn set_texture_internal(
         &mut self,
-        frame_cache: &FrameCache,
-        texture: FrameCacheReference,
+        frame_cache: &GPUTextureCache,
+        texture: GPUTextureKey,
         slot: usize,
     ) {
         let source_texture = match frame_cache.get(texture) {
@@ -150,7 +150,7 @@ impl VirtualTextureAtlas {
         self.uv_cache[slot] = uv_area;
     }
 
-    pub fn set_texture(&mut self,frame_cache: &FrameCache,texture: FrameCacheReference) -> WimpyRect {
+    pub fn set_texture(&mut self,frame_cache: &GPUTextureCache,texture: GPUTextureKey) -> WimpyRect {
         let cache_update = self.residency_cache.insert(texture);
         if cache_update.feedback.is_some() {
             self.set_texture_internal(frame_cache,texture,cache_update.slot);
@@ -158,7 +158,7 @@ impl VirtualTextureAtlas {
         self.uv_cache[cache_update.slot]
     }
 
-    pub fn get_uv_area(&self,texture: FrameCacheReference) -> Option<WimpyRect> {
+    pub fn get_uv_area(&self,texture: GPUTextureKey) -> Option<WimpyRect> {
         if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
             self.uv_cache.get(slot).copied()
         } else {
@@ -166,7 +166,7 @@ impl VirtualTextureAtlas {
         }
     }
 
-    pub fn get_texture_container(&self) -> &TextureContainer {
+    pub fn get_texture_container(&self) -> &GPUTexture {
         &self.atlas_texture_container
     }
 }

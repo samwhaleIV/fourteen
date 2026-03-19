@@ -1,40 +1,12 @@
-use slotmap::SparseSecondaryMap;
+use std::{collections::HashMap, rc::Rc};
+use slotmap::{SparseSecondaryMap, SlotMap};
 
-use crate::{UWimpyPoint, WimpyPointRect};
-
-use super::prelude::*;
+use crate::UWimpyPoint;
+use super::{HardAsset, json_input, HardAssetKey, HardAssetType, reference_types};
 
 const DEFAULT_NAME_STRING_BUILDER_CAPACITY: usize = 64;
 const DEFAULT_HARD_ASSET_CAPACITY: usize = 32;
 const DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY: usize = 32;
-
-slotmap::new_key_type! {
-    pub struct HardAssetKey;
-}
-
-#[derive(Deserialize,Debug)]
-#[serde(rename_all = "kebab-case")]
-pub struct SizeHintInput {
-    pub id: u32,
-    pub x: u32,
-    pub y: u32,
-}
-
-#[derive(Deserialize,Debug)]
-#[serde(rename_all = "kebab-case")]
-pub struct InputNamespace {
-    pub hard_assets: Vec<HardAssetInput>,
-    pub image_size_hints: Vec<SizeHintInput>,
-    pub virtual_assets: Vec<VirtualAssetInput>,
-    pub virtual_image_slice_assets: Vec<VirtualImageAssetInput>,
-    pub virtual_model_assets: Vec<VirtualModelAssetInput>
-}
-
-#[derive(Debug,Clone)]
-pub struct HardAsset {
-    pub file_source: Rc<str>,
-    pub data_type: HardAssetType,
-}
 
 #[derive(Debug,Default)]
 pub struct WamManifest {
@@ -42,101 +14,52 @@ pub struct WamManifest {
 
     pub size_hints: SparseSecondaryMap<HardAssetKey,UWimpyPoint>,
 
-    pub text_assets: HashMap<Rc<str>,TextAssetReference>,
-    pub image_assets: HashMap<Rc<str>,ImageAssetReference>,
-    pub model_assets: HashMap<Rc<str>,ModelAssetReference>,
+    pub text_assets:    HashMap<Rc<str>,    reference_types::Text>,
+    pub image_assets:   HashMap<Rc<str>,    reference_types::Image>,
+    pub model_assets:   HashMap<Rc<str>,    reference_types::Model>,
 
     string_builder: String,
 }
 
-#[derive(Deserialize,Debug)]
-pub struct HardAssetInput {
-    pub id: u32,
-    pub source: String,
-    pub r#type: HardAssetType
-}
-
-#[derive(Deserialize,Debug)]
-pub struct VirtualAssetInput {
-    pub id: u32,
-    pub name: String,
-}
-
-#[derive(Deserialize,Debug)]
-pub struct VirtualImageAssetInput {
-    pub id: u32,
-    pub name: String,
-    pub slice: WimpyPointRect
-}
-
-#[derive(Deserialize,Debug)]
-#[serde(rename_all = "kebab-case")]
-pub struct MeshletDescriptorInput {
-    pub diffuse: Option<u32>,
-    pub lightmap: Option<u32>,
-}
-
-#[derive(Deserialize,Debug)]
-#[serde(rename_all = "kebab-case")]
-pub struct VirtualModelAssetInput {
-    pub id: u32,
-    pub name: String,
-    #[serde(default)]
-    pub meshlets: Vec<MeshletDescriptorInput>
-}
-
-#[derive(Debug)]
-pub struct AssetInfo {
-    pub id: u32,
-    pub name: Rc<str>,
-}
-
-#[derive(Debug)]
-pub struct TypeMismatchInfo {
-    pub name: Rc<str>,
-    pub id: u32,
-    pub expected_type: HardAssetType,
-    pub found_type: HardAssetType
-}
-
-#[derive(Debug)]
-pub struct UnexpectedTypeInfo {
-    pub name: Rc<str>,
-    pub id: u32,
-    pub found_type: HardAssetType
-}
-
-#[derive(Debug)]
-pub enum MeshletField {
-    Diffuse,
-    Lightmap
-}
-
-#[derive(Debug)]
-pub struct MismatchedMeshletFieldInfo {
-    pub name: Rc<str>,
-    pub field: MeshletField,
-    pub expected_type: HardAssetType,
-    pub found_type: HardAssetType
-}
-
 #[derive(Debug)]
 pub enum WamManifestError {
-    MissingAsset(AssetInfo),
-    ImageSizeHintMissingOwner { id: u32 },
-    UnexpectedType(UnexpectedTypeInfo),
-    AssetTypeMismatch(TypeMismatchInfo),
-    MismatchedMeshletField(MismatchedMeshletFieldInfo),
+    MissingAsset {
+        name: Rc<str>,
+        id: u32
+    },
+    ImageMissingSizeHint {
+        name: Rc<str>,
+        id: u32
+    },
+    ImageSizeHintMissingOwner {
+        id: u32
+    },
+    UnexpectedType{
+        name: Rc<str>,
+        id: u32,
+        found_type: HardAssetType
+    },
+    AssetTypeMismatch{
+        name: Rc<str>,
+        id: u32,
+        expected_type: HardAssetType,
+        found_type: HardAssetType
+    },
+    MismatchedMeshletField{
+        name: Rc<str>,
+        field: reference_types::MeshletField,
+        expected_type: HardAssetType,
+        found_type: HardAssetType
+    },
     IOError(std::io::Error),
     JsonError(String),
-    ImageMissingSizeHint(AssetInfo)
 }
 
 impl WamManifest {
 
     pub fn create(json_text: &str) -> Result<Self,WamManifestError> {
 
-        let namespace_table: HashMap<String,InputNamespace> = match serde_json::from_str(&json_text) {
+        let namespace_table: HashMap<String,json_input::Namespace> = match serde_json::from_str(&json_text) {
             Ok(value) => value,
             Err(error) => {
                 // TODO: match the serde_json error instead of formatting it
@@ -145,12 +68,12 @@ impl WamManifest {
         };
 
         let mut manifest = Self {
-            hard_assets: SlotMap::<HardAssetKey,HardAsset>::with_capacity_and_key(DEFAULT_HARD_ASSET_CAPACITY),
-            string_builder: String::with_capacity(DEFAULT_NAME_STRING_BUILDER_CAPACITY),
-            text_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
-            image_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
-            model_assets: HashMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
-            size_hints: SparseSecondaryMap::with_capacity(DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            hard_assets:    SlotMap::with_capacity_and_key      (DEFAULT_HARD_ASSET_CAPACITY),
+            string_builder: String::with_capacity               (DEFAULT_NAME_STRING_BUILDER_CAPACITY),
+            text_assets:    HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            image_assets:   HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            model_assets:   HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
+            size_hints:     SparseSecondaryMap::with_capacity   (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
         };
 
         let item_count = namespace_table.len();
@@ -177,7 +100,7 @@ impl WamManifest {
         return Rc::from(local_name);
     }
 
-    fn add_namespace(&mut self,namespace: InputNamespace,namespace_name: &str) -> Result<(),WamManifestError> {
+    fn add_namespace(&mut self,namespace: json_input::Namespace,namespace_name: &str) -> Result<(),WamManifestError> {
         let hard_asset_count = namespace.hard_assets.len();
 
         /*  
@@ -185,17 +108,17 @@ impl WamManifest {
             So, we sandbox namespaces and translate their IDs to runtime-only slotmap keys.
         */
 
-        let mut translator = VirtualAssetTranslator {
+        let mut translator = super::virtual_asset_translator::VirtualAssetTranslator {
             manifest: self,
             namespaces_ids: HashMap::with_capacity(hard_asset_count),
             namespace_name,
         };
 
-        translator.parse_hard_assets(namespace.hard_assets)?;
-        translator.parse_size_hints(namespace.size_hints);
-        translator.parse_generic_assets(namespace.virtual_assets)?;
-        translator.parse_slice_images(namespace.virtual_image_slice_assets)?;
-        translator.parse_models(namespace.virtual_model_assets)?;
+        translator.parse_hard_assets    (namespace.hard_assets)?;
+        translator.parse_size_hints     (namespace.image_size_hints);
+        translator.parse_generic_assets (namespace.virtual_assets)?;
+        translator.parse_slice_images   (namespace.virtual_image_slice_assets)?;
+        translator.parse_models         (namespace.virtual_model_assets)?;
 
         return Ok(());
     }

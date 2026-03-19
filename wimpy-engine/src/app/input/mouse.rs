@@ -1,21 +1,5 @@
-use crate::{WimpyRect,WimpyVec};
-use super::prelude::*;
-
-const JOYSTICK_CURSOR_PIXELS_PER_SECOND: f32 = 1500.0;
-
-#[derive(Default,Copy,Clone,PartialEq,Debug)]
-pub struct Delta {
-    pub x: f32,
-    pub y: f32
-}
-
-#[derive(Default,PartialEq,Copy,Clone)]
-pub struct MouseInput {
-    pub position: WimpyVec,
-    pub delta: WimpyVec,
-    pub left_pressed: bool,
-    pub right_pressed: bool,
-}
+use crate::{WimpyRect, WimpyVec};
+use super::{gamepad::GamepadCache, InputDevice};
 
 #[derive(Clone,Copy)]
 pub enum MouseModeSwitchCommand {
@@ -23,21 +7,31 @@ pub enum MouseModeSwitchCommand {
     CameraToInterface,
 }
 
-impl MouseInput {
+
+#[derive(Default,PartialEq,Copy,Clone)]
+pub struct Input {
+    pub position:       WimpyVec,
+    pub delta:          WimpyVec,
+    pub left_pressed:   bool,
+    pub right_pressed:  bool,
+}
+
+impl Input {
     fn from_gamepad(
-        gamepad: &GamepadCache,
-        position: WimpyVec,
-        retain_position: bool,
-        emulation_bounds: WimpyRect,
-        delta_seconds: f32
+        gamepad:            &GamepadCache,
+        position:           WimpyVec,
+        retain_position:    bool,
+        emulation_bounds:   WimpyRect,
+        delta_seconds:      f32
     ) -> Self {
-        let max_pixels = JOYSTICK_CURSOR_PIXELS_PER_SECOND * delta_seconds;
+        use super::constants::JOYSTICK_CURSOR_PIXELS_PER_SECOND as pixels_per_second;
+        let max_pixels = pixels_per_second * delta_seconds;
         let delta = WimpyVec::from(gamepad.right_axes()) * max_pixels;
         let position = match retain_position {
             true => position,
             false => emulation_bounds.clip(position + delta),
         };
-        return Self {
+        Self {
             position,
             delta,
             left_pressed: gamepad.left_trigger().is_pressed(),
@@ -49,7 +43,7 @@ impl MouseInput {
         self.delta != other.delta
     }
     fn create_fused(&self,other: &Self) -> Self {
-        return Self {
+        Self {
             position: self.position,
             delta: self.delta,
             left_pressed: self.left_pressed || other.left_pressed,
@@ -57,19 +51,20 @@ impl MouseInput {
         }
     }
     fn has_delta_activity(&self) -> bool {
-        return self.delta.x != 0.0 || self.delta.y != 0.0;
+        self.delta.x != 0.0 ||
+        self.delta.y != 0.0
     }
 }
 
 #[derive(Default)]
 pub struct VirtualMouse {
-    fused_state: MouseInput,
+    fused_state: Input,
 
-    mouse_state: MouseInput,
-    gamepad_state: MouseInput,
+    mouse_state: Input,
+    gamepad_state: Input,
 
-    left_press_state: MousePressState,
-    right_press_state: MousePressState,
+    left_press_state: PressState,
+    right_press_state: PressState,
 
     current_mode: MouseMode,
     future_mode: Option<MouseMode>,
@@ -84,7 +79,7 @@ pub struct VirtualMouse {
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
-pub enum MousePressState {
+pub enum PressState {
     #[default]
     Released,
     JustPressed,
@@ -92,13 +87,14 @@ pub enum MousePressState {
     JustReleased,
 }
 
-impl From<MousePressState> for bool {
-    fn from(value: MousePressState) -> Self {
+impl From<PressState> for bool {
+    fn from(value: PressState) -> Self {
+        use PressState::*;
         match value {
-            MousePressState::Released => false,
-            MousePressState::JustPressed => true,
-            MousePressState::Pressed => true,
-            MousePressState::JustReleased => false,
+            Released =>     false,
+            JustPressed =>  true,
+            Pressed =>      true,
+            JustReleased => false,
         }
     }
 }
@@ -129,60 +125,58 @@ pub enum MouseMode {
     Camera
 }
 
-#[derive(Debug,Default,Copy,Clone,PartialEq,Eq)]
-pub enum LikelyActiveDevice {
-    #[default]
-    Mouse,
-    Gamepad
-}
-
 impl From<InteractionState> for CursorGlyph {
     fn from(value: InteractionState) -> Self {
+        use InteractionState::*;
         match value {
-            InteractionState::Hidden => Self::None,
-            InteractionState::Default => Self::Default,
-            InteractionState::CanInteract => Self::CanInteract,
-            InteractionState::IsInteracting => Self::IsInteracting,
+            Hidden =>           Self::None,
+            Default =>          Self::Default,
+            CanInteract =>      Self::CanInteract,
+            IsInteracting =>    Self::IsInteracting,
         }
     }
 }
 
-pub struct VirtualMouseShellState {
-    pub cursor_glyph: CursorGlyph,
-    pub position: WimpyVec,
-    pub likely_active_device: LikelyActiveDevice,
-    pub mouse_mode: MouseMode,
-    pub should_reposition_hardware_cursor: bool
+pub struct ShellState {
+    pub glyph:      CursorGlyph,
+    pub position:   WimpyVec,
+    /// Specifies which hardware input device is most likely to be active to guide the display of software versus hardware cursor
+    pub device:     InputDevice,
+    pub mode:       MouseMode,
+    /// If the hardware cursor is enabled, this flag is set when the virtual mouse determines the cursor *should* be recentered
+    /// 
+    /// This is only active for one frame at a time, such as when dropping out of camera control mode
+    pub recenter:   bool
 }
 
-fn get_delta_press_state(old_state: MousePressState,is_pressed: bool) -> MousePressState {
-    use MousePressState::*;
+fn get_delta_press_state(old_state: PressState,is_pressed: bool) -> PressState {
+    use PressState::*;
     match (old_state,is_pressed) {
-        (Released, true) => JustPressed,
-        (Released, false) => Released,
-        (JustPressed, true) => Pressed,
-        (JustPressed, false) => JustReleased,
-        (Pressed, true) => Pressed,
-        (Pressed, false) => JustReleased,
-        (JustReleased, true) => JustPressed,
-        (JustReleased, false) => Released,
+        (Released,      true) =>    JustPressed,
+        (Released,      false) =>   Released,
+        (JustPressed,   true) =>    Pressed,
+        (JustPressed,   false) =>   JustReleased,
+        (Pressed,       true) =>    Pressed,
+        (Pressed,       false) =>   JustReleased,
+        (JustReleased,  true) =>    JustPressed,
+        (JustReleased,  false) =>   Released,
     }
 }
 
 impl VirtualMouse {
     pub(super) fn update(
         &mut self,
-        input_hint: InputType,
-        new_mouse_state: MouseInput,
-        gamepad: &GamepadCache,
-        delta_seconds: f32,
-        emulation_bounds: WimpyRect,
-        context_can_reposition_hardware_cursor: bool
-    ) -> VirtualMouseShellState {
+        input_device_hint:  InputDevice,
+        new_mouse_state:    Input,
+        gamepad:            &GamepadCache,
+        delta_seconds:      f32,
+        emulation_bounds:   WimpyRect,
+        can_recenter:       bool
+    ) -> ShellState {
 
         let mut zero_out_delta = false;
 
-        self.gamepad_state = MouseInput::from_gamepad(
+        self.gamepad_state = Input::from_gamepad(
             gamepad,
             self.gamepad_state.position,
             self.current_mode == MouseMode::Camera,
@@ -201,18 +195,15 @@ impl VirtualMouse {
             if self.current_mode == MouseMode::Interface {
                 let center = emulation_bounds.center();
                 self.gamepad_state.position = center;
-                if context_can_reposition_hardware_cursor {
+                if can_recenter {
                     self.mouse_state.position = center;
                     should_reposition_hardware_cursor = true;
                 }
             }
-            match input_hint {
-                InputType::Unknown | InputType::Keyboard => {
-                    self.emulation_active = false;
-                },
-                InputType::Gamepad => {
-                    self.emulation_active = true;
-                },
+            use InputDevice::*;
+            self.emulation_active = match input_device_hint {
+                MouseAndKeyboard => false,
+                Gamepad =>          true,
             };
         }
 
@@ -262,13 +253,13 @@ impl VirtualMouse {
                 if !self.gamepad_position_init {
                     self.gamepad_position_init = true;
                     self.gamepad_state.position = emulation_bounds.center();
-                    if context_can_reposition_hardware_cursor {
+                    if can_recenter {
                         should_reposition_hardware_cursor = true;
                     }
                     /* If we don't update the output state, there will be a single frame error with the cursor displayed at the origin. */
                     self.fused_state.position = self.gamepad_state.position;
                 } else if
-                    context_can_reposition_hardware_cursor &&
+                    can_recenter &&
                     self.current_mode == MouseMode::Interface
                 {
                     should_reposition_hardware_cursor = true;
@@ -299,53 +290,53 @@ impl VirtualMouse {
         return self.get_cursor_shell_state(should_reposition_hardware_cursor);
     }
 
-    fn get_cursor_shell_state(&self,should_reposition_hardware_cursor: bool) -> VirtualMouseShellState {
+    fn get_cursor_shell_state(&self,should_reposition_hardware_cursor: bool) -> ShellState {
 
-        let glyph: CursorGlyph;
-        let device: LikelyActiveDevice;
+        let glyph:  CursorGlyph;
+        let device: InputDevice;
 
         match self.current_mode {
             MouseMode::Camera => {
                 glyph = match self.hide_camera_center_crosshair {
                     false => CursorGlyph::CameraCrosshair,
-                    true => CursorGlyph::None,
+                    true =>  CursorGlyph::None,
                 };
                 // Even though the cursor won't be visible, we prime the cursor rendering in anticipation of a mode swap
                 device = match self.emulation_active {
-                    true => LikelyActiveDevice::Gamepad,
-                    false => LikelyActiveDevice::Mouse,
+                    true =>  InputDevice::Gamepad,
+                    false => InputDevice::MouseAndKeyboard,
                 };
             },
             MouseMode::Interface => {
                 match self.emulation_active {
                     // UI mode with virtual mouse
                     true => {
-                        glyph = self.interaction_state.into();
-                        device = LikelyActiveDevice::Gamepad;
+                        glyph =  self.interaction_state.into();
+                        device = InputDevice::Gamepad;
                     },
                     // UI mode with real mouse
                     false => {
-                        glyph = self.interaction_state.into();
-                        device = LikelyActiveDevice::Mouse;
+                        glyph =  self.interaction_state.into();
+                        device = InputDevice::MouseAndKeyboard;
                     },
                 };
             },
         }
 
-        return VirtualMouseShellState {
-            cursor_glyph: glyph,
+        ShellState {
+            glyph,
             position: self.fused_state.position,
-            likely_active_device: device,
-            mouse_mode: self.current_mode,
-            should_reposition_hardware_cursor,
-        };
+            device,
+            mode: self.current_mode,
+            recenter: should_reposition_hardware_cursor,
+        }
     }
 
-    pub fn left_press_state(&self) -> MousePressState {
+    pub fn left_press_state(&self) -> PressState {
         self.left_press_state
     }
 
-    pub fn right_press_state(&self) -> MousePressState {
+    pub fn right_press_state(&self) -> PressState {
         self.right_press_state
     }
 

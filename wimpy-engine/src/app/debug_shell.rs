@@ -1,11 +1,9 @@
-use std::collections::VecDeque;
-use std::marker::PhantomData;
-use std::fmt::{self,Write};
+use std::{collections::VecDeque, marker::PhantomData, fmt::{self, Write}};
 
-use crate::{WimpyColor, WimpyNamedColor, WimpyOpacity, WimpyRect, WimpyRectQuadrant, WimpyVec, WimpyVecAxis};
-use crate::app::graphics::{DrawData2D, LinePoint2D, fonts::*};
-use crate::app::graphics::{MutableFrame,RenderPassBuilder,TextDirection,TextRenderConfig};
-use crate::collections::StringPool;
+use crate::{collections::pool::StringPool, WimpyColor, WimpyNamedColor, WimpyOpacity, WimpyRect, WimpyRectQuadrant, WimpyVec, WimpyVecAxis};
+use super::fonts;
+use super::graphics::{textures::RenderTarget, RenderPassBuilder};
+use super::graphics::pipelines::{DrawData2D, LinePoint2D, TextDirection, TextRenderConfig};
 
 const TEXT_MARGIN: f32 = 5.0;
 
@@ -365,9 +363,9 @@ impl DebugShell {
         label.clear();
     }
 
-    fn draw_graphs<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
+    fn draw_graphs<TRenderTarget>(&mut self,render_pass: &mut RenderPassBuilder<'_,TRenderTarget>)
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         if self.buffers.graph_commands.len() <= 0 {
             return;
@@ -398,9 +396,9 @@ impl DebugShell {
         }
     }
 
-    fn draw_labels<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
+    fn draw_labels<TRenderTarget>(&mut self,render_pass: &mut RenderPassBuilder<'_,TRenderTarget>)
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         if self.buffers.label_commands.len() <= 0 {
             return;
@@ -410,7 +408,7 @@ impl DebugShell {
             line_height_scale: 1.0,
             word_seperator: ' ',
         };
-        let mut text_pipeline = render_pass.set_pipeline_text::<FontMonoElf>();
+        let mut text_pipeline = render_pass.set_pipeline_text::<fonts::FontMonoElf>();
         for command in &self.buffers.label_commands {
             text_pipeline.batch_text(
                 &[self.labels.get(command.channel)],
@@ -432,9 +430,9 @@ impl DebugShell {
         text_pipeline.submit();
     }
 
-    fn draw_backgrounds<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
+    fn draw_backgrounds<TRenderTarget>(&mut self,render_pass: &mut RenderPassBuilder<'_,TRenderTarget>)
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         if self.buffers.background_commands.len() <= 0 {
             return;
@@ -450,9 +448,9 @@ impl DebugShell {
         }));
     }
 
-    pub fn render<TFrame>(&mut self,render_pass: &mut RenderPassBuilder<'_,TFrame>)
+    pub fn render<TRenderTarget>(&mut self,render_pass: &mut RenderPassBuilder<'_,TRenderTarget>)
     where
-        TFrame: MutableFrame
+        TRenderTarget: RenderTarget
     {
         let frame_size = WimpyVec::from(render_pass.frame().size());
         {

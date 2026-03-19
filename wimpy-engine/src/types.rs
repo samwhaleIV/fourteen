@@ -1,3 +1,5 @@
+/* Shared, public types re-exported at the crate root */
+
 mod wimpy_color;
 mod wimpy_layout;
 mod wimpy_rect;

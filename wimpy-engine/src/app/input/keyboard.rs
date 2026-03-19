@@ -1,8 +1,9 @@
-use super::prelude::*;
+use std::collections::{HashMap, HashSet};
+use super::*;
 
 pub struct KeyboardTranslator {
     binds: HashMap<KeyCode,Impulse>,
-    reverse_lookup: [HashSet<KeyCode>;IMPULSE_TYPE_COUNT]
+    reverse_lookup: [HashSet<KeyCode>;super::constants::IMPULSE_COUNT]
 }
 
 impl KeyboardTranslator {
@@ -54,11 +55,12 @@ impl KeyboardTranslator {
     }
 }
 
+/* Default key binds defined by the engine */
 impl Default for KeyboardTranslator {
     fn default() -> Self {
         let mut translator = Self {
             binds: HashMap::<KeyCode,Impulse>::with_capacity(24),
-            reverse_lookup: array::from_fn(|_|HashSet::with_capacity(4))
+            reverse_lookup: std::array::from_fn(|_|HashSet::with_capacity(4))
         };
 
         translator.add_key_bind(KeyCode::KeyW,Impulse::Up);

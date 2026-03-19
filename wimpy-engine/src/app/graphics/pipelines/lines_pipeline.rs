@@ -1,18 +1,27 @@
-use glam::Vec3;
+const VERTEX_BUFFER_INDEX:      u32 = 0;
+const UNIFORM_BIND_GROUP_INDEX: u32 = 0;
+
 use wgpu::*;
 use std::ops::Range;
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear, WimpyVec, app::graphics::*};
-use super::core::*;
+
+use super::{*, super::*};
 
 pub struct LinesPipeline {
-    strip_sub_variant: PipelineVariants,
-    list_sub_variant: PipelineVariants,
-    line_point_buffer: DoubleBuffer<LineVertex>,
+    strip_sub_variant:  PipelineVariants,
+    list_sub_variant:   PipelineVariants,
+    line_point_buffer:  DoubleBuffer<LineVertex>,
 }
 
-const VERTEX_BUFFER_INDEX: u32 = 0;
-const UNIFORM_BIND_GROUP_INDEX: u32 = 0;
+pub struct LinePoint2D {
+    pub point: WimpyVec,
+    pub color: WimpyColorLinear
+}
+
+pub struct LinePoint3D {
+    pub point: Vec3,
+    pub color: WimpyColorLinear
+}
 
 #[derive(Copy,Clone,PartialEq,Eq)]
 enum LinesMode {
@@ -24,11 +33,10 @@ impl LinesPipeline {
 
     pub fn create<TConfig>(
         graphics_provider: &GraphicsProvider,
-        _texture_layout: &BindGroupLayout,
         uniform_layout: &BindGroupLayout,
     ) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let device = graphics_provider.get_device();
 
@@ -101,11 +109,11 @@ impl LinesPipeline {
 }
 
 pub struct LinesPipelinePass<'pass,'context> {
-    context: &'pass mut GraphicsContext,
-    render_pass: &'pass mut RenderPass<'context>,
-    variant_key: PipelineVariantKey,
-    lines_mode: Option<LinesMode>,
-    uniform_reference: UniformReference,
+    context:            &'pass mut GraphicsContext,
+    render_pass:        &'pass mut RenderPass<'context>,
+    variant_key:        PipelineVariantKey,
+    lines_mode:         Option<LinesMode>,
+    uniform_reference:  UniformReference,
 }
 
 impl PipelineFlush for LinesPipeline {
@@ -190,16 +198,6 @@ impl LinesPipelinePass<'_,'_> {
         self.set_pipeline(LinesMode::List);
         self.draw(line_points.into_iter().map(Into::into));
     }
-}
-
-pub struct LinePoint2D {
-    pub point: WimpyVec,
-    pub color: WimpyColorLinear
-}
-
-pub struct LinePoint3D {
-    pub point: Vec3,
-    pub color: WimpyColorLinear
 }
 
 #[repr(C)]

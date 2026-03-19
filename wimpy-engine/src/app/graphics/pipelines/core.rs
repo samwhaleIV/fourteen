@@ -1,21 +1,17 @@
 use glam::Mat4;
 use wgpu::*;
 use bytemuck::{Pod,Zeroable};
+
+use super::*;
 use crate::UWimpyPoint;
-use crate::app::graphics::{*,constants::*};
-
-use super::pipeline_2d::*;
-use super::pipeline_3d::*;
-use super::text_pipeline::*;
-use super::lines_pipeline::*;
-
+use crate::app::graphics::{*,GraphicsConfig, textures::TextureManager};
 
 pub struct RenderPipelines {
-    pub pipeline_2d: Pipeline2D,
-    pub pipeline_3d: Pipeline3D,
-    pub text: TextPipeline,
-    pub lines: LinesPipeline,
-    pub shared: SharedPipeline
+    pub pipeline_2d:    Pipeline2D,
+    pub pipeline_3d:    Pipeline3D,
+    pub text:           TextPipeline,
+    pub lines:          LinesPipeline,
+    pub shared:         SharedPipeline
 }
 
 pub trait PipelineFlush {
@@ -27,17 +23,16 @@ pub trait PipelineFlush {
 
 impl RenderPipelines {
     pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        bind_group_cache: &mut BindGroupCache,
-        texture_id_generator: &mut TextureIdentityGenerator,
-        mesh_cache: &mut MeshCache,
+        graphics_provider:  &GraphicsProvider,
+        texture_manager:    &mut TextureManager,
+        mesh_cache:         &mut MeshCache,
     ) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let pipeline_shared = SharedPipeline::create::<TConfig>(graphics_provider);
 
-        let texture_bind_group_layout = bind_group_cache.get_texture_layout();
+        let texture_bind_group_layout = texture_manager.bind_groups.get_texture_layout();
         let uniform_bind_group_layout = pipeline_shared.get_uniform_layout();
 
         let pipeline_2d = Pipeline2D::create::<TConfig>(
@@ -48,9 +43,9 @@ impl RenderPipelines {
 
         let pipeline_3d = Pipeline3D::create::<TConfig>(
             graphics_provider,
+            texture_manager,
             texture_bind_group_layout,
             uniform_bind_group_layout,
-            texture_id_generator,
             mesh_cache
         );
 
@@ -62,7 +57,6 @@ impl RenderPipelines {
 
         let lines_pipeline = LinesPipeline::create::<TConfig>(
             graphics_provider,
-            texture_bind_group_layout,
             uniform_bind_group_layout
         );
 
@@ -83,7 +77,7 @@ impl RenderPipelines {
         self.lines.flush(queue);
 
         let uniform_buffer = &mut self.shared.uniform_buffer;
-        uniform_buffer.write_out_with_padding(queue,UNIFORM_BUFFER_ALIGNMENT);
+        uniform_buffer.write_out_with_padding(queue,constants::UNIFORM_BUFFER_ALIGNMENT);
         uniform_buffer.reset();
     }
 }
@@ -172,11 +166,11 @@ impl PipelineCreator<'_> {
             depth_stencil: match depth_stencil_mode {
                 DepthStencilMode::None => None,
                 DepthStencilMode::Standard => Some(DepthStencilState {
-                    format: DEPTH_STENCIL_TEXTURE_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: CompareFunction::Less,
-                    stencil: StencilState::default(),
-                    bias: DepthBiasState::default(),
+                    format:                 constants::DEPTH_STENCIL_TEXTURE_FORMAT,
+                    depth_write_enabled:    true,
+                    depth_compare:          CompareFunction::Less,
+                    stencil:                StencilState::default(),
+                    bias:                   DepthBiasState::default(),
                 })
             },
             multisample: wgpu::MultisampleState {
@@ -193,7 +187,7 @@ impl PipelineCreator<'_> {
     pub fn create_pipeline_set(&self) -> PipelineVariants {
         PipelineVariants {
             internal_target_pipeline: self.create_pipeline(
-                INTERNAL_RENDER_TARGET_FORMAT,
+                constants::INTERNAL_RENDER_TARGET_FORMAT,
                 DepthStencilMode::None
             ),
             output_surface_pipeline: self.create_pipeline(
@@ -201,7 +195,7 @@ impl PipelineCreator<'_> {
                 DepthStencilMode::None
             ),
             internal_target_pipeline_with_depth: self.create_pipeline(
-                INTERNAL_RENDER_TARGET_FORMAT,
+                constants::INTERNAL_RENDER_TARGET_FORMAT,
                 DepthStencilMode::Standard
             ),
             output_surface_pipeline_with_depth: self.create_pipeline(
@@ -249,9 +243,9 @@ impl PipelineVariants {
 }
 
 pub struct SharedPipeline {
-    uniform_layout: BindGroupLayout,
+    uniform_layout:     BindGroupLayout,
     uniform_bind_group: BindGroup,
-    uniform_buffer: DoubleBuffer<TransformUniform>,
+    uniform_buffer:     DoubleBuffer<TransformUniform>,
 }
 
 #[derive(Copy,Clone)]
@@ -265,17 +259,17 @@ impl SharedPipeline {
 
     pub fn create<TConfig>(graphics_provider: &GraphicsProvider) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
 
         let device = graphics_provider.get_device();
 
-        let chunk_size = std::num::NonZero::new(UNIFORM_BUFFER_ALIGNMENT as BufferAddress).expect("valid chunk size");
+        let chunk_size = std::num::NonZero::new(constants::UNIFORM_BUFFER_ALIGNMENT as BufferAddress).expect("valid chunk size");
 
         let uniform_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
-                    binding: UNIFORM_BIND_GROUP_ENTRY_INDEX,
+                    binding: constants::UNIFORM_BIND_GROUP_ENTRY_INDEX,
                     visibility: ShaderStages::VERTEX,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
@@ -299,7 +293,7 @@ impl SharedPipeline {
         let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
             layout: &uniform_layout,
             entries: &[BindGroupEntry {
-                binding: UNIFORM_BIND_GROUP_ENTRY_INDEX,
+                binding: constants::UNIFORM_BIND_GROUP_ENTRY_INDEX,
                 resource: BindingResource::Buffer(BufferBinding {
                     buffer: &uniform_buffer.get_output_buffer(),
                     offset: 0,
@@ -332,7 +326,7 @@ impl SharedPipeline {
         let transform = TransformUniform::create_ortho(size);
         let uniform_buffer_range = self.get_uniform_buffer().push(transform);
         UniformReference {
-            value: (uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT) as u32,
+            value: (uniform_buffer_range.start * constants::UNIFORM_BUFFER_ALIGNMENT) as u32,
         }
     }
 
@@ -342,7 +336,7 @@ impl SharedPipeline {
         };
         let uniform_buffer_range = self.get_uniform_buffer().push(transform);
         UniformReference {
-            value: (uniform_buffer_range.start * UNIFORM_BUFFER_ALIGNMENT) as u32,
+            value: (uniform_buffer_range.start * constants::UNIFORM_BUFFER_ALIGNMENT) as u32,
         }
     }
 

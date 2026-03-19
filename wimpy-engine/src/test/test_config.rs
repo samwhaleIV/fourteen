@@ -1,10 +1,10 @@
-use crate::app::graphics::GraphicsContextConfig;
+use crate::app::graphics::GraphicsConfig;
 
 pub struct TestConfig;
 
 const BASE: usize = 16384;
 
-impl GraphicsContextConfig for TestConfig {
+impl GraphicsConfig for TestConfig {
     const MESH_CACHE_VERTEX_BUFFER_SIZE: usize = BASE * 4;
     const MESH_CACHE_INDEX_BUFFER_SIZE: usize = BASE * 4;
 

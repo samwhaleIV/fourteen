@@ -1,33 +1,28 @@
+const CH0_TEXTURE_INDEX: u32 = 0;
+const CH0_SAMPLER_INDEX: u32 = 1;
+
+const CH1_TEXTURE_INDEX: u32 = 2;
+const CH1_SAMPLER_INDEX: u32 = 3;
+
+const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
+
 use wgpu::*;
-use super::*;
-use super::constants::*;
+use std::{collections::HashMap, hash::Hash};
 
-use std::{
-    collections::HashMap,
-    hash::Hash
-};
-
-#[derive(PartialEq,Eq,Copy,Clone,Hash)]
-pub enum SamplerMode {
-    NearestClamp,
-    NearestWrap,
-    NearestWrapMirror,
-    LinearClamp,
-    LinearWrap,
-    LinearWrapMirror
-}
+use super::{gpu_texture::{GPUTexture, GPUTextureIdentity}, SamplerMode};
+use crate::app::graphics::GraphicsProvider;
 
 struct FilterSet {
-    filter: FilterMode,
-    mipmap_filter: MipmapFilterMode,
-    address: AddressMode
+    filter:         FilterMode,
+    mipmap_filter:  MipmapFilterMode,
+    address:        AddressMode
 }
 
 impl FilterSet {
     const fn new(
-        filter: FilterMode,
-        mipmap_filter: MipmapFilterMode,
-        address: AddressMode
+        filter:         FilterMode,
+        mipmap_filter:  MipmapFilterMode,
+        address:        AddressMode
     ) -> Self {
         Self {
             filter,
@@ -38,34 +33,34 @@ impl FilterSet {
     const fn from_sampler_mode(sampler_mode: SamplerMode) -> Self {
         use SamplerMode::*;
         match sampler_mode {
-            NearestClamp =>        Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::ClampToEdge),
-            NearestWrap =>         Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::Repeat),
-            NearestWrapMirror =>   Self::new(FilterMode::Nearest,MipmapFilterMode::Nearest,AddressMode::MirrorRepeat),
-            LinearClamp =>         Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::ClampToEdge),
-            LinearWrap =>          Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::Repeat),
-            LinearWrapMirror =>    Self::new(FilterMode::Linear,MipmapFilterMode::Linear,AddressMode::MirrorRepeat),
+            NearestClamp =>        Self::new(FilterMode::Nearest,   MipmapFilterMode::Nearest,  AddressMode::ClampToEdge),
+            NearestWrap =>         Self::new(FilterMode::Nearest,   MipmapFilterMode::Nearest,  AddressMode::Repeat),
+            NearestWrapMirror =>   Self::new(FilterMode::Nearest,   MipmapFilterMode::Nearest,  AddressMode::MirrorRepeat),
+            LinearClamp =>         Self::new(FilterMode::Linear,    MipmapFilterMode::Linear,   AddressMode::ClampToEdge),
+            LinearWrap =>          Self::new(FilterMode::Linear,    MipmapFilterMode::Linear,   AddressMode::Repeat),
+            LinearWrapMirror =>    Self::new(FilterMode::Linear,    MipmapFilterMode::Linear,   AddressMode::MirrorRepeat),
         }
     }
 }
 
 pub struct Samplers {
-    nearest_clamp: Sampler,
-    nearest_wrap: Sampler,
-    nearest_wrap_mirror: Sampler,
-    linear_clamp: Sampler,
-    linear_wrap: Sampler,
-    linear_wrap_mirror: Sampler
+    nearest_clamp:          Sampler,
+    nearest_wrap:           Sampler,
+    nearest_wrap_mirror:    Sampler,
+    linear_clamp:           Sampler,
+    linear_wrap:            Sampler,
+    linear_wrap_mirror:     Sampler
 }
 
 impl Samplers {
     fn get(&self,sampler_mode: SamplerMode) -> &Sampler {
         match sampler_mode {
-            SamplerMode::NearestClamp => &self.nearest_clamp,
-            SamplerMode::NearestWrap => &self.nearest_wrap,
-            SamplerMode::NearestWrapMirror => &self.nearest_wrap_mirror,
-            SamplerMode::LinearClamp => &self.linear_clamp,
-            SamplerMode::LinearWrap => &self.linear_wrap,
-            SamplerMode::LinearWrapMirror => &self.linear_wrap_mirror,
+            SamplerMode::NearestClamp =>        &self.nearest_clamp,
+            SamplerMode::NearestWrap =>         &self.nearest_wrap,
+            SamplerMode::NearestWrapMirror =>   &self.nearest_wrap_mirror,
+            SamplerMode::LinearClamp =>         &self.linear_clamp,
+            SamplerMode::LinearWrap =>          &self.linear_wrap,
+            SamplerMode::LinearWrapMirror =>    &self.linear_wrap_mirror,
         }
     }
 }
@@ -73,13 +68,12 @@ impl Samplers {
 fn create_sampler(device: &Device,sampler_mode: SamplerMode) -> Sampler {
     let filter_set = FilterSet::from_sampler_mode(sampler_mode);
     device.create_sampler(&SamplerDescriptor {
-        address_mode_u: filter_set.address,
-        address_mode_v: filter_set.address,
-        address_mode_w: filter_set.address,
-        mag_filter: filter_set.filter,
-        min_filter: filter_set.filter,
-        // TODO: figure out if should be fixed to linear
-        mipmap_filter: filter_set.mipmap_filter,
+        address_mode_u:     filter_set.address,
+        address_mode_v:     filter_set.address,
+        address_mode_w:     filter_set.address,
+        mag_filter:         filter_set.filter,
+        min_filter:         filter_set.filter,
+        mipmap_filter:      filter_set.mipmap_filter, // TODO: figure out if should be fixed to linear
         ..Default::default()
     })
 }
@@ -87,27 +81,16 @@ fn create_sampler(device: &Device,sampler_mode: SamplerMode) -> Sampler {
 impl Samplers {
     pub fn create(device: &Device) -> Self {
         return Self {
-            nearest_clamp: create_sampler(device,
-                SamplerMode::NearestClamp
-            ),
-            nearest_wrap: create_sampler(device,
-                SamplerMode::NearestWrap
-            ),
-            nearest_wrap_mirror: create_sampler(device,
-                SamplerMode::NearestWrapMirror
-            ),
-            linear_clamp: create_sampler(device,
-                SamplerMode::LinearClamp
-            ),
-            linear_wrap: create_sampler(device,
-                SamplerMode::LinearWrap
-            ),
-            linear_wrap_mirror: create_sampler(device,
-                SamplerMode::LinearWrapMirror
-            ),
+            nearest_clamp:          create_sampler(device,  SamplerMode::NearestClamp),
+            nearest_wrap:           create_sampler(device,  SamplerMode::NearestWrap),
+            nearest_wrap_mirror:    create_sampler(device,  SamplerMode::NearestWrapMirror),
+            linear_clamp:           create_sampler(device,  SamplerMode::LinearClamp),
+            linear_wrap:            create_sampler(device,  SamplerMode::LinearWrap),
+            linear_wrap_mirror:     create_sampler(device,  SamplerMode::LinearWrapMirror),
         };
     }
 }
+
 struct Channel<'a> {
     texture: &'a TextureView,
     sampler: &'a Sampler
@@ -181,7 +164,7 @@ pub struct BindGroupCache {
 #[derive(Hash,PartialEq,Eq)]
 struct CacheKeyChannel {
     mode: SamplerMode,
-    id: TextureContainerIdentity
+    id: GPUTextureIdentity
 }
 
 #[derive(Hash,PartialEq,Eq)]
@@ -197,7 +180,7 @@ enum CacheKey {
 
 pub struct BindGroupChannelConfig<'tc> {
     pub mode: SamplerMode,
-    pub texture: &'tc TextureContainer
+    pub texture: &'tc GPUTexture
 }
 
 pub enum BindGroupCacheIdentity<'tc> {
@@ -219,8 +202,8 @@ impl PartialEq for BindGroupChannelConfig<'_> {
 impl From<&BindGroupCacheIdentity<'_>> for CacheKey {
     fn from(value: &BindGroupCacheIdentity<'_>) -> Self {
         return match value {
-            BindGroupCacheIdentity::SingleChannel { ch_0 } => Self::SingleChannel { ch_0: ch_0.into() },
-            BindGroupCacheIdentity::DualChannel { ch_0, ch_1 } => Self::DualChannel { ch_0: ch_0.into(), ch_1: ch_1.into() },
+            BindGroupCacheIdentity::SingleChannel { ch_0 } =>       Self::SingleChannel { ch_0: ch_0.into() },
+            BindGroupCacheIdentity::DualChannel   { ch_0, ch_1 } => Self::DualChannel   { ch_0: ch_0.into(), ch_1: ch_1.into() },
         };
     }
 }
@@ -298,7 +281,7 @@ impl BindGroupCache {
                 device,
                 &self.layout,
                 Channel {
-                    texture: ch_0.texture.get_texture_view(),
+                    texture: ch_0.texture.get_view(),
                     sampler: self.samplers.get(ch_0.mode),
                 }
             ),
@@ -306,11 +289,11 @@ impl BindGroupCache {
                 device,
                 &self.layout,
                 Channel {
-                    texture: ch_0.texture.get_texture_view(),
+                    texture: ch_0.texture.get_view(),
                     sampler: self.samplers.get(ch_0.mode),
                 },
                 Channel {
-                    texture: ch_1.texture.get_texture_view(),
+                    texture: ch_1.texture.get_view(),
                     sampler: self.samplers.get(ch_1.mode),
                 }
             ),

@@ -1,34 +1,39 @@
-use wgpu::*;
-use wgpu::util::{BufferInitDescriptor,DeviceExt};
-use std::borrow::Borrow;
-use std::ops::Range;
+use std::{ borrow::Borrow, ops::Range };
+
+use {wgpu::*, wgpu::util::{BufferInitDescriptor,DeviceExt}};
 use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColorLinear,WimpyRect, WimpyVec};
-use crate::app::graphics::*;
-use super::core::*;
+
+use super::{*, super::{*, textures::*}};
 
 pub struct Pipeline2D {
-    variants: PipelineVariants,
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
-    instance_buffer: DoubleBuffer<QuadInstance>,
+    variants:           PipelineVariants,
+    vertex_buffer:      Buffer,
+    index_buffer:       Buffer,
+    instance_buffer:    DoubleBuffer<QuadInstance>,
 }
 
-const VERTEX_BUFFER_INDEX: u32 = 0;
-const INSTANCE_BUFFER_INDEX: u32 = 1;
-const INDEX_BUFFER_SIZE: u32 = 6;
+pub struct DrawData2D {
+    pub destination:    WimpyRect,
+    pub source:         WimpyRect,
+    pub color:          WimpyColorLinear,
+    pub rotation:       f32
+}
+
+const VERTEX_BUFFER_INDEX:      u32 = 0;
+const INSTANCE_BUFFER_INDEX:    u32 = 1;
+const INDEX_BUFFER_SIZE:        u32 = 6;
 const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 impl Pipeline2D {
 
     pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        texture_layout: &BindGroupLayout,
-        uniform_layout: &BindGroupLayout,
+        graphics_provider:  &GraphicsProvider,
+        texture_layout:     &BindGroupLayout,
+        uniform_layout:     &BindGroupLayout,
     ) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let device = graphics_provider.get_device();
 
@@ -122,29 +127,11 @@ impl Pipeline2D {
 }
 
 pub struct Pipeline2DPass<'pass,'encoder> {
-    context: &'pass mut GraphicsContext,
-    render_pass: &'pass mut RenderPass<'encoder>,
-    needs_sampler_update: bool,
-    sampler_mode: SamplerMode,
-    current_sampling_frame: FrameCacheReference,
-}
-
-pub struct DrawData2D {
-    pub destination: WimpyRect,
-    pub source: WimpyRect,
-    pub color: WimpyColorLinear,
-    pub rotation: f32
-}
-
-impl Default for DrawData2D {
-    fn default() -> Self {
-        Self {
-            destination: WimpyRect::ONE,
-            source: WimpyRect::ONE,
-            color: WimpyColorLinear::WHITE,
-            rotation: 0.0
-        }
-    }
+    context:                &'pass mut GraphicsContext,
+    render_pass:            &'pass mut RenderPass<'encoder>,
+    needs_sampler_update:   bool,
+    sampler_mode:           SamplerMode,
+    current_sampling_frame: Option<GPUTextureKey>,
 }
 
 impl PipelineFlush for Pipeline2D {
@@ -180,52 +167,42 @@ impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline2DPass<'pass,'cont
             pipeline_2d.instance_buffer.get_output_buffer().slice(..)
         ); // Instance Buffer
 
-        let current_sampling_frame = context.engine_textures.transparent_black.get_ref();
-
         return Self {
             context,
             render_pass,
             needs_sampler_update: true,
             sampler_mode: SamplerMode::NearestWrap,
-            current_sampling_frame: current_sampling_frame
+            current_sampling_frame: None
         }
     }
 }
 
 impl Pipeline2DPass<'_,'_> {
-    fn update_sampler_if_needed(&mut self,reference: FrameCacheReference) -> Result<(),()> {
-        if !(self.needs_sampler_update || self.current_sampling_frame != reference) {
-            return Err(());
-        }
 
-        self.current_sampling_frame = reference;
-        self.needs_sampler_update = false;
-
-        return match self.context.frame_cache.get(reference) {
-            Ok(texture_container) => {
-                let bind_group = self.context.bind_group_cache.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
-                    ch_0: BindGroupChannelConfig {
-                        mode: self.sampler_mode,
-                        texture: texture_container,
-                    }
-                });
-                self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
-                Ok(())
-            },
-            Err(error) => {
-                log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
-                Err(())
-            }
-        };
-    }
-
-    fn draw_internal<I>(&mut self,frame_ref: FrameCacheReference,uv_scale: WimpyVec,draw_data: I)
+    pub fn draw<I,T>(&mut self,texture: &T,draw_data: I)
     where
         I: IntoIterator,
-        I::Item: Borrow<DrawData2D>
+        I::Item: Borrow<DrawData2D>,
+        T: CacheResolver,
     {
-        if let Err(()) = self.update_sampler_if_needed(frame_ref) {
-            return;
+        let texture = texture.get_cache_entry(&mut self.context.texture_manager);
+        let uv_scale = WimpyVec::from(texture.input_size) / WimpyVec::from(texture.value.size());
+
+        'update_bind_group: {
+            let key = Some(texture.key);
+            if !(self.needs_sampler_update || self.current_sampling_frame != key) {
+                break 'update_bind_group;
+            }
+            self.current_sampling_frame = key;
+            self.needs_sampler_update = false;
+
+            let bind_group = self.context.bind_group_cache.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
+                ch_0: BindGroupChannelConfig {
+                    mode: self.sampler_mode,
+                    texture: texture.value,
+                }
+            });
+            self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
         }
 
         let range = self.context.pipelines.pipeline_2d.instance_buffer.push_set(draw_data.into_iter().map(|item|{
@@ -250,21 +227,13 @@ impl Pipeline2DPass<'_,'_> {
         });
     }
 
-    pub fn draw<I>(&mut self,frame: &impl FrameReference,draw_data: I)
-    where
-        I: IntoIterator,
-        I::Item: Borrow<DrawData2D>
-    {
-        self.draw_internal(frame.get_ref(),frame.get_uv_scale(),draw_data);
-    }
-
     pub fn draw_untextured<I>(&mut self,draw_data: I)
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>
     {
-        let frame = &self.context.engine_textures.opaque_white;
-        self.draw_internal(frame.get_ref(),frame.get_uv_scale(),draw_data);
+        let key = self.context.engine_textures.opaque_white.key;
+        self.draw(&key,draw_data);
     }
 
     pub fn set_sampler_mode(&mut self,sampler_mode: SamplerMode) {

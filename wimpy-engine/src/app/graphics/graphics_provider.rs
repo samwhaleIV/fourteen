@@ -1,6 +1,6 @@
 use wgpu::*;
 use crate::UWimpyPoint;
-use super::constants::PREFER_SRGB_OUTPUT_SURFACE;
+use super::{SizeValidationError, constants};
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,
@@ -22,12 +22,6 @@ pub struct GraphicsProviderConfig {
 pub enum GraphicsProviderError {
     AdapterCreationError(RequestAdapterError),
     DeviceCreationError(RequestDeviceError),
-}
-
-#[derive(Debug)]
-pub enum TextureError {
-    ZeroSizeDimension,
-    TooBig(u32)
 }
 
 impl GraphicsProvider {
@@ -66,8 +60,10 @@ impl GraphicsProvider {
         let surface_capabilities = config.surface.get_capabilities(&adapter);
         log::info!("Available surface formats: {:?}",surface_capabilities.formats);
 
+        use constants::PREFER_SRGB_OUTPUT_SURFACE as prefer_srgb;
+
         let primary_format = surface_capabilities.formats.iter()
-            .find(|f| f.is_srgb() == PREFER_SRGB_OUTPUT_SURFACE)
+            .find(|f| f.is_srgb() == prefer_srgb)
             .copied()
             .unwrap_or(surface_capabilities.formats[0]);
 
@@ -76,7 +72,7 @@ impl GraphicsProvider {
         let mut view_formats = Vec::with_capacity(1);
 
         let desired_format: TextureFormat = {
-            if PREFER_SRGB_OUTPUT_SURFACE {
+            if prefer_srgb {
                 if primary_format.is_srgb() {
                     primary_format
                 } else {
@@ -108,7 +104,7 @@ impl GraphicsProvider {
 
         let max_texture_power_of_two = prev_power_of_two(max_texture_dimension);
 
-        return Ok(Self {
+        Ok(Self {
             surface: config.surface,
             device,
             queue,
@@ -116,13 +112,13 @@ impl GraphicsProvider {
             max_texture_dimension,
             max_texture_power_of_two,
             output_view_format: desired_format,
-        });
+        })
     }
 
     pub fn set_size(&mut self,width: u32,height: u32) {
         let old_width = self.config.width;
         let old_height = self.config.height;
-        
+     
         let new_width = self.get_safe_texture_dimension_value(width);
         let new_height = self.get_safe_texture_dimension_value(height);
 
@@ -137,22 +133,22 @@ impl GraphicsProvider {
     }
 
     pub fn get_size(&self) -> UWimpyPoint {
-       return [self.config.width,self.config.height].into();
+       [self.config.width,self.config.height].into()
     }
 
     pub fn get_device(&self) -> &Device {
-        return &self.device;
+        &self.device
     }
 
     pub fn get_queue(&self) -> &Queue {
-        return &self.queue;
+        &self.queue
     }
     
     /// Not the format of the surface itself, but rather, a view of it.
     /// 
     /// On most platforms, these will be the same. However, in WebGPU, concessions may take place.
     pub fn get_output_view_format(&self) -> TextureFormat {
-        return self.output_view_format;
+        self.output_view_format
     }
 
     pub fn get_output_surface(&self) -> Result<SurfaceTexture,SurfaceError> {
@@ -168,31 +164,41 @@ impl GraphicsProvider {
     }
 
     pub fn get_safe_texture_size(&self,value: UWimpyPoint) -> UWimpyPoint {
-        return [
+        [
             self.get_safe_texture_dimension_value(value.x),
             self.get_safe_texture_dimension_value(value.y)
-        ].into();
+        ].into()
     }
 
     pub fn max_texture_dimension_value(&self) -> u32 {
-        return self.max_texture_dimension;
+        self.max_texture_dimension
     }
 
     pub fn max_texture_power_of_two(&self) -> u32 {
-        return self.max_texture_power_of_two
+        self.max_texture_power_of_two
     }
 
-    pub fn validate_size(&self,size: UWimpyPoint) -> Result<(),TextureError> {
+    pub fn validate_size(&self,size: UWimpyPoint) -> Result<(),SizeValidationError> {
+        use SizeValidationError::*;
+        let upper_bound = self.max_texture_dimension;
         if size.x < 1 || size.y < 1 {
-            return Err(TextureError::ZeroSizeDimension);
+            Err(TooSmall {
+                value: 0,
+                limit: 1
+            })
+        } else if size.x > upper_bound {
+            Err(TooBig {
+                value: size.x,
+                limit: upper_bound
+            })
+        } else if size.y > upper_bound {
+            Err(TooBig {
+                value: size.y,
+                limit: upper_bound
+            })
+        } else {
+            Ok(())
         }
-        if size.x > self.max_texture_dimension {
-            return Err(TextureError::TooBig(size.x));
-        }
-        if size.y > self.max_texture_dimension {
-            return Err(TextureError::TooBig(size.y));
-        }
-        return Ok(());
     }
 }
 

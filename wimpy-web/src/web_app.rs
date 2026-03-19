@@ -79,7 +79,7 @@ where
 {
     pub async fn create_app<TConfig>(manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let canvas = get_canvas()?;
         let gamepad_manager = GamepadManager::new();
@@ -112,7 +112,7 @@ where
 
         let Some(mut wimpy_context) = WimpyContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
             manifest_path,
-            input_type_hint: InputType::Unknown,
+            input_device_hint: InputDevice::Unknown,
             graphics_provider,
         }).await else {
             return Err(WebAppError::WimpyContextCreationFailure);
@@ -149,7 +149,7 @@ where
 
     pub async fn run<TConfig>(manifest_path: Option<&Path>,resize_config: ResizeConfig) -> Result<(),WebAppError>
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let app = Self::create_app::<TConfig>(manifest_path).await?;
         app.borrow_mut().update_size();

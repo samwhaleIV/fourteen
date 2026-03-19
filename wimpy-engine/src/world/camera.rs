@@ -62,7 +62,7 @@ pub enum CameraPositionStrategy {
     }
 }
 
-pub struct CameraPerspectivePacket {
+pub struct FrustumDescription {
     /// Vertical field of view, in degrees
     /// 
     /// `90` degrees is a reasonable starting point
@@ -197,7 +197,7 @@ impl WimpyCamera {
         );
     }
 
-    pub fn get_matrix(&self,packet: CameraPerspectivePacket) -> Mat4 {
+    pub fn get_matrix(&self,packet: FrustumDescription,aspect_ratio: f32) -> Mat4 {
         let perspective_mat = Mat4::perspective_rh(
             packet.fov.to_radians(),
             packet.aspect_ratio,

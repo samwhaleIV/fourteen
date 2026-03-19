@@ -1,13 +1,13 @@
 use std::iter;
-use crate::{app::{graphics::*, *},*};
+use crate::{app::{graphics::*, wam::WimpyTexture, *},*};
 
 /// Test sRGB texture loading, presentation, internal color (named or 'WimpyColorSrgb') sRGB translation, and linear alpha compositing behavior
 /// 
-/// Shader expects linear texture data. OK to store in sRGB formats or linear, wgpu will convert
+/// Shader expects linear texture data
 /// 
 /// Linear alpha compositing is desired rather than the all-too-common but incorrect post-sRGB/gamma-on-gamma blend
 pub struct SrgbTest {
-    srgb_test_texture: WimpyTextureKey
+    srgb_test_texture: WimpyTexture
 }
 
 const STRIP_COUNT: usize = 8;
@@ -37,7 +37,7 @@ where
 {
     async fn load(context: &mut WimpyContext) -> Self {
         Self {
-            srgb_test_texture: context.get_image::<IO>("wimpy/srgb-test"),
+            srgb_test_texture: context.get_image("wimpy/srgb-test",TextureStreamingHint::Static),
         }
     }
 

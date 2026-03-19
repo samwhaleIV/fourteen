@@ -1,64 +1,49 @@
-use wgpu::*;
-use wgpu::util::{BufferInitDescriptor,DeviceExt};
-use std::marker::PhantomData;
-use std::ops::Range;
-use bytemuck::{Pod,Zeroable};
-use crate::{WimpyColor, WimpyNamedColor, WimpyRect, WimpyVec};
-use crate::app::graphics::*;
-use super::core::*;
-
 const VERTEX_BUFFER_INDEX: u32 = 0;
 const INSTANCE_BUFFER_INDEX: u32 = 1;
 const INDEX_BUFFER_SIZE: u32 = 6;
 const TEXTURE_BIND_GROUP_INDEX: u32 = 0;
 const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
+use wgpu::{*, util::{BufferInitDescriptor, DeviceExt}};
+use std::{marker::PhantomData, ops::Range};
+use bytemuck::{Pod, Zeroable};
+
+use super::{*, super::{*, textures::*}};
+use crate::app::fonts::FontDefinition;
+
 pub struct TextPipeline {
-    variants: PipelineVariants,
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
-    instance_buffer: DoubleBuffer<GlyphInstance>,
+    variants:           PipelineVariants,
+    vertex_buffer:      Buffer,
+    index_buffer:       Buffer,
+    instance_buffer:    DoubleBuffer<GlyphInstance>,
 }
 
-pub trait FontDefinition {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture;
-    fn get_glyph(character: char) -> GlyphArea;
-
-    const LINE_HEIGHT: f32;
-    const LETTER_SPACING: f32;
-    const WORD_SPACING: f32;
-
-    fn get_word_spacing(scale: f32) -> f32 {
-        (Self::WORD_SPACING * scale).round().max(1.0)
-    }
-
-    fn get_letter_spacing(scale: f32) -> f32 {
-        (Self::LETTER_SPACING * scale).round().max(1.0)
-    }
-
-    fn get_line_height(scale: f32) -> f32 {
-        (Self::LINE_HEIGHT * scale).round().max(Self::LINE_HEIGHT + 1.0)
-    }
+pub struct TextLine<'a> {
+    pub text: &'a str,
+    pub color: WimpyNamedColor
 }
 
-#[derive(Default)]
-pub struct GlyphArea {
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub y_offset: i16
+#[derive(Clone,Copy)]
+pub enum TextDirection {
+    LeftToRight,
+    RightToLeft
+}
+
+pub struct TextRenderConfig {
+    pub scale: f32,
+    pub line_height_scale: f32,
+    pub word_seperator: char,
 }
 
 impl TextPipeline {
 
     pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        texture_layout: &BindGroupLayout,
-        uniform_layout: &BindGroupLayout,
+        graphics_provider:  &GraphicsProvider,
+        texture_layout:     &BindGroupLayout,
+        uniform_layout:     &BindGroupLayout,
     ) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let device = graphics_provider.get_device();
 
@@ -148,30 +133,11 @@ pub struct PipelineTextPass<'pass,'encoder,TFont> {
     _phantom: PhantomData<TFont>
 }
 
-pub struct TextLine<'a> {
-    pub text: &'a str,
-    pub color: WimpyNamedColor
-}
-
-#[derive(Clone,Copy)]
-pub enum TextDirection {
-    LeftToRight,
-    RightToLeft
-}
-
-impl TextDirection {
-    fn is_ltr(self) -> bool {
-        match self {
-            TextDirection::LeftToRight => true,
-            TextDirection::RightToLeft => false,
-        }
+fn is_ltr(direction: TextDirection) -> bool {
+    match direction {
+        TextDirection::LeftToRight => true,
+        TextDirection::RightToLeft => false,
     }
-}
-
-pub struct TextRenderConfig {
-    pub scale: f32,
-    pub line_height_scale: f32,
-    pub word_seperator: char,
 }
 
 fn validate_scale(scale: f32) -> f32 {
@@ -212,7 +178,7 @@ where
             context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
-        let target_texture = TFont::get_texture(&context.engine_textures);
+        let target_texture = TFont::get_texture(&context.texture_manager);
         let target_texture_ref = target_texture.get_ref();
 
         let mut texture_valid = false;

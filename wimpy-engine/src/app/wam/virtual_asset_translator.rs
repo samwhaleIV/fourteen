@@ -1,5 +1,6 @@
-use crate::UWimpyPoint;
-use super::prelude::*;
+use std::{rc::Rc, collections::HashMap};
+
+use super::{HardAsset, HardAssetType, HardAssetKey, wam_manifest::WamManifest, json_input, reference_types, wam_manifest::WamManifestError};
 
 pub struct VirtualAssetTranslator<'a> {
     pub namespaces_ids: HashMap::<u32,HardAssetKey>,
@@ -8,7 +9,7 @@ pub struct VirtualAssetTranslator<'a> {
 }
 
 impl VirtualAssetTranslator<'_> {
-    pub fn parse_hard_assets(&mut self,hard_assets: Vec<HardAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_hard_assets(&mut self,hard_assets: Vec<json_input::HardAsset>) -> Result<(),WamManifestError> {
         for hard_asset_input in hard_assets.into_iter() {
             let id = hard_asset_input.id;
 
@@ -22,12 +23,12 @@ impl VirtualAssetTranslator<'_> {
         return Ok(());
     }
 
-    pub fn parse_size_hints(&mut self,size_hints: Vec<SizeHintInput>) -> Result<(),WamManifestError> {
+    pub fn parse_size_hints(&mut self,size_hints: Vec<json_input::SizeHint>) -> Result<(),WamManifestError> {
         for size_hint in size_hints.into_iter() {
             let Some(key) = self.namespaces_ids.get(&size_hint.id) else {
                 return Err(WamManifestError::ImageSizeHintMissingOwner { id: size_hint.id });
             };
-            self.manifest.size_hints.insert(*key,UWimpyPoint {
+            self.manifest.size_hints.insert(*key,crate::UWimpyPoint {
                 x: size_hint.x,
                 y: size_hint.y,
             });
@@ -35,32 +36,32 @@ impl VirtualAssetTranslator<'_> {
         return Ok(());
     }
 
-    pub fn parse_generic_assets(&mut self,assets: Vec<VirtualAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_generic_assets(&mut self,assets: Vec<json_input::VirtualAsset>) -> Result<(),WamManifestError> {
         for asset in assets.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(asset.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&asset.id) else {
-                return Err(WamManifestError::MissingAsset(AssetInfo {
+                return Err(WamManifestError::MissingAsset {
                     name: rc_name,
                     id: asset.id
-                }));
+                });
             };
 
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             match hard_asset.data_type {
                 HardAssetType::Text => {
-                    self.manifest.text_assets.insert(rc_name.clone(),TextAssetReference {
+                    self.manifest.text_assets.insert(rc_name.clone(),reference_types::Text {
                         name: rc_name,
                         key: *key
                     });
                 },
                 HardAssetType::Image => {
-                    self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+                    self.manifest.image_assets.insert(rc_name.clone(),reference_types::Image {
                         size_hint: match self.manifest.size_hints.get(*key) {
                             Some(value) => *value,
-                            None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                            None => return Err(WamManifestError::ImageMissingSizeHint {
                                 id: asset.id,
                                 name: rc_name
-                            })),
+                            }),
                         },
                         name: rc_name,
                         key: *key,
@@ -68,42 +69,42 @@ impl VirtualAssetTranslator<'_> {
                     });
                 },
                 HardAssetType::Model => {
-                    return Err(WamManifestError::UnexpectedType(UnexpectedTypeInfo {
+                    return Err(WamManifestError::UnexpectedType {
                         name: rc_name,
                         id: asset.id,
                         found_type: hard_asset.data_type
-                    }));
+                    });
                 }
             };
         }
         return Ok(())
     }
 
-    pub fn parse_slice_images(&mut self,images: Vec<VirtualImageAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_slice_images(&mut self,images: Vec<json_input::VirtualImageAsset>) -> Result<(),WamManifestError> {
         for image in images.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(image.name,self.namespace_name);
             let Some(key) = self.namespaces_ids.get(&image.id) else {
-                return Err(WamManifestError::MissingAsset(AssetInfo {
+                return Err(WamManifestError::MissingAsset {
                     name: rc_name,
                     id: image.id
-                }));
+                });
             };
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             if hard_asset.data_type != HardAssetType::Image {
-                return Err(WamManifestError::AssetTypeMismatch(TypeMismatchInfo {
+                return Err(WamManifestError::AssetTypeMismatch {
                     name: rc_name,
                     id: image.id,
                     expected_type: HardAssetType::Image,
                     found_type: hard_asset.data_type
-                }));
+                });
             }
-            self.manifest.image_assets.insert(rc_name.clone(),ImageAssetReference {
+            self.manifest.image_assets.insert(rc_name.clone(),reference_types::Image {
                 size_hint: match self.manifest.size_hints.get(*key) {
                     Some(value) => *value,
-                    None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                    None => return Err(WamManifestError::ImageMissingSizeHint {
                         id: image.id,
                         name: rc_name
-                    })),
+                    }),
                 },
                 name: rc_name,
                 key: *key,
@@ -113,31 +114,33 @@ impl VirtualAssetTranslator<'_> {
         return Ok(());
     }
 
-    pub fn parse_models(&mut self,models: Vec<VirtualModelAssetInput>) -> Result<(),WamManifestError> {
+    pub fn parse_models(&mut self,models: Vec<json_input::VirtualModelAsset>) -> Result<(),WamManifestError> {
+        use reference_types::{MeshletTextureLayers, MeshletField, MeshletTexture, Model};
+
         for model in models.into_iter() {
             let rc_name = self.manifest.get_virtual_asset_name(model.name,self.namespace_name);
 
             let Some(key) = self.namespaces_ids.get(&model.id) else {
-                return Err(WamManifestError::MissingAsset(AssetInfo {
+                return Err(WamManifestError::MissingAsset {
                     name: rc_name,
                     id: model.id
-                }));
+                });
             };
 
             let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
             if hard_asset.data_type != HardAssetType::Model {
-                return Err(WamManifestError::AssetTypeMismatch(TypeMismatchInfo {
+                return Err(WamManifestError::AssetTypeMismatch {
                     name: rc_name,
                     id: model.id,
                     expected_type: HardAssetType::Model,
                     found_type: hard_asset.data_type
-                }));
+                });
             }
 
-            let mut meshlets: Vec<MeshletDescriptor> = Vec::with_capacity(model.meshlets.len());
+            let mut meshlets: Vec<MeshletTextureLayers> = Vec::with_capacity(model.meshlets.len());
 
             for meshlet in &model.meshlets {
-                let mut ref_meshlet = MeshletDescriptor {
+                let mut ref_meshlet = MeshletTextureLayers {
                     diffuse: None,
                     lightmap: None,
                 };
@@ -150,27 +153,27 @@ impl VirtualAssetTranslator<'_> {
                         continue;
                     };
                     let Some(key) = self.namespaces_ids.get(&id) else {
-                        return Err(WamManifestError::MissingAsset(AssetInfo {
+                        return Err(WamManifestError::MissingAsset {
                             name: rc_name,
                             id
-                        }));
+                        });
                     };
                     let hard_asset = self.manifest.hard_assets.get(*key).unwrap();
                     if hard_asset.data_type != HardAssetType::Image {
-                        return Err(WamManifestError::MismatchedMeshletField(MismatchedMeshletFieldInfo {
+                        return Err(WamManifestError::MismatchedMeshletField {
                             name: rc_name,
                             field,
                             expected_type: HardAssetType::Image,
                             found_type: hard_asset.data_type
-                        }));
+                        });
                     }
-                    let descriptor = Some(MeshletDescriptorTexture {
+                    let descriptor = Some(MeshletTexture {
                         size_hint: match self.manifest.size_hints.get(*key) {
                             Some(value) => *value,
-                            None => return Err(WamManifestError::ImageMissingSizeHint(AssetInfo {
+                            None => return Err(WamManifestError::ImageMissingSizeHint {
                                 id,
                                 name: rc_name
-                            })),
+                            }),
                         },
                         key: *key,
                     });
@@ -182,10 +185,10 @@ impl VirtualAssetTranslator<'_> {
                 meshlets.push(ref_meshlet);
             }
 
-            self.manifest.model_assets.insert(rc_name.clone(),ModelAssetReference {
+            self.manifest.model_assets.insert(rc_name.clone(),Model {
                 name: rc_name,
                 key: *key,
-                meshlet_descriptors: meshlets
+                meshlet_layers: meshlets
             });
         }
 

@@ -1,23 +1,31 @@
+pub const ATLAS_SLOT_LENGTH_DIFFUSE:        u32 = 16;
+pub const ATLAS_SLOT_SIZE_DIFFUSE:          u32 = 256;
+pub const ATLAS_SLOT_LENGTH_LIGHTMAP:       u32 = 16;
+pub const ATLAS_SLOT_SIZE_LIGHTMAP:         u32 = 256;
+pub const INSTANCE_BUFFER_BUCKET_START_SIZE:    usize = 32;
+pub const INSTANCE_BUFFER_BUCKET_COUNT:     u32 = 8;
+// The smallest instance bucket size contains all values up to this power of 2
+pub const SMALLEST_BUCKET_LIMIT_POW_OF_2:   u32 = 4;
+
 use glam::Mat4;
 use wgpu::*;
 use std::num::NonZero;
 use bytemuck::{Pod,Zeroable};
-use crate::app::graphics::*;
-use super::core::*;
-use constants::pipeline_3d::*;
+
+use super::{*, super::{*, textures::*}};
 
 pub struct Pipeline3D {
-    diffuse_atlas: VirtualTextureAtlas,
-    lightmap_atlas: VirtualTextureAtlas,
-    variants: PipelineVariants,
-    storage_bind_group: BindGroup,
-    external_instance_buffer: Buffer,
-    instance_buckets: InstanceBucketSet
+    diffuse_atlas:              VirtualTextureAtlasKey,
+    lightmap_atlas:             VirtualTextureAtlasKey,
+    variants:                   PipelineVariants,
+    storage_bind_group:         BindGroup,
+    external_instance_buffer:   Buffer,
+    instance_buckets:           InstanceBucketSet
 }
 
 struct InstanceBucket {
     largest: u32,
-    buffer: Vec<MeshInstance>
+    buffer:  Vec<MeshInstance>
 }
 
 impl Default for InstanceBucket {
@@ -87,14 +95,14 @@ const STORAGE_BG_INSTANCES: u32 = 2;
 impl Pipeline3D {
 
     pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        texture_layout: &BindGroupLayout,
-        uniform_layout: &BindGroupLayout,
-        texture_id_generator: &mut TextureIdentityGenerator,
-        mesh_cache: &MeshCache
+        graphics_provider:  &GraphicsProvider,
+        texture_manager:    &mut TextureManager,
+        texture_layout:     &BindGroupLayout,
+        uniform_layout:     &BindGroupLayout,
+        mesh_cache:         &MeshCache
     ) -> Self
     where
-        TConfig: GraphicsContextConfig
+        TConfig: GraphicsConfig
     {
         let device = graphics_provider.get_device();
 
@@ -166,23 +174,15 @@ impl Pipeline3D {
             mapped_at_creation: false,
         });
 
-        let diffuse_atlas = VirtualTextureAtlas::create(
-            graphics_provider,
-            texture_id_generator.next(),
-            &VirtualTextureAtlasConfig {
-                slot_size: ATLAS_SLOT_SIZE_DIFFUSE,
-                slot_length: ATLAS_SLOT_LENGTH_DIFFUSE,
-            }
-        );
+        let diffuse_atlas = texture_manager.create_atlas(&VirtualTextureAtlasConfig {
+            slot_size:   ATLAS_SLOT_SIZE_DIFFUSE,
+            slot_length: ATLAS_SLOT_LENGTH_DIFFUSE,
+        });
 
-        let lightmap_atlas = VirtualTextureAtlas::create(
-            graphics_provider,
-            texture_id_generator.next(),
-            &VirtualTextureAtlasConfig {
-                slot_size: ATLAS_SLOT_SIZE_LIGHTMAP,
-                slot_length: ATLAS_SLOT_LENGTH_LIGHTMAP,
-            }
-        );
+        let lightmap_atlas = texture_manager.create_atlas(&VirtualTextureAtlasConfig {
+            slot_size:   ATLAS_SLOT_SIZE_LIGHTMAP,
+            slot_length: ATLAS_SLOT_LENGTH_LIGHTMAP,
+        });
 
         let storage_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Pipeline 3D Storage Bind Group"),
@@ -311,7 +311,7 @@ impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline3DPass<'pass,'cont
 
 pub struct DrawData3D {
     pub transform: Mat4,
-    pub mesh: TexturedMeshReference
+    pub mesh: TexturedMesh
 }
 
 #[derive(Copy,Clone)]

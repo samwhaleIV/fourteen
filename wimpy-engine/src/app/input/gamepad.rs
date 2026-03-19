@@ -1,18 +1,12 @@
-use super::prelude::*;
-use bitflags::bitflags;
+use super::*;
 
 #[derive(Default)]
 pub struct GamepadCache {
-    input: GamepadInput,
+    input:  Input,
     output: GamepadOutput
 }
 
-const JOYSTICK_IMPULSE_THRESHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
-const TRIGGER_IS_PRESSED_THREHOLD: f32 = 0.5; //TODO: have an ascending and descending value in case the change isn't monotonic
-
-pub const AXIS_DEADZONE: f32 = 0.15;
-
-bitflags! {
+bitflags::bitflags! {
     #[derive(Debug,PartialEq,Eq,Copy,Clone)]
     pub struct GamepadButtons: u16 {
         const DPAD_UP = 1 << 0;
@@ -100,16 +94,16 @@ pub struct InterpetiveTrigger {
 
 impl InterpetiveTrigger {
     fn create(value: f32) -> Self {
-        return Self {
+        Self {
             value,
-            is_pressed: value >= TRIGGER_IS_PRESSED_THREHOLD
+            is_pressed: value >= super::constants::TRIGGER_IS_PRESSED_THREHOLD
         }
     }
     pub fn is_pressed(&self) -> bool {
-        return self.is_pressed;
+        self.is_pressed
     }
     pub fn value(&self) -> f32 {
-        return self.value;
+        self.value
     }
 }
 
@@ -153,7 +147,7 @@ impl GamepadJoystick {
 }
 
 #[derive(Debug,Default,PartialEq)]
-pub struct GamepadInput {
+pub struct Input {
     pub buttons: GamepadButtons,
 
     pub left_stick: GamepadJoystick,
@@ -163,7 +157,7 @@ pub struct GamepadInput {
     pub right_trigger: f32,
 }
 
-impl GamepadInput {
+impl Input {
     fn get_left_interpretive_axes(&self) -> InterpretiveAxes {
         let axes = self.get_dpad_interpretive_axes();
 
@@ -192,7 +186,7 @@ impl GamepadInput {
 
     fn get_impulse_set(&self,axes: &InterpretiveAxes) -> ImpulseSet {
 
-        let threshold = JOYSTICK_IMPULSE_THRESHOLD;
+        let threshold = super::constants::JOYSTICK_IMPULSE_THRESHOLD;
 
         ImpulseSet::new(ImpulseSetDescription {
             up:    axes.infer_impulse(Direction::Up,threshold),
@@ -215,13 +209,12 @@ impl GamepadInput {
     }
 
     fn get_output(&self) -> GamepadOutput {
-        let left_interpretive_axes = self.get_left_interpretive_axes();
+        let left_interpretive_axes =  self.get_left_interpretive_axes();
         let right_interpretive_axes = self.get_right_interpretive_axes();
 
         let impulse_set = self.get_impulse_set(&left_interpretive_axes);
 
-        let left_trigger = InterpetiveTrigger::create(self.left_trigger);
-        let right_trigger = InterpetiveTrigger::create(self.right_trigger);
+        let [left_trigger,right_trigger] = [self.left_trigger,self.right_trigger].map(InterpetiveTrigger::create);
 
         return GamepadOutput {
             left_interpretive_axes,
@@ -234,35 +227,35 @@ impl GamepadInput {
 }
 
 impl GamepadCache {
-    pub fn update(&mut self,gamepad_input: GamepadInput) -> UserActivity {
+    pub fn update(&mut self,gamepad_input: Input) -> UserActivity {
         let user_activity = match &self.input.buttons != &gamepad_input.buttons {
-            true => UserActivity::Some,
+            true =>  UserActivity::Some,
             false => UserActivity::None,
         };
 
         self.input = gamepad_input;
         self.output = self.input.get_output();
 
-        return user_activity;
+        user_activity
     }
 
     pub fn left_axes(&self) -> InterpretiveAxes {
-        return self.output.left_interpretive_axes;
+        self.output.left_interpretive_axes
     }
 
     pub fn right_axes(&self) -> InterpretiveAxes {
-        return self.output.right_interpretive_axes;
+        self.output.right_interpretive_axes
     }
 
     pub fn impulse_set(&self) -> &ImpulseSet {
-        return &self.output.impulse_set;
+        &self.output.impulse_set
     }
 
     pub fn left_trigger(&self) -> InterpetiveTrigger {
-        return self.output.left_trigger;
+        self.output.left_trigger
     }
 
     pub fn right_trigger(&self) -> InterpetiveTrigger {
-        return self.output.right_trigger;
+        self.output.right_trigger
     }
 }

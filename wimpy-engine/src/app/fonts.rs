@@ -1,20 +1,40 @@
-use crate::app::{graphics::WimpyTextureKey, wam::WimpyTexture};
+use super::graphics::textures::{TextureManager, WimpyTextureKey};
 
-use super::{
-    EngineTextures,
-    TextureFrame,
-    pipelines::text_pipeline::{
-        FontDefinition,
-        GlyphArea
-    }
-};
+#[derive(Default)]
+pub struct GlyphArea {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub y_offset: i16
+}
 
 pub struct FontClassic;
 pub struct FontClassicOutlined;
 pub struct FontTwelven;
 pub struct FontTwelvenShaded;
-
 pub struct FontMonoElf;
+
+pub trait FontDefinition {
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey;
+    fn get_glyph(character: char) -> GlyphArea;
+
+    const LINE_HEIGHT: f32;
+    const LETTER_SPACING: f32;
+    const WORD_SPACING: f32;
+
+    fn get_word_spacing(scale: f32) -> f32 {
+        (Self::WORD_SPACING * scale).round().max(1.0)
+    }
+
+    fn get_letter_spacing(scale: f32) -> f32 {
+        (Self::LETTER_SPACING * scale).round().max(1.0)
+    }
+
+    fn get_line_height(scale: f32) -> f32 {
+        (Self::LINE_HEIGHT * scale).round().max(Self::LINE_HEIGHT + 1.0)
+    }
+}
 
 macro_rules! area {
     ($x:expr, $y:expr, $w:expr, $h:expr, $yo:expr) => {
@@ -29,10 +49,13 @@ macro_rules! area {
 }
 
 impl FontDefinition for FontClassic {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
-        textures.font_classic
-    }
+    const LINE_HEIGHT: f32 = 10.0;
+    const LETTER_SPACING: f32 = 0.75;
+    const WORD_SPACING: f32 = 2.0;
 
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey {
+        todo!();
+    }
     fn get_glyph(character: char) -> GlyphArea {
         match character {
             '!' =>          area!(68,38,4,10,0),
@@ -96,18 +119,18 @@ impl FontDefinition for FontClassic {
             _ => Default::default()
         }
     }
-
-    const LINE_HEIGHT: f32 = 10.0;
-    const LETTER_SPACING: f32 = 0.75;
-    const WORD_SPACING: f32 = 2.0;
 }
 
 impl FontDefinition for FontClassicOutlined {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
-        textures.font_classic_outline
+    const LINE_HEIGHT: f32 = 22.0;
+    const LETTER_SPACING: f32 = 1.0;
+    const WORD_SPACING: f32 = 6.0;
+
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey {
+        todo!();
     }
     fn get_glyph(character: char) -> GlyphArea {
-        return match character {
+        match character {
             '!' =>          area!(135,75,10,22,0),
             '"' =>          area!(199,49,12,26,-1),
             '%' =>          area!(75,75,18,22,0),
@@ -168,13 +191,10 @@ impl FontDefinition for FontClassicOutlined {
             _ => Default::default()
         }
     }
-    const LINE_HEIGHT: f32 = 22.0;
-    const LETTER_SPACING: f32 = 1.0;
-    const WORD_SPACING: f32 = 6.0;
 }
 
 fn get_twelven_glyph_area(character: char) -> GlyphArea {
-    return match character {
+    match character {
         '!' =>      area!(405,38,6,34,0),
         '"' =>      area!(649,38,9,8,0),
         '%' =>      area!(604,45,12,20,7),
@@ -264,36 +284,41 @@ fn get_twelven_glyph_area(character: char) -> GlyphArea {
 }
 
 impl FontDefinition for FontTwelven {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
-        textures.font_twelven
+    const LINE_HEIGHT: f32 = 34.0;
+    const LETTER_SPACING: f32 = 1.0;
+    const WORD_SPACING: f32 = 8.0;
+
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey {
+        todo!();
     }
     fn get_glyph(character: char) -> GlyphArea {
         get_twelven_glyph_area(character)
     }
-    const LINE_HEIGHT: f32 = 34.0;
-    const LETTER_SPACING: f32 = 1.0;
-    const WORD_SPACING: f32 = 8.0;
 }
 
 impl FontDefinition for FontTwelvenShaded {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
-        textures.font_twelven_shaded
+    const LINE_HEIGHT: f32 = 34.0;
+    const LETTER_SPACING: f32 = 1.0;
+    const WORD_SPACING: f32 = 8.0;
+
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey {
+        todo!();
     }
     fn get_glyph(character: char) -> GlyphArea {
         get_twelven_glyph_area(character)
     }
-    const LINE_HEIGHT: f32 = 34.0;
-    const LETTER_SPACING: f32 = 1.0;
-    const WORD_SPACING: f32 = 8.0;
 }
 
 impl FontDefinition for FontMonoElf {
-    fn get_texture(textures: &EngineTextures) -> WimpyTexture {
-        textures.font_mono_elf
-    }
+    const LINE_HEIGHT: f32 = 11.0;
+    const LETTER_SPACING: f32 = 1.0;
+    const WORD_SPACING: f32 = 4.0;
 
+    fn get_texture(texture_manager: &mut TextureManager) -> WimpyTextureKey {
+        todo!();
+    }
     fn get_glyph(character: char) -> GlyphArea {
-        return match character {
+        match character {
             '0' =>          area!(1,37,5,11,0),
             '1' =>          area!(7,37,5,11,0),
             '2' =>          area!(13,37,5,11,0),
@@ -354,8 +379,4 @@ impl FontDefinition for FontMonoElf {
             _ => Default::default()
         }
     }
-
-    const LINE_HEIGHT: f32 = 11.0;
-    const LETTER_SPACING: f32 = 1.0;
-    const WORD_SPACING: f32 = 4.0;
 }

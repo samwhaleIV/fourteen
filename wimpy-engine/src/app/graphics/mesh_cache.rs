@@ -1,26 +1,19 @@
-use crate::app::graphics::WimpyTextureKey;
+const TEXTURED_MESH_REFERENCE_START_CAPACITY: usize = 8;
 
-use super::pipelines::pipeline_3d::MeshVertex;
 use std::{marker::PhantomData, num::NonZero};
 use bytemuck::{Pod,Zeroable};
 use slotmap::SlotMap;
 use wgpu::*;
 
-use gltf::{
-    Document,
-    Mesh,
-    Primitive,
-    buffer::Data,
-};
-
-const TEXTURED_MESH_REFERENCE_START_CAPACITY: usize = 8;
+use super::{textures::WimpyTextureKey, pipelines::MeshVertex};
+use gltf::{Document, Mesh, Primitive, buffer::Data};
 
 slotmap::new_key_type! {
-    pub struct TexturedMeshReference;
+    pub struct TexturedMesh;
 }
 
 pub struct MeshCache {
-    mesh_references: SlotMap<TexturedMeshReference,Vec<TexturedMeshlet>>,
+    mesh_descriptions: SlotMap<TexturedMesh,Vec<TexturedMeshlet>>,
     vertices: TypedBuffer<MeshVertex>,
     indices: TypedBuffer<u32>
 }
@@ -224,7 +217,7 @@ impl MeshCache {
         }));
 
         return Self {
-            mesh_references: SlotMap::with_capacity_and_key(TEXTURED_MESH_REFERENCE_START_CAPACITY),
+            mesh_descriptions: SlotMap::with_capacity_and_key(TEXTURED_MESH_REFERENCE_START_CAPACITY),
             indices,
             vertices,
         }
@@ -286,12 +279,12 @@ impl MeshCache {
         self.create_entry(queue,gltf_data)
     }
 
-    pub fn create_textured_mesh_reference(&mut self,mesh: Vec<TexturedMeshlet>) -> TexturedMeshReference {
-        self.mesh_references.insert(mesh)
+    pub fn create_textured_mesh_reference(&mut self,mesh: Vec<TexturedMeshlet>) -> TexturedMesh {
+        self.mesh_descriptions.insert(mesh)
     }
 
-    pub fn get_textured_mesh_ref<'a>(&'a self,reference: TexturedMeshReference) -> &'a [TexturedMeshlet] {
-        match self.mesh_references.get(reference) {
+    pub fn get_textured_mesh_ref<'a>(&'a self,reference: TexturedMesh) -> &'a [TexturedMeshlet] {
+        match self.mesh_descriptions.get(reference) {
             Some(value) => value,
             None => &[],
         }
