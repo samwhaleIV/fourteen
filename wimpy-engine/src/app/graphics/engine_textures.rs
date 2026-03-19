@@ -1,6 +1,6 @@
 use crate::UWimpyPoint;
 
-use super::{WimpyTexture, GPUTextureIdentityGenerator, GPUTexture, TextureManager};
+use super::textures::*;
 use crate::app::graphics::GraphicsProvider;
 
 const OPAQUE_BLACK: &[u8;4] =       &[0,0,0,255];
@@ -24,43 +24,27 @@ pub struct EngineTextures {
 
 struct TextureFrameBuilder<'a> {
     graphics_provider:  &'a GraphicsProvider,
-    texture_cache:      &'a mut TextureManager,
-    id_generator:       &'a mut GPUTextureIdentityGenerator
+    texture_manager:    &'a mut TextureManager,
 }
 
 impl TextureFrameBuilder<'_> {
     fn create(&mut self,size: UWimpyPoint,data: &[u8]) -> WimpyTexture {
-        let texture_container = GPUTexture::from_image_unchecked(
-            self.graphics_provider,
-            self.id_generator.next(),
-            size,
-            data
-        );
-        self.texture_cache.create_static_gpu_texture(texture_container)
+        todo!()
     }
     fn create_pixel(&mut self,data: &[u8;4]) -> WimpyTexture {
-        let size = UWimpyPoint::ONE;
-        let texture_container = GPUTexture::from_image_unchecked(
-            self.graphics_provider,
-            self.id_generator.next(),
-            size,
-            data
-        );
-        self.texture_cache.create_static_gpu_texture(texture_container)
+        todo!()
     }
 }
 
 impl EngineTextures {
     pub fn create(
         graphics_provider: &GraphicsProvider,
-        id_generator: &mut GPUTextureIdentityGenerator,
-        texture_cache: &mut TextureManager,
+        texture_manager: &mut TextureManager,
     ) -> Self {
 
         let mut builder = TextureFrameBuilder {
             graphics_provider,
-            id_generator,
-            texture_cache,
+            texture_manager
         };
 
         let missing_texture = builder.create(

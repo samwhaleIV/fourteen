@@ -195,7 +195,7 @@ struct TextureKeyCreator<'a,'context> {
 
 impl TextureKeyCreator<'_,'_> {
     fn get_missing(&self) -> WimpyTexture {
-        self.context.graphics.texture_manager.engine_textures.missing.clone()
+        self.context.graphics.engine_textures.missing.clone()
     }
 
     fn create_texture(

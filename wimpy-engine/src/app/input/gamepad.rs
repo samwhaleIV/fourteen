@@ -188,7 +188,7 @@ impl Input {
 
         let threshold = super::constants::JOYSTICK_IMPULSE_THRESHOLD;
 
-        ImpulseSet::new(ImpulseSetDescription {
+        ImpulseSet::from(ImpulseSetDescription {
             up:    axes.infer_impulse(Direction::Up,threshold),
             down:  axes.infer_impulse(Direction::Down,threshold),
             left:  axes.infer_impulse(Direction::Left,threshold),

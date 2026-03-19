@@ -1,5 +1,8 @@
 mod constants;
 
+mod engine_textures;
+use engine_textures::EngineTextures;
+
 pub mod textures;
 
 mod mesh_cache;

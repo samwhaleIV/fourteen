@@ -22,6 +22,7 @@ pub struct GraphicsContext {
     pub graphics_provider:  GraphicsProvider,
     pub pipelines:          RenderPipelines,
     pub texture_manager:    TextureManager,
+    pub engine_textures:    EngineTextures,
     pub mesh_cache:         MeshCache,
     ///A depth stencil exclusively for the output surface
     /// 
@@ -70,6 +71,8 @@ impl GraphicsContext {
     {
         let mut texture_manager = TextureManager::new(&graphics_provider,streaming_policy);
 
+        let engine_textures = EngineTextures::create(&graphics_provider,&mut texture_manager);
+
         let mut mesh_cache = MeshCache::create(
             graphics_provider.get_device(),
             TConfig::MESH_CACHE_VERTEX_BUFFER_SIZE,
@@ -86,6 +89,7 @@ impl GraphicsContext {
             graphics_provider,
             pipelines,
             texture_manager,
+            engine_textures,
             mesh_cache,
             output_depth_stencil: None,
             depth_stencil: None,

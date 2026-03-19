@@ -1,5 +1,6 @@
 const TEXTURE_CACHE_SLOTMAP_DEFAULT_SIZE: usize =       32;
 const UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE: usize =    16;
+const ATLAS_START_QUANTITY: usize =                     2;
 
 use slotmap::SlotMap;
 
@@ -61,7 +62,6 @@ pub struct TextureCreationParameters {
 
 pub struct TextureManager {
     pub gpu_cache:              GPUTextureCache,
-    pub engine_textures:        EngineTextures, // TODO: optimize for new texture pipeline
     pub bind_groups:            BindGroupCache,
     id_generator:               GPUTextureIdentityGenerator,
     states:                     SlotMap<WimpyTextureKey,State>,
@@ -89,19 +89,14 @@ struct State {
 
 impl TextureManager {
     pub fn new(graphics_provider: &GraphicsProvider,streaming_policy: StreamingPolicy) -> Self {
-        let mut id_generator = GPUTextureIdentityGenerator::default();
-
-        let engine_textures = EngineTextures::create(graphics_provider, &mut id_generator, texture_cache);
-
         Self {
             gpu_cache:              GPUTextureCache::new(),
             states:                 SlotMap::with_capacity_and_key(TEXTURE_CACHE_SLOTMAP_DEFAULT_SIZE),
             update_queue:           Vec::with_capacity(UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE),
+            id_generator:           Default::default(),
+            bind_groups:            BindGroupCache::create(graphics_provider),
+            atlases:                SlotMap::with_capacity_and_key(ATLAS_START_QUANTITY),
             streaming_policy,
-            engine_textures:        todo!(),
-            id_generator,
-            bind_groups:            todo!(),
-            atlases:                todo!(),
         }
     }
 
