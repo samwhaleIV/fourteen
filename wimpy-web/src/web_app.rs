@@ -36,7 +36,7 @@ pub struct WebApp<TWimpyApp> {
     gamepad_manager: GamepadManager,
     size: UWimpyPoint,
     wimpy_app: TWimpyApp,
-    wimpy_context: WimpyContext,
+    wimpy_context: WimpyApp,
 }
 
 #[allow(unused)]
@@ -110,7 +110,7 @@ where
             },
         }?;
 
-        let Some(mut wimpy_context) = WimpyContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
+        let Some(mut wimpy_context) = WimpyApp::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
             manifest_path,
             input_device_hint: InputDevice::Unknown,
             graphics_provider,
@@ -183,11 +183,11 @@ where
             mouse_shell_state.position.x,
             mouse_shell_state.position.y,
             match mouse_shell_state.cursor_glyph {
-                CursorGlyph::None => 1,
-                CursorGlyph::Default => 2,
-                CursorGlyph::CanInteract => 3,
-                CursorGlyph::IsInteracting => 4,
-                CursorGlyph::CameraCrosshair => 5,
+                MouseGlyph::None => 1,
+                MouseGlyph::Default => 2,
+                MouseGlyph::CanInteract => 3,
+                MouseGlyph::IsInteracting => 4,
+                MouseGlyph::CameraCrosshair => 5,
             },
             match mouse_shell_state.likely_active_device {
                 LikelyActiveDevice::Mouse => false,

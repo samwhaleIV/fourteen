@@ -62,23 +62,24 @@ pub enum CameraPositionStrategy {
     }
 }
 
-pub struct FrustumDescription {
+pub struct Frustum {
     /// Vertical field of view, in degrees
-    /// 
-    /// `90` degrees is a reasonable starting point
     pub fov: f32,
     /// The near clipping distance of the camera view frustum
-    /// 
-    /// Good starting point at `0.025`
     pub clip_near: f32,
 
     /// The far clipping distance of the camera view frustum
-    /// 
-    /// Good starting point at `100.0`
     pub clip_far: f32,
+}
 
-    /// The aspect ratio of the viewport, expressed as `w / h`
-    pub aspect_ratio: f32,
+impl Default for Frustum {
+    fn default() -> Self {
+        Self {
+            fov: 90.0,
+            clip_near: 0.05,
+            clip_far: 50.0
+        }
+    }
 }
 
 pub struct CameraPositionUpdate {
@@ -151,10 +152,10 @@ pub fn reposition_eye(
 
 impl WimpyCamera {
 
-    pub fn update_position(&mut self,packet: CameraPositionUpdate) {
+    pub fn update_position(&mut self,update: CameraPositionUpdate) {
 
-        self.yaw += packet.yaw_delta.to_radians();
-        self.pitch += packet.pitch_delta.to_radians();
+        self.yaw += update.yaw_delta.to_radians();
+        self.pitch += update.pitch_delta.to_radians();
 
         self.yaw %= TAU;
         if self.yaw < 0.0 {
@@ -169,7 +170,7 @@ impl WimpyCamera {
 
         self.angle = get_eye_angle(self.yaw,self.pitch);
 
-        self.position = match packet.position {
+        self.position = match update.position {
             CameraPositionStrategy::FreeCam {
                 forward_movement,
                 side_movement,
@@ -184,7 +185,7 @@ impl WimpyCamera {
                     self.position,
                     self.angle,
                     movement_delta,
-                    packet.delta_seconds
+                    update.delta_seconds
                 )
             },
             CameraPositionStrategy::Manual { eye } => eye,
@@ -197,12 +198,12 @@ impl WimpyCamera {
         );
     }
 
-    pub fn get_matrix(&self,packet: FrustumDescription,aspect_ratio: f32) -> Mat4 {
+    pub fn get_matrix(&self,frustum: Frustum,aspect_ratio: f32) -> Mat4 {
         let perspective_mat = Mat4::perspective_rh(
-            packet.fov.to_radians(),
-            packet.aspect_ratio,
-            packet.clip_near,
-            packet.clip_far
+            frustum.fov.to_radians(),
+            aspect_ratio,
+            frustum.clip_near,
+            frustum.clip_far
         );
         perspective_mat * self.position_mat
     }

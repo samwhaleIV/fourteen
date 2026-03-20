@@ -1,5 +1,5 @@
 use std::iter;
-use crate::{app::{graphics::*, wam::WimpyTexture, *},*};
+use crate::{*,app::{*,graphics::{pipelines::*,textures::*}}};
 
 /// Test sRGB texture loading, presentation, internal color (named or 'WimpyColorSrgb') sRGB translation, and linear alpha compositing behavior
 /// 
@@ -31,17 +31,17 @@ const STRIPS: &[WimpyColorSrgb;STRIP_COUNT] = &[
     WimpyColorSrgb { r: M, g: M, b: M, a: H },  // Middle gray
 ];
 
-impl<IO> WimpyApp<IO> for SrgbTest
+impl<IO> WimpyAppHandler<IO> for SrgbTest
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyContext) -> Self {
+    async fn load(context: &mut WimpyApp) -> Self {
         Self {
-            srgb_test_texture: context.get_image("wimpy/srgb-test",TextureStreamingHint::Static),
+            srgb_test_texture: context.get_image("wimpy/srgb-test",StreamingHint::Static),
         }
     }
 
-    fn update(&mut self,context: &mut WimpyContext) {
+    fn update(&mut self,context: &mut WimpyApp) {
         let Some(mut output) = context.graphics.create_output_builder(WimpyNamedColor::Black) else {
             return;
         };

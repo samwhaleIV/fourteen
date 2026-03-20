@@ -1,4 +1,4 @@
-use crate::{app::{graphics::*, input::{Impulse, ImpulseEvent, ImpulseState, MousePressState}, wam::WimpyTexture, *},*};
+use crate::{*,world::*,app::{*,debug_shell::*,input::*,graphics::{*,pipelines::*,textures::*}}};
 
 pub struct GenericTestApp {
     test_texture: WimpyTexture,
@@ -9,7 +9,7 @@ pub struct GenericTestApp {
 }
 
 impl GenericTestApp {
-    fn pressed_enter(&self,context: &WimpyContext) -> bool {
+    fn pressed_enter(&self,context: &WimpyApp) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
             match event {
@@ -33,13 +33,13 @@ fn delta_norm(value: f32) -> f32 {
     (value * MAX_DELTA_INV).clamp(-1.0,1.0)
 }
 
-impl<IO> WimpyApp<IO> for GenericTestApp
+impl<IO> WimpyAppHandler<IO> for GenericTestApp
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyContext) -> Self {
+    async fn load(context: &mut WimpyApp) -> Self {
 
-        let render_config = context.debug.get_render_config();
+        let render_config = context.debug_shell.get_render_config();
         render_config.top_right = Pane {
             size: WimpyVec::new(300.0,240.0),
             layout: PaneLayout::single(SubPane {
@@ -62,15 +62,15 @@ where
         };
 
         return Self {
-            in_movement_mode: false,
-            lines: Vec::with_capacity(64),
-            test_texture: context.get_image("wimpy/blend-test",TextureStreamingHint::Static),
-            line_start: None,
-            offset: WimpyVec::ZERO
+            in_movement_mode:   false,
+            lines:              Vec::with_capacity(64),
+            test_texture:       context.get_image("wimpy/blend-test",StreamingHint::Static),
+            line_start:         None,
+            offset:             WimpyVec::ZERO
         };
     }
 
-    fn update(&mut self,context: &mut WimpyContext) {
+    fn update(&mut self,context: &mut WimpyApp) {
 
         // Start render ...
         if self.pressed_enter(context) {
@@ -85,18 +85,18 @@ where
 
         let mouse = context.input.get_virtual_mouse();
 
-        context.debug.set_label_fmt(
+        context.debug_shell.set_label_fmt(
             LabelID::One,
             format_args!("x: {:.0} y: {:.0} pressed: {:?}",mouse.position().x,mouse.position().y,mouse.left_is_pressed())
         );
 
-        context.debug.set_label_fmt(
+        context.debug_shell.set_label_fmt(
             LabelID::Two,
             format_args!("dx: {:.0} dy: {:.0}",mouse.delta().x,mouse.delta().y)
         );
 
-        context.debug.set_graph(GraphID::One,delta_norm(mouse.delta().x));
-        context.debug.set_graph(GraphID::Two,delta_norm(mouse.delta().y));
+        context.debug_shell.set_graph(GraphID::One,delta_norm(mouse.delta().x));
+        context.debug_shell.set_graph(GraphID::Two,delta_norm(mouse.delta().y));
 
         match mouse.get_active_mode() {
             input::MouseMode::Interface => {

@@ -87,6 +87,13 @@ struct State {
     gpu_texture_key:    Option<GPUTextureKey>,
 }
 
+pub struct TextureAtlasConfig {
+    /// How big a slot is (e.g., 16 pixels)
+    pub slot_size: u32,
+    /// How many slots are in the horizontal and vertical dimension (`number of slots` == `slot_length * slot_length`)
+    pub slot_length: u32
+}
+
 impl TextureManager {
     pub fn new(graphics_provider: &GraphicsProvider,streaming_policy: StreamingPolicy) -> Self {
         Self {
@@ -166,7 +173,12 @@ impl TextureManager {
         }
     }
 
-    pub fn create_atlas(&mut self,config: &VirtualTextureAtlasConfig) -> VirtualTextureAtlasKey {
+    pub fn create_atlas(
+        &mut self,
+        graphics_provider: &GraphicsProvider,
+        config: &TextureAtlasConfig
+    ) -> VirtualTextureAtlasKey {
+        //todo: validate size with graphics provider
         todo!()
     }
 

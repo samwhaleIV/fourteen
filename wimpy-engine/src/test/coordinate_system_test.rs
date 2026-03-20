@@ -1,13 +1,13 @@
 use glam::{Mat4, Vec3};
 
-use crate::{app::{graphics::{pipelines::pipeline_3d::TextureStrategy, *}, input::{Impulse, ImpulseEvent, ImpulseState, MouseMode}, *}, world::{CameraPositionStrategy, CameraPositionUpdate, WimpyCamera}, *};
+use crate::{*,world::*,app::{*,debug_shell::*,input::*,graphics::{*,pipelines::*,textures::*}}};
 
 pub struct CoordinateSystemTest {
-    in_movement_mode: bool,
-    camera: WimpyCamera,
-    lines: Vec<LinePoint3D>,
-    cube_mesh: Option<TexturedMeshReference>,
-    test_room_mesh: Option<TexturedMeshReference>,
+    in_movement_mode:   bool,
+    camera:             WimpyCamera,
+    lines:              Vec<LinePoint3D>,
+    cube_mesh:          Option<TexturedMesh>,
+    test_room_mesh:     Option<TexturedMesh>,
 }
 
 const LINE_COUNT: usize = 11;
@@ -81,7 +81,7 @@ fn generate_lines() -> Vec<LinePoint3D> {
 }
 
 impl CoordinateSystemTest {
-    fn pressed_enter(&self,context: &WimpyContext) -> bool {
+    fn pressed_enter(&self,context: &WimpyApp) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
             match event {
@@ -99,12 +99,12 @@ impl CoordinateSystemTest {
     }
 }
 
-impl<IO> WimpyApp<IO> for CoordinateSystemTest
+impl<IO> WimpyAppHandler<IO> for CoordinateSystemTest
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyContext) -> Self {
-        let render_config = context.debug.get_render_config();
+    async fn load(context: &mut WimpyApp) -> Self {
+        let render_config = context.debug_shell.get_render_config();
         render_config.top_left = Pane {
             size: WimpyVec::from(200),
             layout: PaneLayout::single(SubPane {
@@ -140,7 +140,7 @@ where
         }
     }
 
-    fn update(&mut self,context: &mut WimpyContext) {
+    fn update(&mut self,context: &mut WimpyApp) {
         const MOVEMENT_UNITS_PER_SECOND: f32 = 3.5;
         const ANGLE_PER_PIXEL: f32 = 0.1;
 
@@ -184,13 +184,13 @@ where
         }
 
         let camera_position = self.camera.position();
-        context.debug.set_label_fmt(LabelID::One,format_args!("x: {:.1}, y: {:.1}, z: {:.1}",
+        context.debug_shell.set_label_fmt(LabelID::One,format_args!("x: {:.1}, y: {:.1}, z: {:.1}",
             camera_position.x,
             camera_position.y,
             camera_position.z
         ));
 
-        context.debug.set_label_fmt(LabelID::Two,format_args!("xd: {:.1}, yd: {:.1}, zd: {:1}",
+        context.debug_shell.set_label_fmt(LabelID::Two,format_args!("xd: {:.1}, yd: {:.1}, zd: {:1}",
             movement_delta.x,
             movement_delta.y,
             vertical_delta
@@ -220,13 +220,13 @@ where
             let Ok(mut render_pass) = output.builder.create_render_pass_with_depth_stencil(&output.frame) else {
                 break 'output_pass;
             };
-            let camera_uniform = render_pass.create_camera_uniform(&self.camera,CameraPerspective::default());
+            let camera_uniform = render_pass.create_camera_uniform(&self.camera,Frustum::default());
             let mut lines_pass = render_pass.set_pipeline_lines_3d(camera_uniform);
             lines_pass.draw_list(&self.lines);
 
             render_pass.draw_submitted_meshes(SamplerMode::NearestClamp,camera_uniform);
 
-            context.debug.render(&mut render_pass);
+            context.debug_shell.render(&mut render_pass);
         }
 
         output.present_output_surface();

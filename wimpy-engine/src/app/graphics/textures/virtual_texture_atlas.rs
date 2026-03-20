@@ -1,20 +1,13 @@
 use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
-use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache, app::graphics::GraphicsProvider};
-use super::{GPUTextureKey, GPUTexture, gpu_texture, GPUTextureCache};
-
-pub struct VirtualTextureAtlasConfig {
-    /// How big a slot is (e.g., 16 pixels)
-    pub slot_size: u32,
-    /// How many slots are in the horizontal and vertical dimension (`number of slots` == `slot_length * slot_length`)
-    pub slot_length: u32
-}
+use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
+use super::{GPUTextureKey, GPUTexture, GPUTextureCache};
 
 pub struct VirtualTextureAtlas {
-    /// The size in pixels of a slot. An atlas item can be smaller than this squared, even rectangular, but cannot exceed this value in either dimension.
-    slot_size: u32,
-
     /// How many slots occupy a dimension
     slot_length: u32,
+
+    /// The size in pixels of a slot. An atlas item can be smaller than this squared, even rectangular, but cannot exceed this value in either dimension.
+    slot_size: u32,
 
     /// The UV scalar to apply to atlas slots.
     /// 
@@ -22,7 +15,7 @@ pub struct VirtualTextureAtlas {
     size_recip: WimpyVec,
 
     /// The surface provided to a shader
-    atlas_texture_container: GPUTexture,
+    atlas_texture: GPUTexture,
 
     /// Backend cache for key/ownership logisitics
     /// 
@@ -42,28 +35,17 @@ struct EncoderTextureCopyCommand {
 }
 
 impl VirtualTextureAtlas {
-    pub fn create(
-        graphics_provider:  &GraphicsProvider,
-        texture_identity:   gpu_texture::GPUTextureIdentity,
-        config:             &VirtualTextureAtlasConfig
+    pub fn new(
+        slot_length: u32,
+        slot_size: u32,
+        atlas_texture:  GPUTexture,
     ) -> Self {
-
-        let pixel_length = config.slot_length * config.slot_size;
-        let pixel_size = graphics_provider.get_safe_texture_dimension_value(pixel_length);
-
-        let texture_container = GPUTexture::create_render_target(
-            graphics_provider,
-            texture_identity, // Used so we can use the texture as a bind group target
-            UWimpyPoint::from(pixel_size)
-        );
-
-        let slot_count = config.slot_size.pow(2) as usize;
-
+        let slot_count = slot_size.pow(2) as usize;
         Self {
-            slot_size: config.slot_size,
-            slot_length: pixel_size / config.slot_size,
-            atlas_texture_container: texture_container,
-            size_recip: WimpyVec::ONE / WimpyVec::from(pixel_size),
+            slot_size,
+            slot_length,
+            atlas_texture,
+            size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
             uv_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
             encoder_commands: Vec::with_capacity(slot_count / 4)
@@ -79,7 +61,7 @@ impl VirtualTextureAtlas {
                 aspect: TextureAspect::All,
             };
             let dst = TexelCopyTextureInfo {
-                texture: self.atlas_texture_container.get_texture(),
+                texture: self.atlas_texture.get_texture(),
                 mip_level: 0,
                 origin: Origin3d {
                     x: command.dst_origin.x,
@@ -167,6 +149,6 @@ impl VirtualTextureAtlas {
     }
 
     pub fn get_texture_container(&self) -> &GPUTexture {
-        &self.atlas_texture_container
+        &self.atlas_texture
     }
 }

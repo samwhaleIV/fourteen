@@ -7,7 +7,7 @@ const RECENT_IMPULSE_BUFFER_SIZE: usize = 16;
 
 #[derive(Default)]
 pub struct InputManager {
-    recent_mouse_input:     mouse::Input,
+    recent_mouse_input:     mouse::MouseInput,
     gamepad_cache:          gamepad::GamepadCache,
     keyboard_state:         keyboard::KeyboardState,
     keyboard_translator:    keyboard::KeyboardTranslator,
@@ -76,7 +76,10 @@ impl InputManager {
     }
 }
 
-pub mod key_rebind_controller {
+pub use key_rebind_controller::*;
+pub use app_shell_controller::*;
+
+mod key_rebind_controller {
     use super::*;
     impl InputManager {
         pub fn clear_captured_key_code(&mut self) {
@@ -109,7 +112,7 @@ pub mod key_rebind_controller {
     }
 }
 
-pub mod app_shell_controller {
+mod app_shell_controller {
     use crate::WimpyRect;
 
     use super::*;
@@ -131,12 +134,12 @@ pub mod app_shell_controller {
 
         pub fn update(
             &mut self,
-            mouse_input:    mouse::Input,
+            mouse_input:    mouse::MouseInput,
             gamepad_input:  gamepad::Input,
             delta_seconds:  f32,
             bounds:         WimpyRect,
             can_reposition: bool,
-        ) -> mouse::ShellState {
+        ) -> mouse::MouseShellState {
             let keyboard_state = self.keyboard_translator.translate(&self.keyboard_state);
 
             if self.gamepad_cache.update(gamepad_input) == UserActivity::Some {

@@ -2,21 +2,20 @@ use crate::{WimpyRect, WimpyVec};
 use super::{gamepad::GamepadCache, InputDevice};
 
 #[derive(Clone,Copy)]
-pub enum MouseModeSwitchCommand {
+pub enum MouseModeSwap {
     InterfaceToCamera,
     CameraToInterface,
 }
 
-
 #[derive(Default,PartialEq,Copy,Clone)]
-pub struct Input {
+pub struct MouseInput {
     pub position:       WimpyVec,
     pub delta:          WimpyVec,
     pub left_pressed:   bool,
     pub right_pressed:  bool,
 }
 
-impl Input {
+impl MouseInput {
     fn from_gamepad(
         gamepad:            &GamepadCache,
         position:           WimpyVec,
@@ -58,18 +57,18 @@ impl Input {
 
 #[derive(Default)]
 pub struct VirtualMouse {
-    fused_state: Input,
+    fused_state: MouseInput,
 
-    mouse_state: Input,
-    gamepad_state: Input,
+    mouse_state: MouseInput,
+    gamepad_state: MouseInput,
 
-    left_press_state: PressState,
-    right_press_state: PressState,
+    left_press_state: MousePressState,
+    right_press_state: MousePressState,
 
     current_mode: MouseMode,
     future_mode: Option<MouseMode>,
 
-    interaction_state: InteractionState,
+    interaction_state: MouseInteractionState,
     emulation_active: bool,
 
     hide_camera_center_crosshair: bool,
@@ -79,7 +78,7 @@ pub struct VirtualMouse {
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
-pub enum PressState {
+pub enum MousePressState {
     #[default]
     Released,
     JustPressed,
@@ -87,9 +86,9 @@ pub enum PressState {
     JustReleased,
 }
 
-impl From<PressState> for bool {
-    fn from(value: PressState) -> Self {
-        use PressState::*;
+impl From<MousePressState> for bool {
+    fn from(value: MousePressState) -> Self {
+        use MousePressState::*;
         match value {
             Released =>     false,
             JustPressed =>  true,
@@ -100,7 +99,7 @@ impl From<PressState> for bool {
 }
 
 #[derive(Default,Copy,Clone,PartialEq,Eq)]
-pub enum CursorGlyph {
+pub enum MouseGlyph {
     None,
     #[default]
     Default,
@@ -110,7 +109,7 @@ pub enum CursorGlyph {
 }
 
 #[derive(Default,Copy,Clone)]
-pub enum InteractionState {
+pub enum MouseInteractionState {
     #[default]
     Default,
     Hidden,
@@ -125,9 +124,9 @@ pub enum MouseMode {
     Camera
 }
 
-impl From<InteractionState> for CursorGlyph {
-    fn from(value: InteractionState) -> Self {
-        use InteractionState::*;
+impl From<MouseInteractionState> for MouseGlyph {
+    fn from(value: MouseInteractionState) -> Self {
+        use MouseInteractionState::*;
         match value {
             Hidden =>           Self::None,
             Default =>          Self::Default,
@@ -137,8 +136,8 @@ impl From<InteractionState> for CursorGlyph {
     }
 }
 
-pub struct ShellState {
-    pub glyph:      CursorGlyph,
+pub struct MouseShellState {
+    pub glyph:      MouseGlyph,
     pub position:   WimpyVec,
     /// Specifies which hardware input device is most likely to be active to guide the display of software versus hardware cursor
     pub device:     InputDevice,
@@ -149,8 +148,8 @@ pub struct ShellState {
     pub recenter:   bool
 }
 
-fn get_delta_press_state(old_state: PressState,is_pressed: bool) -> PressState {
-    use PressState::*;
+fn get_delta_press_state(old_state: MousePressState,is_pressed: bool) -> MousePressState {
+    use MousePressState::*;
     match (old_state,is_pressed) {
         (Released,      true) =>    JustPressed,
         (Released,      false) =>   Released,
@@ -167,16 +166,16 @@ impl VirtualMouse {
     pub(super) fn update(
         &mut self,
         input_device_hint:  InputDevice,
-        new_mouse_state:    Input,
+        new_mouse_state:    MouseInput,
         gamepad:            &GamepadCache,
         delta_seconds:      f32,
         emulation_bounds:   WimpyRect,
         can_recenter:       bool
-    ) -> ShellState {
+    ) -> MouseShellState {
 
         let mut zero_out_delta = false;
 
-        self.gamepad_state = Input::from_gamepad(
+        self.gamepad_state = MouseInput::from_gamepad(
             gamepad,
             self.gamepad_state.position,
             self.current_mode == MouseMode::Camera,
@@ -290,16 +289,16 @@ impl VirtualMouse {
         return self.get_cursor_shell_state(should_reposition_hardware_cursor);
     }
 
-    fn get_cursor_shell_state(&self,should_reposition_hardware_cursor: bool) -> ShellState {
+    fn get_cursor_shell_state(&self,should_reposition_hardware_cursor: bool) -> MouseShellState {
 
-        let glyph:  CursorGlyph;
+        let glyph:  MouseGlyph;
         let device: InputDevice;
 
         match self.current_mode {
             MouseMode::Camera => {
                 glyph = match self.hide_camera_center_crosshair {
-                    false => CursorGlyph::CameraCrosshair,
-                    true =>  CursorGlyph::None,
+                    false => MouseGlyph::CameraCrosshair,
+                    true =>  MouseGlyph::None,
                 };
                 // Even though the cursor won't be visible, we prime the cursor rendering in anticipation of a mode swap
                 device = match self.emulation_active {
@@ -323,7 +322,7 @@ impl VirtualMouse {
             },
         }
 
-        ShellState {
+        MouseShellState {
             glyph,
             position: self.fused_state.position,
             device,
@@ -332,11 +331,11 @@ impl VirtualMouse {
         }
     }
 
-    pub fn left_press_state(&self) -> PressState {
+    pub fn left_press_state(&self) -> MousePressState {
         self.left_press_state
     }
 
-    pub fn right_press_state(&self) -> PressState {
+    pub fn right_press_state(&self) -> MousePressState {
         self.right_press_state
     }
 
@@ -366,7 +365,7 @@ impl VirtualMouse {
     /// 
     /// This does not change the behavior of input processing, it is purely cosmetic.
     /// Interaction states have to be conceptualized by the caller.
-    pub fn set_interaction_state(&mut self,interaction_state: InteractionState) {
+    pub fn set_interaction_state(&mut self,interaction_state: MouseInteractionState) {
         self.interaction_state = interaction_state;
     }
 

@@ -1,5 +1,5 @@
 use wgpu::*;
-use crate::{UWimpyPoint, WimpyColor, WimpyVec, app::fonts::FontDefinition, world::{FrustumDescription, WimpyCamera}};
+use crate::{UWimpyPoint, WimpyColor, WimpyVec, app::fonts::FontDefinition, world::{Frustum, WimpyCamera}};
 use super::{*, textures::*, pipelines::*};
 
 pub struct OutputBuilder<'a> {
@@ -22,7 +22,6 @@ pub struct GraphicsContext {
     pub graphics_provider:  GraphicsProvider,
     pub pipelines:          RenderPipelines,
     pub texture_manager:    TextureManager,
-    pub engine_textures:    EngineTextures,
     pub mesh_cache:         MeshCache,
     ///A depth stencil exclusively for the output surface
     /// 
@@ -71,8 +70,6 @@ impl GraphicsContext {
     {
         let mut texture_manager = TextureManager::new(&graphics_provider,streaming_policy);
 
-        let engine_textures = EngineTextures::create(&graphics_provider,&mut texture_manager);
-
         let mut mesh_cache = MeshCache::create(
             graphics_provider.get_device(),
             TConfig::MESH_CACHE_VERTEX_BUFFER_SIZE,
@@ -89,7 +86,6 @@ impl GraphicsContext {
             graphics_provider,
             pipelines,
             texture_manager,
-            engine_textures,
             mesh_cache,
             output_depth_stencil: None,
             depth_stencil: None,
@@ -221,7 +217,7 @@ where
     pub fn create_camera_uniform(
         &mut self,
         camera: &WimpyCamera,
-        frustum: FrustumDescription,
+        frustum: Frustum,
     ) -> UniformReference {
         let matrix = camera.get_matrix(frustum,self.frame.aspect_ratio());
         self.context.pipelines.shared.create_uniform(matrix)

@@ -19,9 +19,6 @@ pub use render_targets::{
     RenderTarget,
 };
 
-mod engine_textures;
-use engine_textures::EngineTextures;
-
 use crate::{UWimpyPoint, WimpyVec, WimpyRect, WimpyPointRect, collections::cache_arena::*};
 
 pub struct GPUTextureCacheConfig;
@@ -60,6 +57,18 @@ pub struct WimpyTexture {
     pub size:   UWimpyPoint,
     /// If provided by WAM, this is the suggested sub-area of the texture to use, such as when WAM generates an offline atlas.
     pub slice:  Option<WimpyPointRect>
+}
+
+impl WimpyTexture {
+    pub fn width(&self) -> u32 {
+        self.size.x
+    }
+    pub fn height(&self) -> u32 {
+        self.size.y
+    }
+    pub fn aspect_ratio(&self) -> f32 {
+        self.size.x as f32 / self.size.y as f32
+    }
 }
 
 #[derive(Copy,Clone)]

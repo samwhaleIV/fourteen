@@ -44,7 +44,7 @@ struct InnerApp<TWimpyApp> {
     window: Window,
     now: u64,
     wimpy_app: TWimpyApp,
-    wimpy_context: WimpyContext,
+    wimpy_context: WimpyApp,
     has_focus: bool
 }
 
@@ -80,7 +80,7 @@ where
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let Some(mut wimpy_systems) = WimpyContext::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
+    let Some(mut wimpy_systems) = WimpyApp::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
         manifest_path,
         input_device_hint: InputDevice::Unknown,
         graphics_provider,

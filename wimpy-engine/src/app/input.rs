@@ -6,7 +6,9 @@ mod constants {
     pub const IMPULSE_COUNT: usize = super::IMPULSES.len();
 }
 
-mod manager;
+mod input_manager;
+pub use input_manager::InputManager;
+
 mod gamepad;
 
 mod key_code;
@@ -14,6 +16,7 @@ pub use key_code::*;
 
 mod keyboard;
 mod mouse;
+pub use mouse::*;
 
 // These enum integer values need to freeze once key binds are saved into a file. We aren't there yet.
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
