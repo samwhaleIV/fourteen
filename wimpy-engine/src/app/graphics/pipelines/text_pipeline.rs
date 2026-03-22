@@ -37,15 +37,11 @@ pub struct TextRenderConfig {
 
 impl TextPipeline {
 
-    pub fn create<TConfig>(
-        graphics_provider:  &GraphicsProvider,
-        texture_layout:     &BindGroupLayout,
-        uniform_layout:     &BindGroupLayout,
-    ) -> Self
+    pub fn create<TConfig>(context: &PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
-        let device = graphics_provider.get_device();
+        let device = context.graphics_provider.get_device();
 
         let shader = &device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Text Pipeline Shader"),
@@ -55,14 +51,14 @@ impl TextPipeline {
         let render_pipeline_layout = &device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Text Pipeline Render Layout"),
             bind_group_layouts: &[
-                texture_layout,
-                uniform_layout,
+                &context.core.texture_layout,
+                &context.core.uniform_layout,
             ],
             immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {
-            graphics_provider,
+            graphics_provider: context.graphics_provider,
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[
@@ -161,7 +157,7 @@ where
         uniform_reference: UniformReference
     ) -> Self {
         render_pass.set_pipeline(context.pipelines.text.variants.select(variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        context.pipelines.core.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             context.pipelines.text.index_buffer.slice(..),
@@ -183,7 +179,7 @@ where
 
         let mut texture_valid = false;
 
-        match context.frame_cache.get(target_texture_ref) {
+        match target_texture.get_cache_entry(TFont::get_texture()) {
             Ok(texture_container) => {
                 let bind_group = context.bind_group_cache.get(context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
                     ch_0: BindGroupChannelConfig {
@@ -374,7 +370,7 @@ where
 
     pub fn batch_text(&mut self,lines: &[&str],direction: TextDirection,position: WimpyVec,color: WimpyNamedColor,config: &TextRenderConfig) {
         let mut r = self.get_renderer(position,color,config);
-        let ltr = direction.is_ltr();
+        let ltr = is_ltr(direction);
         for (i,&line) in lines.iter().enumerate() {
             r.draw_text(line,i,ltr);
         }

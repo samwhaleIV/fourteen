@@ -1,16 +1,10 @@
-const CH0_TEXTURE_INDEX: u32 = 0;
-const CH0_SAMPLER_INDEX: u32 = 1;
-
-const CH1_TEXTURE_INDEX: u32 = 2;
-const CH1_SAMPLER_INDEX: u32 = 3;
-
 const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
 
 use wgpu::*;
 use std::{collections::HashMap, hash::Hash};
 
 use super::{gpu_texture::{GPUTexture, GPUTextureIdentity}, SamplerMode};
-use crate::app::graphics::GraphicsProvider;
+use crate::app::graphics::{GraphicsProvider, constants};
 
 struct FilterSet {
     filter:         FilterMode,
@@ -81,19 +75,19 @@ fn create_sampler(device: &Device,sampler_mode: SamplerMode) -> Sampler {
 impl Samplers {
     pub fn create(device: &Device) -> Self {
         return Self {
-            nearest_clamp:          create_sampler(device,  SamplerMode::NearestClamp),
-            nearest_wrap:           create_sampler(device,  SamplerMode::NearestWrap),
-            nearest_wrap_mirror:    create_sampler(device,  SamplerMode::NearestWrapMirror),
-            linear_clamp:           create_sampler(device,  SamplerMode::LinearClamp),
-            linear_wrap:            create_sampler(device,  SamplerMode::LinearWrap),
-            linear_wrap_mirror:     create_sampler(device,  SamplerMode::LinearWrapMirror),
+            nearest_clamp:          create_sampler(device, SamplerMode::NearestClamp),
+            nearest_wrap:           create_sampler(device, SamplerMode::NearestWrap),
+            nearest_wrap_mirror:    create_sampler(device, SamplerMode::NearestWrapMirror),
+            linear_clamp:           create_sampler(device, SamplerMode::LinearClamp),
+            linear_wrap:            create_sampler(device, SamplerMode::LinearWrap),
+            linear_wrap_mirror:     create_sampler(device, SamplerMode::LinearWrapMirror),
         };
     }
 }
 
 struct Channel<'a> {
     texture: &'a TextureView,
-    sampler: &'a Sampler
+    sampler: &'a Sampler,
 }
 
 fn create_single_channel_bind_group(
@@ -106,19 +100,19 @@ fn create_single_channel_bind_group(
         layout,
         entries: &[
             BindGroupEntry {
-                binding: CH0_TEXTURE_INDEX,
+                binding: constants::CH0_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel.texture),
             },
             BindGroupEntry {
-                binding: CH0_SAMPLER_INDEX,
+                binding: constants::CH0_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel.sampler),
             },
             BindGroupEntry {
-                binding: CH1_TEXTURE_INDEX,
+                binding: constants::CH1_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel.texture),
             },
             BindGroupEntry {
-                binding: CH1_SAMPLER_INDEX,
+                binding: constants::CH1_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel.sampler),
             }
         ],
@@ -136,19 +130,19 @@ fn create_dual_channel_bind_group(
         layout,
         entries: &[
             BindGroupEntry {
-                binding: CH0_TEXTURE_INDEX,
+                binding: constants::CH0_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel_0.texture),
             },
             BindGroupEntry {
-                binding: CH0_SAMPLER_INDEX,
+                binding: constants::CH0_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel_0.sampler),
             },
             BindGroupEntry {
-                binding: CH1_TEXTURE_INDEX,
+                binding: constants::CH1_TEXTURE_INDEX,
                 resource: BindingResource::TextureView(channel_1.texture),
             },
             BindGroupEntry {
-                binding: CH1_SAMPLER_INDEX,
+                binding: constants::CH1_SAMPLER_INDEX,
                 resource: BindingResource::Sampler(channel_1.sampler),
             }
         ],
@@ -157,8 +151,8 @@ fn create_dual_channel_bind_group(
 
 pub struct BindGroupCache {
     samplers: Samplers,
-    cache: HashMap<CacheKey,BindGroup>,
     layout: BindGroupLayout,
+    cache: HashMap<CacheKey,BindGroup>,
 }
 
 #[derive(Hash,PartialEq,Eq)]
@@ -218,60 +212,14 @@ impl From<&BindGroupChannelConfig<'_>> for CacheKeyChannel {
 }
 
 impl BindGroupCache {
-    pub fn create(graphics_provider: &GraphicsProvider) -> Self {
-        let samplers = Samplers::create(graphics_provider.get_device());
+    pub fn create(device: &Device,layout: BindGroupLayout) -> Self {
+        let samplers = Samplers::create(device);
 
-        let bind_group_layout = graphics_provider.get_device().create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("Texture Bind Group Layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: CH0_TEXTURE_INDEX,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false, /* Must remain false to use STORAGE_BINDING texture usage */
-                        view_dimension: TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float {
-                            filterable: true
-                        },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: CH0_SAMPLER_INDEX,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: CH1_TEXTURE_INDEX,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float {
-                            filterable: true
-                        },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: CH1_SAMPLER_INDEX,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ]
-        });
-
-        return Self {
-            layout: bind_group_layout,
+        Self {
             samplers,
+            layout,
             cache: HashMap::with_capacity(DEFAULT_BIND_GROUP_CACHE_SIZE),
-        };
-    }
-
-    pub fn get_texture_layout(&self) -> &BindGroupLayout {
-        return &self.layout;
+        }
     }
 
     pub fn get(&mut self,device: &Device,identity: &BindGroupCacheIdentity) -> &BindGroup {

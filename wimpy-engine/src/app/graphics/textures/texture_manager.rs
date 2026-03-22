@@ -95,13 +95,13 @@ pub struct TextureAtlasConfig {
 }
 
 impl TextureManager {
-    pub fn new(graphics_provider: &GraphicsProvider,streaming_policy: StreamingPolicy) -> Self {
+    pub fn new(graphics_provider: &GraphicsProvider,texture_layout: BindGroupLayout,streaming_policy: StreamingPolicy) -> Self {
         Self {
             gpu_cache:              GPUTextureCache::new(),
             states:                 SlotMap::with_capacity_and_key(TEXTURE_CACHE_SLOTMAP_DEFAULT_SIZE),
             update_queue:           Vec::with_capacity(UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE),
             id_generator:           Default::default(),
-            bind_groups:            BindGroupCache::create(graphics_provider),
+            bind_groups:            BindGroupCache::create(graphics_provider.get_device(),texture_layout),
             atlases:                SlotMap::with_capacity_and_key(ATLAS_START_QUANTITY),
             streaming_policy,
         }
@@ -190,78 +190,6 @@ impl TextureManager {
         todo!()
     }
 
-    pub(in crate::app::graphics) fn create_keyless_render_target(
-        &mut self,
-        graphics_provider: &GraphicsProvider,
-        size: UWimpyPoint,
-    ) -> GPUTextureKey {
-        let texture = GPUTexture::new(graphics_provider,GPUTextureConfig {
-            size,
-            identity: self.id_generator.next(),
-            render_target: true,
-            with_queue_data: false,
-        });
-
-        self.gpu_cache.insert_keyless(texture)
-    }
-
-    pub(in crate::app::graphics) fn borrow_render_target(
-        &mut self,
-        graphics_provider: &GraphicsProvider,
-        size: UWimpyPoint,
-        key: u32,
-    ) -> GPUTextureKey {
-        match self.gpu_cache.start_lease(key) {
-            Ok(value) => value, 
-            Err(error) => {
-                log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
-                self.gpu_cache.insert_with_lease(key,GPUTexture::new(graphics_provider,GPUTextureConfig {
-                    size,
-                    identity: self.id_generator.next(),
-                    render_target: true,
-                    with_queue_data: false,
-                }))
-            },
-        }
-    }
-
-    pub(in crate::app::graphics) fn ensure_cached_render_target(
-        &mut self,
-        graphics_provider: &GraphicsProvider,
-        size: UWimpyPoint,
-        key: u32,
-    ) {
-        if self.gpu_cache.has_available_items(key) {
-            return;
-        }
-        self.gpu_cache.insert(key,GPUTexture::new(graphics_provider,GPUTextureConfig {
-            size,
-            identity: self.id_generator.next(),
-            render_target: true,
-            with_queue_data: false
-        }));
-    }
-
-    pub(in crate::app::graphics) fn bind_output_surface(
-        &mut self,
-        surface: &SurfaceTexture,
-        texture_view_format: TextureFormat,
-        size: UWimpyPoint // Externally validated (in graphics context)
-    ) -> GPUTextureKey {
-        let view = surface.texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Output Surface Texture View"),
-            format: Some(texture_view_format),
-            ..Default::default()
-        });
-        let texture = GPUTexture {
-            identity: GPUTextureIdentity::Anonymous,
-            input_size: size,
-            view
-        };
-        self.gpu_cache.insert_keyless(texture)
-    }
-
-
     // pub fn from_image_unchecked(
     //     &mut self,
     //     graphics_provider: &GraphicsProvider,
@@ -305,6 +233,77 @@ impl TextureManager {
     //     graphics_provider.validate_size(size)?;
     //     Ok(self.from_image_unchecked(graphics_provider,size,data))
     // }
+
+    pub fn create_keyless_render_target(
+        &mut self,
+        graphics_provider: &GraphicsProvider,
+        size: UWimpyPoint,
+    ) -> GPUTextureKey {
+        let texture = GPUTexture::new(graphics_provider,GPUTextureConfig {
+            size,
+            identity: self.id_generator.next(),
+            render_target: true,
+            with_queue_data: false,
+        });
+
+        self.gpu_cache.insert_keyless(texture)
+    }
+
+    pub fn borrow_render_target(
+        &mut self,
+        graphics_provider: &GraphicsProvider,
+        size: UWimpyPoint,
+        key: u32,
+    ) -> GPUTextureKey {
+        match self.gpu_cache.start_lease(key) {
+            Ok(value) => value, 
+            Err(error) => {
+                log::warn!("Graphics context creating a new temp frame. Reason: {:?}",error);
+                self.gpu_cache.insert_with_lease(key,GPUTexture::new(graphics_provider,GPUTextureConfig {
+                    size,
+                    identity: self.id_generator.next(),
+                    render_target: true,
+                    with_queue_data: false,
+                }))
+            },
+        }
+    }
+
+    pub fn ensure_cached_render_target(
+        &mut self,
+        graphics_provider: &GraphicsProvider,
+        size: UWimpyPoint,
+        key: u32,
+    ) {
+        if self.gpu_cache.has_available_items(key) {
+            return;
+        }
+        self.gpu_cache.insert(key,GPUTexture::new(graphics_provider,GPUTextureConfig {
+            size,
+            identity: self.id_generator.next(),
+            render_target: true,
+            with_queue_data: false
+        }));
+    }
+
+    pub fn bind_output_surface(
+        &mut self,
+        surface: &SurfaceTexture,
+        texture_view_format: TextureFormat,
+        size: UWimpyPoint // Externally validated (in graphics context)
+    ) -> GPUTextureKey {
+        let view = surface.texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Output Surface Texture View"),
+            format: Some(texture_view_format),
+            ..Default::default()
+        });
+        let texture = GPUTexture {
+            identity: GPUTextureIdentity::Anonymous,
+            input_size: size,
+            view
+        };
+        self.gpu_cache.insert_keyless(texture)
+    }
 }
 
 impl CacheResolver for WimpyTexture {

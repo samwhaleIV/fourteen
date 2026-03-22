@@ -11,7 +11,7 @@ pub struct RenderPipelines {
     pub pipeline_3d:    Pipeline3D,
     pub text:           TextPipeline,
     pub lines:          LinesPipeline,
-    pub shared:         SharedPipeline
+    pub core:           PipelineCore
 }
 
 pub trait PipelineFlush {
@@ -21,51 +21,42 @@ pub trait PipelineFlush {
     fn flush(&mut self,queue: &Queue);
 }
 
+/* GraphicsContext isn't fully formed during pipeline creation; but pipelines are a part of the graphics context */
+pub struct PipelineCreationContext<'a> {
+    pub graphics_provider:  &'a GraphicsProvider,
+    pub core:               &'a PipelineCore,
+    pub texture_manager:    &'a mut TextureManager,
+    pub mesh_cache:         &'a mut MeshCache,
+}
+
 impl RenderPipelines {
     pub fn create<TConfig>(
         graphics_provider:  &GraphicsProvider,
         texture_manager:    &mut TextureManager,
         mesh_cache:         &mut MeshCache,
+        pipeline_core:      PipelineCore,
     ) -> Self
     where
         TConfig: GraphicsConfig
     {
-        let pipeline_shared = SharedPipeline::create::<TConfig>(graphics_provider);
-
-        let texture_bind_group_layout = texture_manager.bind_groups.get_texture_layout();
-        let uniform_bind_group_layout = pipeline_shared.get_uniform_layout();
-
-        let pipeline_2d = Pipeline2D::create::<TConfig>(
+        let context = PipelineCreationContext {
             graphics_provider,
-            texture_bind_group_layout,
-            uniform_bind_group_layout
-        );
-
-        let pipeline_3d = Pipeline3D::create::<TConfig>(
-            graphics_provider,
+            core: &pipeline_core,
             texture_manager,
-            texture_bind_group_layout,
-            uniform_bind_group_layout,
             mesh_cache
-        );
+        };
 
-        let text_pipeline = TextPipeline::create::<TConfig>(
-            graphics_provider,
-            texture_bind_group_layout,
-            uniform_bind_group_layout
-        );
-
-        let lines_pipeline = LinesPipeline::create::<TConfig>(
-            graphics_provider,
-            uniform_bind_group_layout
-        );
+        let pipeline_2d = Pipeline2D::create::<TConfig>(&context);
+        let pipeline_3d = Pipeline3D::create::<TConfig>(&context);
+        let text_pipeline = TextPipeline::create::<TConfig>(&context);
+        let lines_pipeline = LinesPipeline::create::<TConfig>(&context);
 
         return Self {
             pipeline_2d,
             pipeline_3d,
             text: text_pipeline,
             lines: lines_pipeline,
-            shared: pipeline_shared,
+            core: pipeline_core,
         }
     }
 
@@ -76,7 +67,7 @@ impl RenderPipelines {
         self.text.flush(queue);
         self.lines.flush(queue);
 
-        let uniform_buffer = &mut self.shared.uniform_buffer;
+        let uniform_buffer = &mut self.core.uniform_buffer;
         uniform_buffer.write_out_with_padding(queue,constants::UNIFORM_BUFFER_ALIGNMENT);
         uniform_buffer.reset();
     }
@@ -242,10 +233,12 @@ impl PipelineVariants {
     }
 }
 
-pub struct SharedPipeline {
-    uniform_layout:     BindGroupLayout,
-    uniform_bind_group: BindGroup,
-    uniform_buffer:     DoubleBuffer<TransformUniform>,
+/// A core set of values (such as bind group layouts) used across various independent pipelines
+pub struct PipelineCore {
+    pub uniform_layout:     BindGroupLayout,
+    pub texture_layout:     BindGroupLayout,
+    pub uniform_bind_group: BindGroup,
+    pub uniform_buffer:     DoubleBuffer<TransformUniform>,
 }
 
 #[derive(Copy,Clone)]
@@ -255,7 +248,7 @@ pub struct UniformReference {
 
 // Not really a render pipeline. What're you going to do about it? Cry?
 
-impl SharedPipeline {
+impl PipelineCore {
 
     pub fn create<TConfig>(graphics_provider: &GraphicsProvider) -> Self
     where
@@ -282,6 +275,49 @@ impl SharedPipeline {
             label: Some("Uniform Bind Group Layout"),
         });
 
+
+        let texture_layout = graphics_provider.get_device().create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Texture Bind Group Layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: constants::CH0_TEXTURE_INDEX,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false, /* Must remain false to use STORAGE_BINDING texture usage */
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float {
+                            filterable: true
+                        },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: constants::CH0_SAMPLER_INDEX,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: constants::CH1_TEXTURE_INDEX,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float {
+                            filterable: true
+                        },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: constants::CH1_SAMPLER_INDEX,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ]
+        });
+
         let uniform_buffer = DoubleBuffer::new(device.create_buffer(&BufferDescriptor {
             label: Some("Uniform Buffer"),
             //See: https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Limits.html#structfield.min_storage_buffer_offset_alignment
@@ -305,36 +341,23 @@ impl SharedPipeline {
 
         return Self {
             uniform_layout,
+            texture_layout,
             uniform_bind_group,
             uniform_buffer,
         }
     }
 
-    pub fn get_uniform_buffer(&mut self) -> &mut DoubleBuffer<TransformUniform> {
-        return &mut self.uniform_buffer;
-    }
-
-    pub fn get_uniform_layout(&self) -> &BindGroupLayout {
-        return &self.uniform_layout;
-    }
-
-    pub fn get_uniform_bind_group(&self) -> &BindGroup {
-        return &self.uniform_bind_group;
-    }
-
     pub fn create_uniform_ortho(&mut self,size: UWimpyPoint) -> UniformReference {
         let transform = TransformUniform::create_ortho(size);
-        let uniform_buffer_range = self.get_uniform_buffer().push(transform);
+        let uniform_buffer_range = self.uniform_buffer.push(transform);
         UniformReference {
             value: (uniform_buffer_range.start * constants::UNIFORM_BUFFER_ALIGNMENT) as u32,
         }
     }
 
     pub fn create_uniform(&mut self,view_projection: Mat4) -> UniformReference {
-        let transform = TransformUniform {
-            view_projection,
-        };
-        let uniform_buffer_range = self.get_uniform_buffer().push(transform);
+        let transform = TransformUniform { view_projection };
+        let uniform_buffer_range = self.uniform_buffer.push(transform);
         UniformReference {
             value: (uniform_buffer_range.start * constants::UNIFORM_BUFFER_ALIGNMENT) as u32,
         }
@@ -343,7 +366,7 @@ impl SharedPipeline {
     pub fn bind_uniform<const BIND_GROUP_INDEX: u32>(&self,render_pass: &mut RenderPass,uniform_reference: UniformReference) {
         render_pass.set_bind_group(
             BIND_GROUP_INDEX,
-            self.get_uniform_bind_group(),
+            &self.uniform_bind_group,
             &[uniform_reference.value]
         );
     }

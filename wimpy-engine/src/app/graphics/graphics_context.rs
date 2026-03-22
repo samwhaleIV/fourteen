@@ -68,7 +68,13 @@ impl GraphicsContext {
     where
         TConfig: GraphicsConfig
     {
-        let mut texture_manager = TextureManager::new(&graphics_provider,streaming_policy);
+        let pipeline_core = PipelineCore::create::<TConfig>(&graphics_provider);
+
+        let mut texture_manager = TextureManager::new(
+            &graphics_provider,
+            pipeline_core.texture_layout.clone(),
+            streaming_policy
+        );
 
         let mut mesh_cache = MeshCache::create(
             graphics_provider.get_device(),
@@ -79,7 +85,8 @@ impl GraphicsContext {
         let pipelines = RenderPipelines::create::<TConfig>(
             &graphics_provider,
             &mut texture_manager,
-            &mut mesh_cache
+            &mut mesh_cache,
+            pipeline_core,
         );
 
         Self {
@@ -220,7 +227,7 @@ where
         frustum: Frustum,
     ) -> UniformReference {
         let matrix = camera.get_matrix(frustum,self.frame.aspect_ratio());
-        self.context.pipelines.shared.create_uniform(matrix)
+        self.context.pipelines.core.create_uniform(matrix)
     }
 
     /// Safe to call even if no meshes have been submitted, there is an early exit path
@@ -326,7 +333,7 @@ impl OutputBuilder<'_> {
         let frame_size = WimpyVec::from(frame.get_input_size());
         render_pass.set_viewport(0.0,0.0,frame_size.x,frame_size.y,0.0,1.0);
 
-        let ortho_uniform = self.graphics_context.pipelines.shared.create_uniform_ortho(frame.size());
+        let ortho_uniform = self.graphics_context.pipelines.core.create_uniform_ortho(frame.size());
 
         Ok(RenderPassBuilder {
             render_pass,

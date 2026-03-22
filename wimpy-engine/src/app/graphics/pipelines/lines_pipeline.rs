@@ -31,10 +31,7 @@ enum LinesMode {
 
 impl LinesPipeline {
 
-    pub fn create<TConfig>(
-        graphics_provider: &GraphicsProvider,
-        uniform_layout: &BindGroupLayout,
-    ) -> Self
+    pub fn create<TConfig>(context: &PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
@@ -177,7 +174,7 @@ impl LinesPipelinePass<'_,'_> {
                 &self.context.pipelines.lines.list_sub_variant
             },
         }.select(self.variant_key));
-        self.context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut self.render_pass,self.uniform_reference);
+        self.context.pipelines.core.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(&mut self.render_pass,self.uniform_reference);
         self.lines_mode = Some(mode);
     }
 

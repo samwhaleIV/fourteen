@@ -27,15 +27,11 @@ const UNIFORM_BIND_GROUP_INDEX: u32 = 1;
 
 impl Pipeline2D {
 
-    pub fn create<TConfig>(
-        graphics_provider:  &GraphicsProvider,
-        texture_layout:     &BindGroupLayout,
-        uniform_layout:     &BindGroupLayout,
-    ) -> Self
+    pub fn create<TConfig>(context: &PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
-        let device = graphics_provider.get_device();
+        let device = context.graphics_provider.get_device();
 
         let shader = &device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Pipeline 2D Shader"),
@@ -46,15 +42,15 @@ impl Pipeline2D {
             label: Some("Pipeline 2D Render Layout"),
             bind_group_layouts: &[
                 // This is where the 'texture bind group' is set to bind group index '0'
-                texture_layout,
+                &context.core.texture_layout,
                 // This is where the 'uniform bind group' is set to bind group index '1'
-                uniform_layout,
+                &context.core.uniform_layout,
             ],
             immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {
-            graphics_provider,
+            graphics_provider: context.graphics_provider,
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[
@@ -150,7 +146,7 @@ impl<'pass,'context> PipelinePass<'pass,'context> for Pipeline2DPass<'pass,'cont
         let pipeline_2d = &context.pipelines.pipeline_2d;
 
         render_pass.set_pipeline(&pipeline_2d.variants.select(variant_key));
-        context.pipelines.shared.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
+        context.pipelines.core.bind_uniform::<UNIFORM_BIND_GROUP_INDEX>(render_pass,uniform_reference);
 
         render_pass.set_index_buffer(
             pipeline_2d.index_buffer.slice(..),

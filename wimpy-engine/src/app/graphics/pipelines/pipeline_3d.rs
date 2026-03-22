@@ -94,17 +94,11 @@ const STORAGE_BG_INSTANCES: u32 = 2;
 
 impl Pipeline3D {
 
-    pub fn create<TConfig>(
-        graphics_provider:  &GraphicsProvider,
-        texture_manager:    &mut TextureManager,
-        texture_layout:     &BindGroupLayout,
-        uniform_layout:     &BindGroupLayout,
-        mesh_cache:         &MeshCache
-    ) -> Self
+    pub fn create<TConfig>(context: &PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
-        let device = graphics_provider.get_device();
+        let device = context.graphics_provider.get_device();
 
         let shader = &device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Pipeline 3D Shader"),
@@ -141,15 +135,15 @@ impl Pipeline3D {
         let render_pipeline_layout = &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline 3D Render Layout"),
             bind_group_layouts: &[
-                texture_layout,
-                uniform_layout,
+                &context.core.texture_layout,
+                &context.core.uniform_layout,
                 &storage_bind_group_layout
             ],
             immediate_size: 0
         });
 
         let pipeline_creator = PipelineCreator {
-            graphics_provider,
+            graphics_provider: context.graphics_provider,
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[],
@@ -174,12 +168,12 @@ impl Pipeline3D {
             mapped_at_creation: false,
         });
 
-        let diffuse_atlas = texture_manager.create_atlas(&VirtualTextureAtlasConfig {
+        let diffuse_atlas = context.texture_manager.create_atlas(context.graphics_provider,&VirtualTextureAtlasConfig {
             slot_size:   ATLAS_SLOT_SIZE_DIFFUSE,
             slot_length: ATLAS_SLOT_LENGTH_DIFFUSE,
         });
 
-        let lightmap_atlas = texture_manager.create_atlas(&VirtualTextureAtlasConfig {
+        let lightmap_atlas = context.texture_manager.create_atlas(context.graphics_provider,&VirtualTextureAtlasConfig {
             slot_size:   ATLAS_SLOT_SIZE_LIGHTMAP,
             slot_length: ATLAS_SLOT_LENGTH_LIGHTMAP,
         });
@@ -331,7 +325,7 @@ impl Pipeline3DPass<'_,'_> {
 
         self.render_pass.set_pipeline(pipeline.variants.select(self.variant_key));
 
-        self.context.pipelines.shared.bind_uniform::<UNIFORM_BG>(self.render_pass,self.uniform_reference);
+        self.context.pipelines.core.bind_uniform::<UNIFORM_BG>(self.render_pass,self.uniform_reference);
         self.render_pass.set_bind_group(STORAGE_BG,&pipeline.storage_bind_group,&[]);
 
         let bind_group = self.context.bind_group_cache.get(
