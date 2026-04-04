@@ -2,7 +2,7 @@ use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspe
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
 use super::{GPUTextureKey, GPUTexture, GPUTextureCache};
 
-pub struct VirtualTextureAtlas {
+pub struct TextureAtlas {
     /// How many slots occupy a dimension
     slot_length: u32,
 
@@ -15,7 +15,9 @@ pub struct VirtualTextureAtlas {
     size_recip: WimpyVec,
 
     /// The surface provided to a shader
-    atlas_texture: GPUTexture,
+    pub(in crate::app::graphics) texture: GPUTexture,
+
+    pub(in crate::app::graphics) texture_key: GPUTextureKey,
 
     /// Backend cache for key/ownership logisitics
     /// 
@@ -29,22 +31,24 @@ pub struct VirtualTextureAtlas {
 }
 
 struct EncoderTextureCopyCommand {
-    texture: wgpu::Texture,
-    src_size: UWimpyPoint,
+    texture:    wgpu::Texture,
+    src_size:   UWimpyPoint,
     dst_origin: UWimpyPoint,
 }
 
-impl VirtualTextureAtlas {
+impl TextureAtlas {
     pub fn new(
         slot_length: u32,
         slot_size: u32,
-        atlas_texture:  GPUTexture,
+        texture:  GPUTexture,
+        texture_key: GPUTextureKey,
     ) -> Self {
         let slot_count = slot_size.pow(2) as usize;
         Self {
             slot_size,
             slot_length,
-            atlas_texture,
+            texture,
+            texture_key,
             size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
             uv_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
@@ -61,7 +65,7 @@ impl VirtualTextureAtlas {
                 aspect: TextureAspect::All,
             };
             let dst = TexelCopyTextureInfo {
-                texture: self.atlas_texture.get_texture(),
+                texture: self.texture.view.texture(),
                 mip_level: 0,
                 origin: Origin3d {
                     x: command.dst_origin.x,
@@ -94,7 +98,7 @@ impl VirtualTextureAtlas {
     ) {
         let source_texture = match frame_cache.get(texture) {
             Ok(container) => {
-                container.get_texture()
+                container.view.texture()
             },
             Err(_) => {
                 // This is not similiar to where we would want to use the 'missing' texture. This is an internal structural issue
@@ -146,9 +150,5 @@ impl VirtualTextureAtlas {
         } else {
             None
         }
-    }
-
-    pub fn get_texture_container(&self) -> &GPUTexture {
-        &self.atlas_texture
     }
 }

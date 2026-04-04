@@ -1,65 +1,35 @@
 use std::path::Path;
 
-use image::{
-    DynamicImage, EncodableLayout, ImageError, ImageReader
-};
+use image::{DynamicImage, ImageError, ImageReader};
 
-use wimpy_engine::{UWimpyPoint, app::*};
-use wimpy_engine::app::graphics::{
-    TextureData,
-    TextureDataWriteParameters
-};
-
+use wimpy_engine::app::*;
 pub struct DekstopAppIO;
 
 struct DynamicImageWrapper {
     value: DynamicImage
 }
 
-impl TextureData for DynamicImageWrapper {
-
-    fn size(&self) -> UWimpyPoint {
-        [self.value.width(),self.value.height()].into()
-    }
-    
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-            },
-            self.value.to_rgba8().as_bytes(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                /* 1 byte per color in 8bit 4 channel color (RGBA with u8) */
-                bytes_per_row: Some(self.value.width() * 4), 
-                rows_per_image: Some(self.value.height()),
-            },
-            parameters.texture_size,
-        );
-    }
-}
-
 fn map_std_io_error(error: std::io::ErrorKind) -> FileError {
-    use std::io::ErrorKind::*;
+    use std::io::ErrorKind;
     return match error {
-        NotFound => FileError::NotFound,
-        PermissionDenied => FileError::NoPermission,
-        ConnectionRefused => FileError::NoPermission,
-        AddrNotAvailable => FileError::NotFound,
-        InvalidFilename => FileError::InvalidPath,
-        _ => FileError::Other,
+        ErrorKind::NotFound =>             FileError::NotFound,
+        ErrorKind::PermissionDenied =>     FileError::NoPermission,
+        ErrorKind::ConnectionRefused =>    FileError::NoPermission,
+        ErrorKind::AddrNotAvailable =>     FileError::NotFound,
+        ErrorKind::InvalidFilename =>      FileError::InvalidPath,
+        _ =>                               FileError::Other,
     }
 }
 
 impl WimpyIO for DekstopAppIO {
-    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
+    async fn load_image_file(path: &Path) -> Result<ImageData,FileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => {
-                    Ok(DynamicImageWrapper { value })
+                    Ok(ImageData {
+                        size: [value.width(),value.height()].into(),
+                        data: value.to_rgba8().to_vec(),
+                    })
                 },
                 Err(image_error) => Err(match image_error {
                     ImageError::Decoding(decoding_error) => {

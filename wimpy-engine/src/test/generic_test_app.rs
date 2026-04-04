@@ -9,7 +9,7 @@ pub struct GenericTestApp {
 }
 
 impl GenericTestApp {
-    fn pressed_enter(&self,context: &WimpyApp) -> bool {
+    fn pressed_enter(&self,context: &WimpyAppContext) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
             match event {
@@ -37,7 +37,7 @@ impl<IO> WimpyAppHandler<IO> for GenericTestApp
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyApp) -> Self {
+    async fn create(context: &mut WimpyAppContext) -> Self {
 
         let render_config = context.debug_shell.get_render_config();
         render_config.top_right = Pane {
@@ -70,7 +70,7 @@ where
         };
     }
 
-    fn update(&mut self,context: &mut WimpyApp) {
+    fn update(&mut self,context: &mut WimpyAppContext) {
 
         // Start render ...
         if self.pressed_enter(context) {

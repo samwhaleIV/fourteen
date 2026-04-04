@@ -36,7 +36,7 @@ pub struct WebApp<TWimpyApp> {
     gamepad_manager: GamepadManager,
     size: UWimpyPoint,
     wimpy_app: TWimpyApp,
-    wimpy_context: WimpyApp,
+    wimpy_context: WimpyAppContext,
 }
 
 #[allow(unused)]
@@ -75,7 +75,7 @@ fn poll_mouse() -> MouseInput {
 
 impl<TWimpyApp> WebApp<TWimpyApp>
 where
-    TWimpyApp: WimpyApp<WimpyWebIO> + 'static,
+    TWimpyApp: WimpyAppContext<WimpyWebIO> + 'static,
 {
     pub async fn create_app<TConfig>(manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
@@ -110,7 +110,7 @@ where
             },
         }?;
 
-        let Some(mut wimpy_context) = WimpyApp::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
+        let Some(mut wimpy_context) = WimpyAppContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
             manifest_path,
             input_device_hint: InputDevice::Unknown,
             graphics_provider,

@@ -135,7 +135,7 @@ mod app_shell_controller {
         pub fn update(
             &mut self,
             mouse_input:    mouse::MouseInput,
-            gamepad_input:  gamepad::Input,
+            gamepad_input:  gamepad::GamepadInput,
             delta_seconds:  f32,
             bounds:         WimpyRect,
             can_reposition: bool,

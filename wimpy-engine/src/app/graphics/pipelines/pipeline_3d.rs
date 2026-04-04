@@ -15,8 +15,8 @@ use bytemuck::{Pod,Zeroable};
 use super::{*, super::{*, textures::*}};
 
 pub struct Pipeline3D {
-    diffuse_atlas:              VirtualTextureAtlasKey,
-    lightmap_atlas:             VirtualTextureAtlasKey,
+    diffuse_atlas:              TextureAtlas,
+    lightmap_atlas:             TextureAtlas,
     variants:                   PipelineVariants,
     storage_bind_group:         BindGroup,
     external_instance_buffer:   Buffer,
@@ -94,7 +94,7 @@ const STORAGE_BG_INSTANCES: u32 = 2;
 
 impl Pipeline3D {
 
-    pub fn create<TConfig>(context: &PipelineCreationContext) -> Self
+    pub fn create<TConfig>(context: &mut PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
@@ -168,12 +168,12 @@ impl Pipeline3D {
             mapped_at_creation: false,
         });
 
-        let diffuse_atlas = context.texture_manager.create_atlas(context.graphics_provider,&VirtualTextureAtlasConfig {
+        let diffuse_atlas = context.texture_manager.create_atlas(context.graphics_provider,&TextureAtlasConfig {
             slot_size:   ATLAS_SLOT_SIZE_DIFFUSE,
             slot_length: ATLAS_SLOT_LENGTH_DIFFUSE,
         });
 
-        let lightmap_atlas = context.texture_manager.create_atlas(context.graphics_provider,&VirtualTextureAtlasConfig {
+        let lightmap_atlas = context.texture_manager.create_atlas(context.graphics_provider,&TextureAtlasConfig {
             slot_size:   ATLAS_SLOT_SIZE_LIGHTMAP,
             slot_length: ATLAS_SLOT_LENGTH_LIGHTMAP,
         });
@@ -184,11 +184,11 @@ impl Pipeline3D {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: STORAGE_BG_VERTICES,
-                    resource: mesh_cache.get_vertex_buffer().as_entire_binding(),
+                    resource: context.mesh_cache.get_vertex_buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: STORAGE_BG_INDICES,
-                    resource: mesh_cache.get_index_buffer().as_entire_binding(),
+                    resource: context.mesh_cache.get_index_buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: STORAGE_BG_INSTANCES,
@@ -230,26 +230,32 @@ impl Pipeline3D {
             let transform_3 = draw_data.transform.w_axis.into();
 
             for meshlet in meshlets {
-                let (diffuse,lightmap) = match texture_strategy {
-                    TextureStrategy::Standard => (meshlet.diffuse,meshlet.lightmap),
+                let (diffuse,lightmap)  = match texture_strategy {
+                    TextureStrategy::Standard => (
+                        meshlet.diffuse,
+                        meshlet.lightmap
+                    ),
                     TextureStrategy::LightmapToDiffuse => (
                         meshlet.lightmap,
-                        context.engine_textures.opaque_white
+                        context.engine_textures.opaque_white.key
                     ),
                     TextureStrategy::NoLightmap => (
                         meshlet.diffuse,
-                        context.engine_textures.opaque_white
+                        context.engine_textures.opaque_white.key
                     )
                 };
 
+                let diffuse_key = context.texture_manager.get_gpu_entry(&diffuse).key;
+                let lightmap_key = context.texture_manager.get_gpu_entry(&lightmap).key;
+
                 let uv_diffuse = pipeline_3d.diffuse_atlas.set_texture(
-                    &context.frame_cache,
-                    diffuse.get_ref()
+                    &context.texture_manager.gpu_cache,
+                    diffuse_key
                 );
 
                 let uv_lightmap = pipeline_3d.lightmap_atlas.set_texture(
-                    &context.frame_cache,
-                    lightmap.get_ref()
+                    &context.texture_manager.gpu_cache,
+                    lightmap_key
                 );
 
                 let range = &meshlet.range;
@@ -328,18 +334,18 @@ impl Pipeline3DPass<'_,'_> {
         self.context.pipelines.core.bind_uniform::<UNIFORM_BG>(self.render_pass,self.uniform_reference);
         self.render_pass.set_bind_group(STORAGE_BG,&pipeline.storage_bind_group,&[]);
 
-        let bind_group = self.context.bind_group_cache.get(
+        let bind_group = self.context.texture_manager.get_bind_group_dual_channel(
             self.context.graphics_provider.get_device(),
-            &BindGroupCacheIdentity::DualChannel {
-                ch_0: BindGroupChannelConfig {
+            [
+                BindGroupChannelConfig {
                     mode: diffuse_sampler,
-                    texture: &pipeline.diffuse_atlas.get_texture_container(),
+                    texture: pipeline.diffuse_atlas.texture_key,
                 },
-                ch_1: BindGroupChannelConfig {
+                BindGroupChannelConfig {
                     mode: SamplerMode::LinearClamp,
-                    texture: &pipeline.lightmap_atlas.get_texture_container(),
+                    texture: pipeline.lightmap_atlas.texture_key
                 }
-            }
+            ]
         );
         self.render_pass.set_bind_group(TEXTURE_BG,bind_group,&[]);
 

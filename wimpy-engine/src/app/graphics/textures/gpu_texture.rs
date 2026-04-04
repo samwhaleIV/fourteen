@@ -1,7 +1,7 @@
 use wgpu::*;
 use std::num::NonZeroU32;
 
-use crate::{UWimpyPoint};
+use crate::UWimpyPoint;
 use crate::app::graphics::{GraphicsProvider, constants};
 
 #[derive(Copy,Clone,PartialEq,Eq,Hash)]
@@ -15,7 +15,6 @@ pub enum GPUTextureIdentity {
 /// It's a handle to a handle
 pub struct GPUTexture {
     pub identity:   GPUTextureIdentity,
-    pub input_size: UWimpyPoint,
     pub view:       TextureView,
 }
 
@@ -52,11 +51,12 @@ pub struct GPUTextureConfig {
 }
 
 impl GPUTexture {
-
     pub fn new(
         graphics_provider: &GraphicsProvider,
         config: GPUTextureConfig
     ) -> Self {
+
+        //TODO: fix this fucking half implemented mess
 
         #[cfg(not(target_arch = "wasm32"))]
         let usage_flags = {
@@ -101,25 +101,8 @@ impl GPUTexture {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         Self {
-            input_size: config.size,
             view,
             identity: config.identity
         }
-    }
-
-    pub fn get_view(&self) -> &TextureView {
-        &self.view
-    }
-
-    pub fn get_texture(&self) -> &Texture {
-        self.view.texture()
-    }
-
-    pub fn get_identity(&self) -> GPUTextureIdentity {
-        self.identity
-    }
-
-    pub fn size(&self) -> UWimpyPoint {
-        self.input_size
     }
 }

@@ -59,7 +59,7 @@ impl KeyboardTranslator {
 impl Default for KeyboardTranslator {
     fn default() -> Self {
         let mut translator = Self {
-            binds: HashMap::<KeyCode,Impulse>::with_capacity(24),
+            binds: HashMap::<KeyCode,Impulse>::with_capacity(super::constants::IMPULSE_COUNT * 2),
             reverse_lookup: std::array::from_fn(|_|HashSet::with_capacity(4))
         };
 

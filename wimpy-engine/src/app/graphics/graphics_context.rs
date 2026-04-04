@@ -23,6 +23,7 @@ pub struct GraphicsContext {
     pub pipelines:          RenderPipelines,
     pub texture_manager:    TextureManager,
     pub mesh_cache:         MeshCache,
+    pub engine_textures:    EngineTextures,
     ///A depth stencil exclusively for the output surface
     /// 
     /// This avoids possible churn when using render targets that use depth stencil render passes
@@ -64,7 +65,10 @@ impl DepthStencil {
 }
 
 impl GraphicsContext {
-    pub async fn create<TConfig>(graphics_provider: GraphicsProvider,streaming_policy: StreamingPolicy) -> Self
+    pub fn create<TConfig>(
+        graphics_provider: GraphicsProvider,
+        streaming_policy: StreamingPolicy,
+    ) -> Self
     where
         TConfig: GraphicsConfig
     {
@@ -82,18 +86,25 @@ impl GraphicsContext {
             TConfig::MESH_CACHE_INDEX_BUFFER_SIZE
         );
 
-        let pipelines = RenderPipelines::create::<TConfig>(
+        let engine_textures = EngineTextures::create(
             &graphics_provider,
-            &mut texture_manager,
-            &mut mesh_cache,
-            pipeline_core,
+            &mut texture_manager
         );
+
+        let pipelines = RenderPipelines::create::<TConfig>(PipelineCreationContext {
+            graphics_provider: &graphics_provider,
+            core: pipeline_core,
+            texture_manager: &mut texture_manager,
+            mesh_cache: &mut mesh_cache,
+            engine_textures: &engine_textures
+        });
 
         Self {
             graphics_provider,
             pipelines,
             texture_manager,
             mesh_cache,
+            engine_textures,
             output_depth_stencil: None,
             depth_stencil: None,
         }
@@ -161,10 +172,13 @@ impl GraphicsContext {
         };
 
         // Note: size is already validated by the graphics provider
-        let size: UWimpyPoint = [output_surface.texture.width(),output_surface.texture.height()].into();
-        let view_format = self.graphics_provider.get_output_view_format();
+        let size: UWimpyPoint = [
+            output_surface.texture.width(),
+            output_surface.texture.height()
+        ].into();
 
-        let cache_reference = self.texture_manager.bind_output_surface(&output_surface,view_format,size);
+        let view_format = self.graphics_provider.get_output_view_format();
+        let cache_reference = self.texture_manager.bind_output_surface(&output_surface,view_format);
 
         let encoder = self.graphics_provider.get_device().create_command_encoder(&CommandEncoderDescriptor {
             label: Some("Render Encoder")
@@ -267,11 +281,11 @@ impl OutputBuilder<'_> {
     where
         TRenderTarget: RenderTarget
     {
-        let view = frame.get_cache_entry(&mut self.graphics_context.texture_manager).value.get_view();
+        let view = &self.graphics_context.texture_manager.get_gpu_entry(frame).texture.view;
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
-            (true, DepthStencilConfig::None) =>         PipelineVariantKey::OutputSurface,
-            (true, DepthStencilConfig::Standard) =>     PipelineVariantKey::OutputSurfaceWithDepth,
+            (true,  DepthStencilConfig::None) =>        PipelineVariantKey::OutputSurface,
+            (true,  DepthStencilConfig::Standard) =>    PipelineVariantKey::OutputSurfaceWithDepth,
             (false, DepthStencilConfig::None) =>        PipelineVariantKey::RenderTarget,
             (false, DepthStencilConfig::Standard) =>    PipelineVariantKey::InternalTargetWithDepth,
         };

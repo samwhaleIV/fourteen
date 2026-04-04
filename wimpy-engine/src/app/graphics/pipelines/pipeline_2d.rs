@@ -179,24 +179,22 @@ impl Pipeline2DPass<'_,'_> {
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>,
-        T: CacheResolver,
+        T: GPUTextureCacheResolver,
     {
-        let texture = texture.get_cache_entry(&mut self.context.texture_manager);
-        let uv_scale = WimpyVec::from(texture.input_size) / WimpyVec::from(texture.value.size());
+        let texture = texture.get_entry(&mut self.context.texture_manager);
+        let key = texture.key;
+        let uv_scale = texture.get_uv_scale();
 
         'update_bind_group: {
-            let key = Some(texture.key);
-            if !(self.needs_sampler_update || self.current_sampling_frame != key) {
+            if !(self.needs_sampler_update || self.current_sampling_frame != Some(key)) {
                 break 'update_bind_group;
             }
-            self.current_sampling_frame = key;
+            self.current_sampling_frame = Some(key);
             self.needs_sampler_update = false;
 
-            let bind_group = self.context.bind_group_cache.get(self.context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
-                ch_0: BindGroupChannelConfig {
-                    mode: self.sampler_mode,
-                    texture: texture.value,
-                }
+            let bind_group = self.context.texture_manager.get_bind_group_single_channel(self.context.graphics_provider.get_device(),BindGroupChannelConfig {
+                mode: self.sampler_mode,
+                texture: key,
             });
             self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
         }

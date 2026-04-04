@@ -24,30 +24,19 @@ pub trait PipelineFlush {
 /* GraphicsContext isn't fully formed during pipeline creation; but pipelines are a part of the graphics context */
 pub struct PipelineCreationContext<'a> {
     pub graphics_provider:  &'a GraphicsProvider,
-    pub core:               &'a PipelineCore,
+    pub core:               PipelineCore,
     pub texture_manager:    &'a mut TextureManager,
     pub mesh_cache:         &'a mut MeshCache,
+    pub engine_textures:    &'a EngineTextures
 }
 
 impl RenderPipelines {
-    pub fn create<TConfig>(
-        graphics_provider:  &GraphicsProvider,
-        texture_manager:    &mut TextureManager,
-        mesh_cache:         &mut MeshCache,
-        pipeline_core:      PipelineCore,
-    ) -> Self
+    pub fn create<TConfig>(mut context: PipelineCreationContext) -> Self
     where
         TConfig: GraphicsConfig
     {
-        let context = PipelineCreationContext {
-            graphics_provider,
-            core: &pipeline_core,
-            texture_manager,
-            mesh_cache
-        };
-
         let pipeline_2d = Pipeline2D::create::<TConfig>(&context);
-        let pipeline_3d = Pipeline3D::create::<TConfig>(&context);
+        let pipeline_3d = Pipeline3D::create::<TConfig>(&mut context);
         let text_pipeline = TextPipeline::create::<TConfig>(&context);
         let lines_pipeline = LinesPipeline::create::<TConfig>(&context);
 
@@ -56,7 +45,7 @@ impl RenderPipelines {
             pipeline_3d,
             text: text_pipeline,
             lines: lines_pipeline,
-            core: pipeline_core,
+            core: context.core,
         }
     }
 

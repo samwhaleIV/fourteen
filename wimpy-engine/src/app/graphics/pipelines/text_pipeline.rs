@@ -10,6 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{*, super::{*, textures::*}};
 use crate::app::fonts::FontDefinition;
+use crate::WimpyColor;
 
 pub struct TextPipeline {
     variants:           PipelineVariants,
@@ -123,7 +124,6 @@ impl TextPipeline {
 pub struct PipelineTextPass<'pass,'encoder,TFont> {
     context: &'pass mut GraphicsContext,
     render_pass: &'pass mut RenderPass<'encoder>,
-    texture_valid: bool,
     range_start: usize,
     uv_scalar: WimpyVec,
     _phantom: PhantomData<TFont>
@@ -174,34 +174,21 @@ where
             context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
-        let target_texture = TFont::get_texture(&context.texture_manager);
-        let target_texture_ref = target_texture.get_ref();
+        let texture = context.texture_manager.get_gpu_entry(&TFont::select_texture(&context.engine_textures));
+        let uv_scalar = WimpyVec::from(texture.size()).reciprocal() * texture.get_uv_scale();
+        let key = texture.key;
 
-        let mut texture_valid = false;
+        let bind_group = context.texture_manager.get_bind_group_single_channel(context.graphics_provider.get_device(),BindGroupChannelConfig {
+            mode: SamplerMode::NearestClamp,
+            texture: key,
+        });
 
-        match target_texture.get_cache_entry(TFont::get_texture()) {
-            Ok(texture_container) => {
-                let bind_group = context.bind_group_cache.get(context.graphics_provider.get_device(),&BindGroupCacheIdentity::SingleChannel {
-                    ch_0: BindGroupChannelConfig {
-                        mode: SamplerMode::NearestClamp,
-                        texture: texture_container,
-                    }
-                });
-                render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
-                texture_valid = true;
-            },
-            Err(error) => {
-                log::warn!("Unable to get texture container for sampler; the texture container cannot be found: {:?}",error);
-            }
-        };
-
-        let uv_scalar = WimpyVec::from(target_texture.size()).reciprocal() * target_texture.get_uv_scale();
+        render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
 
         let range_start = context.pipelines.text.instance_buffer.len();
 
         Self {
             uv_scalar,
-            texture_valid,
             context,
             render_pass,
             _phantom: PhantomData,
@@ -387,9 +374,6 @@ where
     }
 
     pub fn submit(self) {
-        if !self.texture_valid {
-            return;
-        }
         let range_end = self.context.pipelines.text.instance_buffer.len();
         if self.range_start == range_end {
             return;

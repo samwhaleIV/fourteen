@@ -35,13 +35,13 @@ impl<IO> WimpyAppHandler<IO> for SrgbTest
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyApp) -> Self {
+    async fn create(context: &mut WimpyAppContext) -> Self {
         Self {
             srgb_test_texture: context.get_image("wimpy/srgb-test",StreamingHint::Static),
         }
     }
 
-    fn update(&mut self,context: &mut WimpyApp) {
+    fn update(&mut self,context: &mut WimpyAppContext) {
         let Some(mut output) = context.graphics.create_output_builder(WimpyNamedColor::Black) else {
             return;
         };

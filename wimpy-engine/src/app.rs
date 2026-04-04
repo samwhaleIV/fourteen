@@ -12,9 +12,6 @@ pub mod kvs;
 pub mod input;
 pub mod fonts;
 
-mod engine_textures;
-use engine_textures::EngineTextures;
-
 use std::{path::Path, rc::Rc};
 use graphics::{*,textures::*};
 use wam::AssetManager;
@@ -54,9 +51,8 @@ pub trait WimpyIO {
     fn load_image_file(path: &Path) ->      impl Future<Output = Result<ImageData,FileError>>;
 }
 
-pub struct WimpyApp {
+pub struct WimpyAppContext {
     pub graphics:           GraphicsContext,
-    pub engine_textures:    EngineTextures,
     pub key_value_store:    KeyValueStore,
     pub input:              InputManager,
     pub assets:             AssetManager,
@@ -71,29 +67,32 @@ pub struct WimpyContextCreationConfig<'a> {
     pub texture_stream_policy:  StreamingPolicy
 }
 
-impl WimpyApp {
-    pub async fn create<IO,TConfig>(config: WimpyContextCreationConfig<'_>) -> Option<Self>
+pub trait WimpyAppHandler<IO>
+where
+    IO: WimpyIO
+{
+    fn create(context: &mut WimpyAppContext) -> impl Future<Output = Self>;
+    fn update(&mut self,context: &mut WimpyAppContext);
+}
+
+impl WimpyAppContext {
+    pub async fn create<IO,TConfig>(config: WimpyContextCreationConfig<'_>) -> Self
     where
         IO: WimpyIO,
         TConfig: GraphicsConfig
     {
-        let assets = AssetManager::load_or_default::<IO>(
-            config.manifest_path
-        ).await;
-
-        let mut graphics = GraphicsContext::create::<TConfig>(
+        let graphics = GraphicsContext::create::<TConfig>(
             config.graphics_provider,
             config.texture_stream_policy
-        ).await;
-
-        let engine_textures = EngineTextures::create(
-            &graphics.graphics_provider,
-            &mut graphics.texture_manager
         );
 
         let input =   input::InputManager::with_device_start_hint(config.input_device_hint);
         let storage = kvs::KeyValueStore::default();
         let debug =   debug_shell::DebugShell::default();
+
+        let assets = AssetManager::load_or_default::<IO>(
+            config.manifest_path
+        ).await;
 
         let mut context = Self {
             graphics,
@@ -102,21 +101,20 @@ impl WimpyApp {
             assets,
             debug_shell: debug,
             missing_text: Rc::from(MISSING_TEXT),
-            engine_textures,
         };
 
-        context.bind_engine_assets();
+        context.load_engine_textures();
 
-        Some(context)
+        context
     }
 
     // A series of assets that are 'always' expected to be a part of the runtime, such as fonts
-    fn bind_engine_assets(&mut self) {
-        self.engine_textures.font_classic =         self.get_image(FONT_CLASSIC,           StreamingHint::Static);
-        self.engine_textures.font_classic_outline = self.get_image(FONT_CLASSIC_OUTLINE,   StreamingHint::Static);
-        self.engine_textures.font_twelven =         self.get_image(FONT_TWELVEN,           StreamingHint::Static);
-        self.engine_textures.font_twelven_shaded =  self.get_image(FONT_TWELVEN_SHADED,    StreamingHint::Static);
-        self.engine_textures.font_mono_elf =        self.get_image(FONT_MONO_ELF,          StreamingHint::Static);
+    fn load_engine_textures(&mut self) {
+        self.graphics.engine_textures.font_classic =         self.get_image(FONT_CLASSIC,           StreamingHint::Static);
+        self.graphics.engine_textures.font_classic_outline = self.get_image(FONT_CLASSIC_OUTLINE,   StreamingHint::Static);
+        self.graphics.engine_textures.font_twelven =         self.get_image(FONT_TWELVEN,           StreamingHint::Static);
+        self.graphics.engine_textures.font_twelven_shaded =  self.get_image(FONT_TWELVEN_SHADED,    StreamingHint::Static);
+        self.graphics.engine_textures.font_mono_elf =        self.get_image(FONT_MONO_ELF,          StreamingHint::Static);
     }
 
     pub fn get_image(&mut self,name: &'static str,streaming_hint: StreamingHint) -> WimpyTexture {
@@ -124,7 +122,7 @@ impl WimpyApp {
             Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image asset load failure: {:?}",error);
-                self.engine_textures.missing
+                self.graphics.engine_textures.missing
             },
         }
     }
@@ -134,7 +132,7 @@ impl WimpyApp {
             Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image slice asset load failure: {:?}",error);
-                self.engine_textures.missing
+                self.graphics.engine_textures.missing
             },
         }
     }
@@ -159,12 +157,4 @@ impl WimpyApp {
             },
         }
     }
-}
-
-pub trait WimpyAppHandler<IO>
-where
-    IO: WimpyIO
-{
-    fn load(context: &mut WimpyApp) -> impl Future<Output = Self>;
-    fn update(&mut self,context: &mut WimpyApp);
 }

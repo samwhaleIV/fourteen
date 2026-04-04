@@ -4,7 +4,7 @@ use std::{path::{Path, PathBuf}, rc::Rc};
 use slotmap::SparseSecondaryMap;
 
 use crate::{UWimpyPoint, WimpyPointRect};
-use crate::app::{WimpyIO, WimpyApp, FileError, graphics::{*, textures::*}};
+use crate::app::{WimpyIO, WimpyAppContext, FileError, graphics::{*, textures::*}};
 use super::{*, reference_types::MeshletTexture};
 
 #[derive(Default)]
@@ -99,14 +99,14 @@ impl AssetManager {
         Ok(text_data)
     }
 
-    pub async fn get_text_asset<IO: WimpyIO>(name: &'static str,app: &mut WimpyApp) -> Result<Rc<str>,AssetManagerError> {
+    pub async fn get_text_asset<IO: WimpyIO>(name: &'static str,app: &mut WimpyAppContext) -> Result<Rc<str>,AssetManagerError> {
         let Some(virtual_asset) = app.assets.manifest.text_assets.get(name) else {
             return Err(AssetManagerError::VirtualAssetNotFound(name));
         };
         Ok(app.assets.get_text_cached::<IO>(virtual_asset.key,name).await?)
     }
 
-    pub fn get_image_asset(name: &'static str,context: &mut WimpyApp,streaming_hint: StreamingHint) -> Result<WimpyTexture,AssetManagerError> {
+    pub fn get_image_asset(name: &'static str,context: &mut WimpyAppContext,streaming_hint: StreamingHint) -> Result<WimpyTexture,AssetManagerError> {
         let Some(virtual_asset) = context.assets.manifest.image_assets.get(name) else {
             return Err(AssetManagerError::VirtualAssetNotFound(name));
         };
@@ -122,7 +122,7 @@ impl AssetManager {
         Ok(texture_key_creator.create_texture(key,name,size,area))
     }
 
-    pub async fn get_model_asset<IO: WimpyIO>(name: &'static str,app: &mut WimpyApp) -> Result<TexturedMesh,AssetManagerError> {
+    pub async fn get_model_asset<IO: WimpyIO>(name: &'static str,app: &mut WimpyAppContext) -> Result<TexturedMesh,AssetManagerError> {
 
         let (hard_asset_key,meshlet_descriptors) = {
             let Some(virtual_asset) = app.assets.manifest.model_assets.get(name) else {
@@ -189,13 +189,13 @@ impl AssetManager {
 }
 
 struct TextureKeyCreator<'a> {
-    app:            &'a mut WimpyApp,
+    app:            &'a mut WimpyAppContext,
     streaming_hint: StreamingHint
 }
 
 impl TextureKeyCreator<'_> {
     fn get_missing(&self) -> WimpyTexture {
-        self.app.engine_textures.missing.clone()
+        self.app.graphics.engine_textures.missing.clone()
     }
 
     fn create_texture(
@@ -222,8 +222,8 @@ impl TextureKeyCreator<'_> {
             return self.get_missing();
         };
 
-        let texture = self.app.graphics.texture_manager.create_key_for_asset(TextureCreationParameters {
-            identity: hard_asset.clone(),
+        let texture = self.app.graphics.texture_manager.bind_wam_asset(TextureCreationParameters {
+            wam_identity: hard_asset.clone(),
             policy_hint: self.streaming_hint,
             slice,
             size_hint: size,

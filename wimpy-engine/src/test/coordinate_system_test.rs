@@ -81,7 +81,7 @@ fn generate_lines() -> Vec<LinePoint3D> {
 }
 
 impl CoordinateSystemTest {
-    fn pressed_enter(&self,context: &WimpyApp) -> bool {
+    fn pressed_enter(&self,context: &WimpyAppContext) -> bool {
         let mut toggle = false;
         for event in context.input.iter_recent_events() {
             match event {
@@ -103,7 +103,7 @@ impl<IO> WimpyAppHandler<IO> for CoordinateSystemTest
 where
     IO: WimpyIO
 {
-    async fn load(context: &mut WimpyApp) -> Self {
+    async fn create(context: &mut WimpyAppContext) -> Self {
         let render_config = context.debug_shell.get_render_config();
         render_config.top_left = Pane {
             size: WimpyVec::from(200),
@@ -140,7 +140,7 @@ where
         }
     }
 
-    fn update(&mut self,context: &mut WimpyApp) {
+    fn update(&mut self,context: &mut WimpyAppContext) {
         const MOVEMENT_UNITS_PER_SECOND: f32 = 3.5;
         const ANGLE_PER_PIXEL: f32 = 0.1;
 

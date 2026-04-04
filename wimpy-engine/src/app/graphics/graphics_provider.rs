@@ -4,8 +4,8 @@ use super::{SizeValidationError, constants};
 
 pub struct GraphicsProvider {
     surface: Surface<'static>,
-    device: Device,
-    queue: Queue,
+    device: Device, // TODO: Restrict access
+    queue: Queue, // TODO: Restrict access
     config: SurfaceConfiguration,
     max_texture_dimension: u32,
     output_view_format: TextureFormat,
@@ -136,14 +136,16 @@ impl GraphicsProvider {
        [self.config.width,self.config.height].into()
     }
 
+    //TODO: Deprecate
     pub fn get_device(&self) -> &Device {
         &self.device
     }
 
+    //TODO: Deprecate
     pub fn get_queue(&self) -> &Queue {
         &self.queue
     }
-    
+
     /// Not the format of the surface itself, but rather, a view of it.
     /// 
     /// On most platforms, these will be the same. However, in WebGPU, concessions may take place.

@@ -35,7 +35,7 @@ impl LinesPipeline {
     where
         TConfig: GraphicsConfig
     {
-        let device = graphics_provider.get_device();
+        let device = context.graphics_provider.get_device();
 
         let shader = &device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Pipeline Lines Shader"),
@@ -45,13 +45,13 @@ impl LinesPipeline {
         let render_pipeline_layout = &device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Pipeline Lines Render Layout"),
             bind_group_layouts: &[
-                uniform_layout,
+                &context.core.uniform_layout,
             ],
             immediate_size: 0,
         });
 
         let strip_sub_variant = PipelineCreator {
-            graphics_provider,
+            graphics_provider: context.graphics_provider,
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[
@@ -70,7 +70,7 @@ impl LinesPipeline {
         }.create_pipeline_set();
 
         let list_sub_variant = PipelineCreator {
-            graphics_provider,
+            graphics_provider: context.graphics_provider,
             render_pipeline_layout,
             shader,
             vertex_buffer_layout: &[

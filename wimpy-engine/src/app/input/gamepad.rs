@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Default)]
 pub struct GamepadCache {
-    input:  Input,
+    input:  GamepadInput,
     output: GamepadOutput
 }
 
@@ -86,27 +86,6 @@ impl GamepadButtons {
     }
 }
 
-#[derive(Default,Copy,Clone)]
-pub struct InterpetiveTrigger {
-    value: f32,
-    is_pressed: bool,
-}
-
-impl InterpetiveTrigger {
-    fn create(value: f32) -> Self {
-        Self {
-            value,
-            is_pressed: value >= super::constants::TRIGGER_IS_PRESSED_THREHOLD
-        }
-    }
-    pub fn is_pressed(&self) -> bool {
-        self.is_pressed
-    }
-    pub fn value(&self) -> f32 {
-        self.value
-    }
-}
-
 #[derive(Default)]
 struct GamepadOutput {
     left_interpretive_axes: InterpretiveAxes,
@@ -147,7 +126,7 @@ impl GamepadJoystick {
 }
 
 #[derive(Debug,Default,PartialEq)]
-pub struct Input {
+pub struct GamepadInput {
     pub buttons: GamepadButtons,
 
     pub left_stick: GamepadJoystick,
@@ -157,7 +136,7 @@ pub struct Input {
     pub right_trigger: f32,
 }
 
-impl Input {
+impl GamepadInput {
     fn get_left_interpretive_axes(&self) -> InterpretiveAxes {
         let axes = self.get_dpad_interpretive_axes();
 
@@ -227,7 +206,7 @@ impl Input {
 }
 
 impl GamepadCache {
-    pub fn update(&mut self,gamepad_input: Input) -> UserActivity {
+    pub fn update(&mut self,gamepad_input: GamepadInput) -> UserActivity {
         let user_activity = match &self.input.buttons != &gamepad_input.buttons {
             true =>  UserActivity::Some,
             false => UserActivity::None,

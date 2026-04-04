@@ -5,7 +5,7 @@ const ATLAS_START_QUANTITY: usize =                     2;
 use slotmap::SlotMap;
 
 use wgpu::*;
-use super::*;
+use super::{*,bind_group_cache::{BindGroupCache, BindGroupChannelSet, BindGroupChannel}};
 use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, wam::HardAsset}};
 
 use crate::app::graphics::GraphicsProvider;
@@ -51,23 +51,30 @@ pub struct TextureCopyParameters {
 }
 
 pub struct TextureCreationParameters {
-    pub identity:       HardAsset,
+    pub wam_identity:   HardAsset,
     /// A verified size or a hint provided by WAM.
     /// 
     /// If provided by WAM, the asset's real size in storage may be in disagreement with the manifest
-    pub size_hint:           UWimpyPoint,
+    pub size_hint:      UWimpyPoint,
     pub policy_hint:    StreamingHint,
     pub slice:          Option<WimpyPointRect>
 }
 
+struct FallbackTexture {
+    key:        GPUTextureKey,
+    value:      GPUTexture,
+    size:       UWimpyPoint
+}
+
 pub struct TextureManager {
-    pub gpu_cache:              GPUTextureCache,
-    pub bind_groups:            BindGroupCache,
-    id_generator:               GPUTextureIdentityGenerator,
-    states:                     SlotMap<WimpyTextureKey,State>,
-    update_queue:     Vec<UpdateOperation>,
-    streaming_policy:           StreamingPolicy,
-    atlases:                    SlotMap<VirtualTextureAtlasKey,VirtualTextureAtlas>
+    pub gpu_cache:          GPUTextureCache,
+    bind_groups:            BindGroupCache,
+    id_generator:           GPUTextureIdentityGenerator,
+    states:                 SlotMap<WimpyTextureKey,State>,
+    update_queue:           Vec<UpdateOperation>,
+    streaming_policy:       StreamingPolicy,
+    atlases:                SlotMap<TextureAtlasKey,TextureAtlas>,
+    fallback_texture:       FallbackTexture
 }
 
 enum UpdateOperation {
@@ -76,6 +83,7 @@ enum UpdateOperation {
     CopyTextureToTexture(TextureCopyParameters)
 }
 
+#[derive(Default)]
 struct State {
     wam_identity:       Option<HardAsset>,
     /// The size of the texture according to WAM metadata
@@ -95,22 +103,27 @@ pub struct TextureAtlasConfig {
 }
 
 impl TextureManager {
-    pub fn new(graphics_provider: &GraphicsProvider,texture_layout: BindGroupLayout,streaming_policy: StreamingPolicy) -> Self {
+    pub fn new(
+        graphics_provider:  &GraphicsProvider,
+        texture_layout:     BindGroupLayout,
+        streaming_policy:   StreamingPolicy
+    ) -> Self {
         Self {
-            gpu_cache:              GPUTextureCache::new(),
-            states:                 SlotMap::with_capacity_and_key(TEXTURE_CACHE_SLOTMAP_DEFAULT_SIZE),
-            update_queue:           Vec::with_capacity(UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE),
-            id_generator:           Default::default(),
-            bind_groups:            BindGroupCache::create(graphics_provider.get_device(),texture_layout),
-            atlases:                SlotMap::with_capacity_and_key(ATLAS_START_QUANTITY),
+            gpu_cache:          GPUTextureCache::new(),
+            states:             SlotMap::with_capacity_and_key(TEXTURE_CACHE_SLOTMAP_DEFAULT_SIZE),
+            update_queue:       Vec::with_capacity(UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE),
+            id_generator:       Default::default(),
+            bind_groups:        BindGroupCache::create(graphics_provider.get_device(),texture_layout),
+            atlases:            SlotMap::with_capacity_and_key(ATLAS_START_QUANTITY),
             streaming_policy,
+            fallback_texture:   todo!(),
         }
     }
 
-    pub fn create_key_for_asset(&mut self,parameters: TextureCreationParameters) -> WimpyTexture {
+    pub fn bind_wam_asset(&mut self,parameters: TextureCreationParameters) -> WimpyTexture {
         let texture_state = State {
             policy_hint:        parameters.policy_hint,
-            wam_identity:       Some(parameters.identity),
+            wam_identity:       Some(parameters.wam_identity),
             size_hint:          parameters.size_hint,
             size:               None,
             local_data:         None,
@@ -125,7 +138,7 @@ impl TextureManager {
     }
 
     pub fn create_static_gpu_texture(&mut self,texture: GPUTexture) -> WimpyTexture {
-        let size = texture.size();
+        let size: UWimpyPoint = texture.view.texture().size().into();
         let cache_reference = self.gpu_cache.insert_keyless(texture);
         let texture_state = State {
             wam_identity:       None,
@@ -143,25 +156,14 @@ impl TextureManager {
         }
     }
 
-    pub fn copy_texture_to_texture(&mut self,parameters: TextureCopyParameters) {
-        self.update_queue.push(UpdateOperation::CopyTextureToTexture(parameters));
-    }
+    // fn copy_texture_to_texture(&mut self,parameters: TextureCopyParameters) {
+    //     self.update_queue.push(UpdateOperation::CopyTextureToTexture(parameters));
+    // }
 
     /// Refreshes time to live or restreams the texture to a gpu container
-    pub fn touch(&mut self,texture: &WimpyTexture) {
-        self.update_queue.push(UpdateOperation::Refresh(texture.key));
+    fn refresh(&mut self,texture_key: WimpyTextureKey) {
+        self.update_queue.push(UpdateOperation::Refresh(texture_key));
     }
-
-    // pub fn get_gpu_texture(&mut self,key: GPUTextureKey) -> &GPUTexture {
-    //     match self.gpu_textures.get(key) {
-    //         Ok(_) => todo!(),
-    //         Err(_) => todo!(),
-    //     }
-    // }
-
-    // pub fn get_gpu_texture_key(&mut self,source: &impl GPUTextureResolver) -> &GPUTexture {
-    //     todo!();
-    // }
 
     pub fn has_updates(&self) -> bool {
         self.update_queue.len() > 0
@@ -177,16 +179,8 @@ impl TextureManager {
         &mut self,
         graphics_provider: &GraphicsProvider,
         config: &TextureAtlasConfig
-    ) -> VirtualTextureAtlasKey {
+    ) -> TextureAtlas {
         //todo: validate size with graphics provider
-        todo!()
-    }
-
-    pub fn get_atlas(&mut self,key: VirtualTextureAtlasKey) -> Result<&mut VirtualTextureAtlasKey,()> {
-        todo!()
-    }
-
-    pub fn delete_atlas(&mut self,key: VirtualTextureAtlasKey) -> Result<(),()> {
         todo!()
     }
 
@@ -290,7 +284,6 @@ impl TextureManager {
         &mut self,
         surface: &SurfaceTexture,
         texture_view_format: TextureFormat,
-        size: UWimpyPoint // Externally validated (in graphics context)
     ) -> GPUTextureKey {
         let view = surface.texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Output Surface Texture View"),
@@ -299,39 +292,74 @@ impl TextureManager {
         });
         let texture = GPUTexture {
             identity: GPUTextureIdentity::Anonymous,
-            input_size: size,
             view
         };
         self.gpu_cache.insert_keyless(texture)
     }
-}
 
-impl CacheResolver for WimpyTexture {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a> {
-        todo!()
+    // This return values lives as long as 'self', not texture
+    pub fn get_gpu_entry<'a,T>(&'a mut self,texture: &T) -> GPUTextureCacheEntry
+    where
+        T: GPUTextureCacheResolver
+    {
+        texture.get_entry(self)
+    }
+
+    // TODO: Bind group cache entries much be attached to their GPU textures otherwise bind group cache entries will leak GPU resources when dropping textures is intended
+    pub fn get_bind_group_single_channel<'a>(&'a mut self,device: &Device,channel: BindGroupChannelConfig) -> &'a BindGroup {
+        self.bind_groups.get(device,&BindGroupChannelSet::Single { ch_0: BindGroupChannel {
+            mode: channel.mode,
+            texture: self.gpu_cache.get(channel.texture).unwrap_or(&self.fallback_texture.value)
+        }})
+    }
+
+    pub fn get_bind_group_dual_channel<'a>(&'a mut self,device: &Device,channels: [BindGroupChannelConfig;2]) -> &'a BindGroup {
+        let [ch_0, ch_1] = channels.map(|channel|BindGroupChannel {
+            mode: channel.mode,
+            texture: self.gpu_cache.get(channel.texture).unwrap_or(&self.fallback_texture.value)
+        });
+        self.bind_groups.get(device,&BindGroupChannelSet::Dual { ch_0, ch_1 })
     }
 }
 
-impl CacheResolver for WimpyTextureKey {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a> {
-        todo!()
+/// Bind group cache channel configuration, an entry of a larger channel set
+pub struct BindGroupChannelConfig {
+    pub mode:    SamplerMode,
+    pub texture: GPUTextureKey,
+}
+
+impl GPUTextureCacheResolver for WimpyTextureKey {
+    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> GPUTextureCacheEntry<'a> {
+        let Some(state) = texture_manager.states.get_mut(*self) else {
+            let FallbackTexture { key, value: texture, size } = &texture_manager.fallback_texture;
+            return GPUTextureCacheEntry { input_size: *size, texture, key: *key }
+        };
+        let size = state.size_hint;
+        let key = state.gpu_texture_key.unwrap_or(texture_manager.fallback_texture.key);
+        GPUTextureCacheEntry {
+            input_size: size,
+            texture: texture_manager.gpu_cache.get(key).unwrap_or(&texture_manager.fallback_texture.value),
+            key,
+        }
     }
 }
 
-impl CacheResolver for render_targets::Output {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a> {
-        todo!()
+impl GPUTextureCacheResolver for WimpyTexture {
+    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> GPUTextureCacheEntry<'a> {
+        self.key.get_entry(texture_manager)
     }
 }
 
-impl CacheResolver for render_targets::Temp {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a> {
-        todo!()
-    }
-}
-
-impl CacheResolver for render_targets::LongLife {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a> {
-        todo!()
+impl<T> GPUTextureCacheResolver for T
+where
+    T: render_targets::RenderTarget
+{
+    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> GPUTextureCacheEntry<'a> {
+        let key = self.get_key();
+        GPUTextureCacheEntry {
+            input_size: self.get_input_size(),
+            texture: texture_manager.gpu_cache.get(key).unwrap_or(&texture_manager.fallback_texture.value),
+            key
+        }
     }
 }

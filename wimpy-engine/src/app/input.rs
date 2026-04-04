@@ -10,11 +10,14 @@ mod input_manager;
 pub use input_manager::InputManager;
 
 mod gamepad;
+pub use gamepad::*;
 
 mod key_code;
 pub use key_code::*;
 
 mod keyboard;
+pub use keyboard::*;
+
 mod mouse;
 pub use mouse::*;
 
@@ -352,6 +355,27 @@ impl InterpretiveAxes {
             (AxisSign::Positive,    AxisSign::Zero) =>      CardinalDirection::East,
             (AxisSign::Positive,    AxisSign::Positive) =>  CardinalDirection::SouthEast,
         }
+    }
+}
+
+#[derive(Default,Copy,Clone)]
+pub struct InterpetiveTrigger {
+    value: f32,
+    is_pressed: bool,
+}
+
+impl InterpetiveTrigger {
+    fn create(value: f32) -> Self {
+        Self {
+            value,
+            is_pressed: value >= constants::TRIGGER_IS_PRESSED_THREHOLD
+        }
+    }
+    pub fn is_pressed(&self) -> bool {
+        self.is_pressed
+    }
+    pub fn value(&self) -> f32 {
+        self.value
     }
 }
 

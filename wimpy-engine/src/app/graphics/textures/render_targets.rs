@@ -1,5 +1,5 @@
 use crate::UWimpyPoint;
-use super::{GPUTextureKey, FilteredSize, CacheResolver, SizeInfo};
+use super::{GPUTextureKey, FilteredSize, GPUTextureCacheResolver, SizeInfo};
 
 pub struct Output {
     key:            GPUTextureKey,
@@ -58,7 +58,7 @@ impl Temp {
     }
 }
 
-pub trait RenderTarget: CacheResolver + SizeInfo {
+pub trait RenderTarget: SizeInfo + GPUTextureCacheResolver {
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_output_surface(&self) -> bool;
     fn get_key(&self) -> GPUTextureKey;

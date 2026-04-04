@@ -1,14 +1,13 @@
 mod texture_manager;
 pub use texture_manager::*;
 
-mod virtual_texture_atlas;
-pub use virtual_texture_atlas::*;
+mod texture_atlas;
+pub use texture_atlas::*;
 
 mod gpu_texture;
 pub use gpu_texture::*;
 
 mod bind_group_cache;
-pub use bind_group_cache::*;
 
 mod render_targets;
 
@@ -36,7 +35,7 @@ pub type GPUTextureCacheError = CacheArenaError<u32,GPUTextureKey>;
 slotmap::new_key_type! {
     pub struct GPUTextureKey;
     pub struct WimpyTextureKey;
-    pub struct VirtualTextureAtlasKey;
+    pub struct TextureAtlasKey;
 }
 
 #[derive(PartialEq,Eq,Copy,Clone,Hash)]
@@ -116,17 +115,29 @@ pub trait SizeInfo {
     }
 }
 
-pub trait CacheResolver {
-    fn get_cache_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> CacheEntry<'a>;
-}
-
 pub struct TextureData {
     data: Vec<u8>,
     size: UWimpyPoint
 }
 
-pub struct CacheEntry<'a> {
-    pub size:   UWimpyPoint,
-    pub key:    GPUTextureKey,
-    pub value:  &'a GPUTexture
+pub trait GPUTextureCacheResolver {
+    //fn get_key(&self,texture_manager: &mut TextureManager) -> GPUTextureKey;
+    // Lifetime lives as long as 'texture_manager', not 'self'
+    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> GPUTextureCacheEntry<'a>;
+}
+
+pub struct GPUTextureCacheEntry<'a> {
+    pub input_size:     UWimpyPoint,
+    pub texture:        &'a GPUTexture,
+    pub key:            GPUTextureKey,
+}
+
+impl SizeInfo for GPUTextureCacheEntry<'_> {
+    fn get_input_size(&self) -> UWimpyPoint {
+        self.input_size
+    }
+
+    fn get_output_size(&self) -> UWimpyPoint {
+        self.texture.view.texture().size().into()
+    }
 }

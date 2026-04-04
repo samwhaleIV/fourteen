@@ -4,27 +4,10 @@ const MINIMUM_WINDOW_SIZE: (u32,u32) = (1600,900);
 const LEFT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 2;
 const RIGHT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 8;
 
-use std::{
-    collections::HashMap,
-    path::Path,
-};
-
-use sdl2::{
-    EventPump, GameControllerSubsystem, Sdl, TimerSubsystem, VideoSubsystem, controller::{
-        Axis,
-        Button,
-        GameController
-    }, event::{
-        Event,
-        WindowEvent
-    }, mouse::MouseButton, video::Window
-};
-
+use std::{collections::HashMap, path::Path};
+use sdl2::{EventPump, GameControllerSubsystem, Sdl, TimerSubsystem, VideoSubsystem, controller::{Axis, Button, GameController}, event::{Event, WindowEvent}, mouse::MouseButton, video::Window};
 use wgpu::{Instance, Limits, Surface};
-
-use wimpy_engine::{WimpyColor, WimpyRect, WimpyVec, app::*};
-use wimpy_engine::app::input::*;
-use wimpy_engine::app::graphics::*;
+use wimpy_engine::{WimpyRect, WimpyVec, app::{*,input::*,graphics::*}};
 
 use crate::{
     desktop_io::DekstopAppIO,
@@ -43,8 +26,8 @@ struct InnerApp<TWimpyApp> {
     mouse_cache: MouseInput,
     window: Window,
     now: u64,
-    wimpy_app: TWimpyApp,
-    wimpy_context: WimpyApp,
+    app: TWimpyApp,
+    app_context: WimpyAppContext,
     has_focus: bool
 }
 
@@ -64,7 +47,7 @@ async fn async_load<TWimpyApp,TConfig>(
 ) -> Option<InnerApp<TWimpyApp>>
 where
     TConfig: GraphicsConfig,
-    TWimpyApp: WimpyApp<DekstopAppIO>
+    TWimpyApp: WimpyAppHandler<DekstopAppIO>
 {
     let mut graphics_provider = match GraphicsProvider::new(GraphicsProviderConfig {
         instance,
@@ -80,15 +63,14 @@ where
     let window_size = window.size();
     graphics_provider.set_size(window_size.0,window_size.1);
 
-    let Some(mut wimpy_systems) = WimpyApp::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
+    let mut app_context = WimpyAppContext::create::<DekstopAppIO,TConfig>(WimpyContextCreationConfig {
         manifest_path,
-        input_device_hint: InputDevice::Unknown,
+        input_device_hint: InputDevice::MouseAndKeyboard,
+        texture_stream_policy: StreamingPolicy::Default,
         graphics_provider,
-    }).await else {
-        return None;
-    };
+    }).await;
 
-    let wimpy_app = TWimpyApp::load(&mut wimpy_systems).await;
+    let app = TWimpyApp::create(&mut app_context).await;
 
     let now = sdl_systems.timer.performance_counter();
 
@@ -100,14 +82,14 @@ where
         mouse_cache: Default::default(),
         window,
         now,
-        wimpy_app,
-        wimpy_context: wimpy_systems,
+        app,
+        app_context
     });
 }
 
 pub fn run_desktop_app<TWimpyApp,TConfig>(manifest: Option<&Path>)
 where
-    TWimpyApp: WimpyApp<DekstopAppIO>,
+    TWimpyApp: WimpyAppHandler<DekstopAppIO>,
     TConfig: GraphicsConfig
 {
     let sdl = sdl2::init().expect("sdl context creation");
@@ -164,7 +146,7 @@ where
 
 impl<TWimpyApp> InnerApp<TWimpyApp>
 where
-    TWimpyApp: WimpyApp<DekstopAppIO>
+    TWimpyApp: WimpyAppHandler<DekstopAppIO>
 {
     fn start_loop(&mut self) {
         let event_pump = &mut self.sdl.main.event_pump().expect("sdl event pump creation");
@@ -213,9 +195,9 @@ where
             None => Default::default(),
         };
 
-        let size = self.wimpy_context.graphics.graphics_provider.get_size();
+        let size = self.app_context.graphics.graphics_provider.get_size();
 
-        let shell_state = self.wimpy_context.input.update(
+        let shell_state = self.app_context.input.update(
             self.mouse_cache,
             gamepad_state,
             delta_seconds,
@@ -230,7 +212,7 @@ where
         let sdl_mouse = self.sdl.main.mouse();
 
         if has_focus {
-            match shell_state.mouse_mode {
+            match shell_state.mode {
                 MouseMode::Interface => {
                     if sdl_mouse.relative_mouse_mode() {
                         sdl_mouse.set_relative_mouse_mode(false);
@@ -242,7 +224,7 @@ where
                     }
                 },
             };
-            if shell_state.should_reposition_hardware_cursor {
+            if shell_state.recenter {
                 sdl_mouse.warp_mouse_in_window(
                     &self.window,
                     shell_state.position.x as i32, 
@@ -253,7 +235,7 @@ where
             sdl_mouse.set_relative_mouse_mode(false);
         }
 
-        self.wimpy_app.update(&mut self.wimpy_context);
+        self.app.update(&mut self.app_context);
     }
 
     fn poll_events(&mut self,event_pump: &mut EventPump) -> EventLoopOperation {
@@ -264,7 +246,7 @@ where
                     win_event: WindowEvent::SizeChanged(width, height),
                     ..
                 } if window_id == self.window.id() => {
-                    self.wimpy_context.graphics.graphics_provider.set_size(
+                    self.app_context.graphics.graphics_provider.set_size(
                         width as u32,
                         height as u32
                     );
@@ -303,7 +285,7 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        self.wimpy_context.input.set_key_code_pressed(wk);
+                        self.app_context.input.set_key_code_pressed(wk);
                     }
                 },
                 Event::KeyUp {
@@ -312,7 +294,7 @@ where
                     ..
                 } => {
                     if !repeat && let Some(wk) = translate_key_code(keycode) {
-                        self.wimpy_context.input.set_key_code_released(wk);
+                        self.app_context.input.set_key_code_released(wk);
                     }
                 },
                 Event::Quit { .. } => {
