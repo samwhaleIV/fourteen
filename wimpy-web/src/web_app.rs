@@ -1,20 +1,17 @@
 use super::*;
 use std::path::Path;
 
-use std::{cell::RefCell,rc::Rc};
-use wasm_bindgen::{JsCast,JsValue,prelude::Closure};
-use web_sys::js_sys::Float32Array;
-use web_sys::{Document, Event, HtmlCanvasElement, KeyboardEvent, Window};
-use wgpu::{InstanceDescriptor,Limits,SurfaceTarget};
+use std::{cell::RefCell, rc::Rc};
+use wasm_bindgen::{JsCast, JsValue, prelude::Closure};
+use web_sys::{js_sys::Float32Array, Document, Event, HtmlCanvasElement, KeyboardEvent, Window};
+use wgpu::{InstanceDescriptor, Limits, SurfaceTarget};
 
-use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::*};
-use wimpy_engine::app::graphics::*;
-use wimpy_engine::app::input::*;
+use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::{*, graphics::*, input::*}};
 
 const CANVAS_ID: &'static str = "main-canvas";
 
 /* Must match 'html/style.css @ div#virtual-cursor' */
-const EMULATED_CURSOR_SIZE: UWimpyPoint = UWimpyPoint {x: 12,y: 16};
+const EMULATED_CURSOR_SIZE: UWimpyPoint = UWimpyPoint {x: 12, y: 16};
 
 #[derive(Debug)]
 pub enum WebAppError {
@@ -31,12 +28,12 @@ pub enum WebAppError {
 }
 
 pub struct WebApp<TWimpyApp> {
-    last_frame_time: f64,
+    last_frame_time:    f64,
     current_frame_time: f64,
-    gamepad_manager: GamepadManager,
-    size: UWimpyPoint,
-    wimpy_app: TWimpyApp,
-    wimpy_context: WimpyAppContext,
+    gamepad_manager:    GamepadManager,
+    size:               UWimpyPoint,
+    app:                TWimpyApp,
+    app_context:        WimpyAppContext,
 }
 
 #[allow(unused)]
@@ -75,7 +72,7 @@ fn poll_mouse() -> MouseInput {
 
 impl<TWimpyApp> WebApp<TWimpyApp>
 where
-    TWimpyApp: WimpyAppContext<WimpyWebIO> + 'static,
+    TWimpyApp: WimpyAppHandler<WimpyWebIO> + 'static,
 {
     pub async fn create_app<TConfig>(manifest_path: Option<&Path>) -> Result<Rc<RefCell<Self>>,WebAppError>
     where
@@ -110,22 +107,23 @@ where
             },
         }?;
 
-        let Some(mut wimpy_context) = WimpyAppContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
+        let app_context = WimpyAppContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
             manifest_path,
             input_device_hint: InputDevice::Unknown,
             graphics_provider,
+            texture_stream_policy: StreamingPolicy::Retained,
         }).await else {
             return Err(WebAppError::WimpyContextCreationFailure);
         };
 
-        let wimpy_app = TWimpyApp::load(&mut wimpy_context).await;
+        let app = TWimpyApp::load(&mut app_context).await;
 
         return Ok(Rc::new(RefCell::new(Self {
             last_frame_time: 0.0,
             current_frame_time: 0.0,
             size: UWimpyPoint::ZERO,
-            wimpy_context,
-            wimpy_app,
+            app_context,
+            app,
             gamepad_manager,
         })));
     }
@@ -168,7 +166,7 @@ where
 
         let delta_time = ((self.current_frame_time - self.last_frame_time) * 0.001) as f32;
 
-        let mouse_shell_state = self.wimpy_context.input.update(
+        let mouse_shell_state = self.app_context.input.update(
             mouse_input,
             gamepad_state,
             delta_time,
@@ -202,7 +200,7 @@ where
 
     fn render_frame(&mut self) {
         self.update_input();
-        self.wimpy_app.update(&mut self.wimpy_context);
+        self.app.update(&mut self.app_context);
     }
 
     fn update_size(&mut self) {
@@ -216,7 +214,7 @@ where
             return;
         };
 
-        let graphics_provider = &mut self.wimpy_context.graphics.graphics_provider;
+        let graphics_provider = &mut self.app_context.graphics.graphics_provider;
 
         let inner_width = translate_html_size(window.inner_width());
         let inner_height = translate_html_size(window.inner_height());
@@ -244,7 +242,7 @@ where
                 let Some(key_code) = KEY_CODES.get(&event.code()) else {
                     return;
                 };
-                app.borrow_mut().wimpy_context.input.set_key_code_pressed(*key_code);
+                app.borrow_mut().app_context.input.set_key_code_pressed(*key_code);
             });
             get_document()?.add_event_listener_with_callback("keydown",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;
             closure.forget();
@@ -258,7 +256,7 @@ where
                 let Some(key_code) = KEY_CODES.get(&event.code()) else {
                     return;
                 };
-                app.borrow_mut().wimpy_context.input.set_key_code_released(*key_code);
+                app.borrow_mut().app_context.input.set_key_code_released(*key_code);
 
             });
             get_document()?.add_event_listener_with_callback("keyup",closure.as_ref().unchecked_ref()).map_err(|_|WebAppError::KeyEventBindFailure)?;

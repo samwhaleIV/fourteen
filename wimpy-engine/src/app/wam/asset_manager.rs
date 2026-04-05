@@ -195,7 +195,7 @@ struct TextureKeyCreator<'a> {
 
 impl TextureKeyCreator<'_> {
     fn get_missing(&self) -> WimpyTexture {
-        self.app.graphics.engine_textures.missing.clone()
+        self.app.graphics.texture_manager.runtime_textures.missing.clone()
     }
 
     fn create_texture(
@@ -223,7 +223,7 @@ impl TextureKeyCreator<'_> {
         };
 
         let texture = self.app.graphics.texture_manager.bind_wam_asset(TextureCreationParameters {
-            wam_identity: hard_asset.clone(),
+            wam_id: hard_asset.clone(),
             policy_hint: self.streaming_hint,
             slice,
             size_hint: size,

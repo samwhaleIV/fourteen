@@ -106,6 +106,7 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
         cache_pool.push(reference);
     }
 
+    /// Insert a new item into the pool and return a handle for its immediate lease
     pub fn insert_with_lease(&mut self,key: TKey,item: TItem) -> TReference {
         self.pools.ensure_cache(key);
 

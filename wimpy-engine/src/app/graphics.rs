@@ -1,7 +1,6 @@
 mod constants;
 
 pub mod textures;
-pub use textures::StreamingPolicy;
 
 mod mesh_cache;
 pub use mesh_cache::*;
@@ -16,9 +15,6 @@ mod graphics_context;
 
 pub use graphics_provider::*;
 pub use graphics_context::*;
-
-mod engine_textures;
-pub use engine_textures::EngineTextures;
 
 #[derive(Debug)]
 pub enum SizeValidationError {

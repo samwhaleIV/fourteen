@@ -1,13 +1,14 @@
-pub const ATLAS_SLOT_LENGTH_DIFFUSE:        u32 = 16;
-pub const ATLAS_SLOT_SIZE_DIFFUSE:          u32 = 256;
-pub const ATLAS_SLOT_LENGTH_LIGHTMAP:       u32 = 16;
-pub const ATLAS_SLOT_SIZE_LIGHTMAP:         u32 = 256;
-pub const INSTANCE_BUFFER_BUCKET_START_SIZE:    usize = 32;
-pub const INSTANCE_BUFFER_BUCKET_COUNT:     u32 = 8;
-// The smallest instance bucket size contains all values up to this power of 2
-pub const SMALLEST_BUCKET_LIMIT_POW_OF_2:   u32 = 4;
+pub const ATLAS_SLOT_LENGTH_DIFFUSE: u32 =              16;
+pub const ATLAS_SLOT_SIZE_DIFFUSE: u32 =                256;
+pub const ATLAS_SLOT_LENGTH_LIGHTMAP: u32 =             16;
+pub const ATLAS_SLOT_SIZE_LIGHTMAP: u32 =               256;
+pub const INSTANCE_BUFFER_BUCKET_START_SIZE: usize =    32;
+pub const INSTANCE_BUFFER_BUCKET_COUNT: u32 =           8;
 
-use glam::Mat4;
+// The smallest instance bucket size contains all values up to this power of 2
+pub const SMALLEST_BUCKET_LIMIT_POW_OF_2: u32 = 4;
+
+use glam::Mat4; 
 use wgpu::*;
 use std::num::NonZero;
 use bytemuck::{Pod,Zeroable};
@@ -237,11 +238,11 @@ impl Pipeline3D {
                     ),
                     TextureStrategy::LightmapToDiffuse => (
                         meshlet.lightmap,
-                        context.engine_textures.opaque_white.key
+                        context.texture_manager.runtime_textures.opaque_white.key
                     ),
                     TextureStrategy::NoLightmap => (
                         meshlet.diffuse,
-                        context.engine_textures.opaque_white.key
+                        context.texture_manager.runtime_textures.opaque_white.key
                     )
                 };
 
@@ -249,12 +250,12 @@ impl Pipeline3D {
                 let lightmap_key = context.texture_manager.get_gpu_entry(&lightmap).key;
 
                 let uv_diffuse = pipeline_3d.diffuse_atlas.set_texture(
-                    &context.texture_manager.gpu_cache,
+                    &context.texture_manager.cache,
                     diffuse_key
                 );
 
                 let uv_lightmap = pipeline_3d.lightmap_atlas.set_texture(
-                    &context.texture_manager.gpu_cache,
+                    &context.texture_manager.cache,
                     lightmap_key
                 );
 
@@ -338,12 +339,12 @@ impl Pipeline3DPass<'_,'_> {
             self.context.graphics_provider.get_device(),
             [
                 BindGroupChannelConfig {
-                    mode: diffuse_sampler,
-                    texture: pipeline.diffuse_atlas.texture_key,
+                    sampler_mode: diffuse_sampler,
+                    texture_key: pipeline.diffuse_atlas.texture_key,
                 },
                 BindGroupChannelConfig {
-                    mode: SamplerMode::LinearClamp,
-                    texture: pipeline.lightmap_atlas.texture_key
+                    sampler_mode: SamplerMode::LinearClamp,
+                    texture_key: pipeline.lightmap_atlas.texture_key
                 }
             ]
         );

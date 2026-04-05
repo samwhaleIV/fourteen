@@ -127,7 +127,7 @@ pub struct Pipeline2DPass<'pass,'encoder> {
     render_pass:            &'pass mut RenderPass<'encoder>,
     needs_sampler_update:   bool,
     sampler_mode:           SamplerMode,
-    current_sampling_frame: Option<GPUTextureKey>,
+    current_sampling_frame: Option<WimpyTextureKey>,
 }
 
 impl PipelineFlush for Pipeline2D {
@@ -179,7 +179,7 @@ impl Pipeline2DPass<'_,'_> {
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>,
-        T: GPUTextureCacheResolver,
+        T: TextureCacheResolver,
     {
         let texture = texture.get_entry(&mut self.context.texture_manager);
         let key = texture.key;
@@ -193,8 +193,8 @@ impl Pipeline2DPass<'_,'_> {
             self.needs_sampler_update = false;
 
             let bind_group = self.context.texture_manager.get_bind_group_single_channel(self.context.graphics_provider.get_device(),BindGroupChannelConfig {
-                mode: self.sampler_mode,
-                texture: key,
+                sampler_mode: self.sampler_mode,
+                texture_key: key,
             });
             self.render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);
         }
@@ -226,7 +226,7 @@ impl Pipeline2DPass<'_,'_> {
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>
     {
-        let key = self.context.engine_textures.opaque_white.key;
+        let key = self.context.texture_manager.runtime_textures.opaque_white.key;
         self.draw(&key,draw_data);
     }
 

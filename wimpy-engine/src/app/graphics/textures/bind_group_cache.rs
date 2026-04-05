@@ -3,7 +3,7 @@ const DEFAULT_BIND_GROUP_CACHE_SIZE: usize = 64;
 use wgpu::*;
 use std::{collections::HashMap, hash::Hash};
 
-use super::{gpu_texture::{GPUTexture, GPUTextureIdentity}, SamplerMode};
+use super::{BindGroupIdentity, SamplerMode};
 use crate::app::graphics::constants;
 
 struct FilterSet {
@@ -158,7 +158,7 @@ pub struct BindGroupCache {
 #[derive(Hash,PartialEq,Eq)]
 struct CacheKeyChannel {
     mode:   SamplerMode,
-    id:     GPUTextureIdentity
+    id:     BindGroupIdentity
 }
 
 #[derive(Hash,PartialEq,Eq)]
@@ -173,8 +173,9 @@ enum CacheKey {
 }
 
 pub struct BindGroupChannel<'a> {
-    pub mode:       SamplerMode,
-    pub texture:    &'a GPUTexture
+    pub id:             BindGroupIdentity,
+    pub sampler_mode:   SamplerMode,
+    pub texture_view:   &'a TextureView
 }
 
 pub enum BindGroupChannelSet<'a> {
@@ -189,7 +190,7 @@ pub enum BindGroupChannelSet<'a> {
 
 impl PartialEq for BindGroupChannel<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.mode == other.mode && self.texture.identity == other.texture.identity
+        self.sampler_mode == other.sampler_mode && self.id == other.id
     }
 }
 
@@ -205,8 +206,8 @@ impl From<&BindGroupChannelSet<'_>> for CacheKey {
 impl From<&BindGroupChannel<'_>> for CacheKeyChannel {
     fn from(value: &BindGroupChannel<'_>) -> Self {
         return Self {
-            mode: value.mode,
-            id: value.texture.identity,
+            mode: value.sampler_mode,
+            id: value.id,
         }
     }
 }
@@ -229,20 +230,20 @@ impl BindGroupCache {
                 device,
                 &self.layout,
                 Channel {
-                    texture: &ch_0.texture.view,
-                    sampler: self.samplers.get(ch_0.mode),
+                    texture: &ch_0.texture_view,
+                    sampler: self.samplers.get(ch_0.sampler_mode),
                 }
             ),
             BindGroupChannelSet::Dual { ch_0, ch_1 } => create_dual_channel_bind_group(
                 device,
                 &self.layout,
                 Channel {
-                    texture: &ch_0.texture.view,
-                    sampler: self.samplers.get(ch_0.mode),
+                    texture: &ch_0.texture_view,
+                    sampler: self.samplers.get(ch_0.sampler_mode),
                 },
                 Channel {
-                    texture: &ch_1.texture.view,
-                    sampler: self.samplers.get(ch_1.mode),
+                    texture: &ch_1.texture_view,
+                    sampler: self.samplers.get(ch_1.sampler_mode),
                 }
             ),
         });

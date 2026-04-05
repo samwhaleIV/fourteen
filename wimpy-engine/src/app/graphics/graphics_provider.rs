@@ -166,10 +166,10 @@ impl GraphicsProvider {
     }
 
     pub fn get_safe_texture_size(&self,value: UWimpyPoint) -> UWimpyPoint {
-        [
-            self.get_safe_texture_dimension_value(value.x),
-            self.get_safe_texture_dimension_value(value.y)
-        ].into()
+        UWimpyPoint {
+            x: self.get_safe_texture_dimension_value(value.x),
+            y: self.get_safe_texture_dimension_value(value.y),
+        }
     }
 
     pub fn max_texture_dimension_value(&self) -> u32 {

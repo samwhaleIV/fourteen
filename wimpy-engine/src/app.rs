@@ -1,10 +1,3 @@
-const MISSING_TEXT:         &'static str = "<missing text asset>";
-const FONT_CLASSIC:         &'static str = "wimpy/font/classic";
-const FONT_CLASSIC_OUTLINE: &'static str = "wimpy/font/classic-outline";
-const FONT_TWELVEN:         &'static str = "wimpy/font/twelven";
-const FONT_TWELVEN_SHADED:  &'static str = "wimpy/font/twelven-shaded";
-const FONT_MONO_ELF:        &'static str = "wimpy/font/mono-elf";
-
 pub mod graphics;
 pub mod debug_shell;
 pub mod wam;
@@ -33,7 +26,7 @@ pub enum FileError {
     Other
 }
 
-/// Textured data expected to be provided in [u8;4] RGBA
+/// Textured data expected to be provided in \[u8;4\] RGBA
 /// 
 /// TODO: Determine if the input format should be linear or gamma space
 pub struct ImageData {
@@ -65,6 +58,26 @@ pub struct WimpyContextCreationConfig<'a> {
     pub input_device_hint:      InputDevice,
     pub graphics_provider:      GraphicsProvider,
     pub texture_stream_policy:  StreamingPolicy
+}
+
+pub struct EngineTextures {
+    pub font_classic:           WimpyTexture,
+    pub font_classic_outline:   WimpyTexture,
+    pub font_twelven:           WimpyTexture,
+    pub font_twelven_shaded:    WimpyTexture,
+    pub font_mono_elf:          WimpyTexture,
+}
+
+impl EngineTextures {
+    pub fn from_placeholder(value: &WimpyTexture) -> Self {
+        Self {
+            font_classic:           value.clone(),
+            font_classic_outline:   value.clone(),
+            font_twelven:           value.clone(),
+            font_twelven_shaded:    value.clone(),
+            font_mono_elf:          value.clone(),
+        }
+    }
 }
 
 pub trait WimpyAppHandler<IO>
@@ -100,29 +113,27 @@ impl WimpyAppContext {
             input,
             assets,
             debug_shell: debug,
-            missing_text: Rc::from(MISSING_TEXT),
+            missing_text: Rc::from("<missing text asset>"),
         };
 
-        context.load_engine_textures();
+        context.graphics.texture_manager.engine_textures = EngineTextures {
+            font_classic:         context.get_image( "wimpy/font/classic",        StreamingHint::Static),
+            font_classic_outline: context.get_image("wimpy/font/classic-outline", StreamingHint::Static),
+            font_twelven:         context.get_image("wimpy/font/twelven",         StreamingHint::Static),
+            font_twelven_shaded:  context.get_image("wimpy/font/twelven-shaded",  StreamingHint::Static),
+            font_mono_elf:        context.get_image("wimpy/font/mono-elf",        StreamingHint::Static),
+        };
 
         context
     }
 
     // A series of assets that are 'always' expected to be a part of the runtime, such as fonts
-    fn load_engine_textures(&mut self) {
-        self.graphics.engine_textures.font_classic =         self.get_image(FONT_CLASSIC,           StreamingHint::Static);
-        self.graphics.engine_textures.font_classic_outline = self.get_image(FONT_CLASSIC_OUTLINE,   StreamingHint::Static);
-        self.graphics.engine_textures.font_twelven =         self.get_image(FONT_TWELVEN,           StreamingHint::Static);
-        self.graphics.engine_textures.font_twelven_shaded =  self.get_image(FONT_TWELVEN_SHADED,    StreamingHint::Static);
-        self.graphics.engine_textures.font_mono_elf =        self.get_image(FONT_MONO_ELF,          StreamingHint::Static);
-    }
-
     pub fn get_image(&mut self,name: &'static str,streaming_hint: StreamingHint) -> WimpyTexture {
         match AssetManager::get_image_asset(name,self,streaming_hint) {
             Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image asset load failure: {:?}",error);
-                self.graphics.engine_textures.missing
+                self.graphics.texture_manager.runtime_textures.missing
             },
         }
     }
@@ -132,7 +143,7 @@ impl WimpyAppContext {
             Ok(texture) => texture,
             Err(error) => {
                 log::error!("Image slice asset load failure: {:?}",error);
-                self.graphics.engine_textures.missing
+                self.graphics.texture_manager.runtime_textures.missing
             },
         }
     }

@@ -209,3 +209,13 @@ impl From<wgpu::Extent3d> for UWimpyPoint {
         }
     }
 }
+
+impl From<UWimpyPoint> for wgpu::Extent3d {
+    fn from(value: UWimpyPoint) -> Self {
+        Self {
+            width: value.x,
+            height: value.y,
+            depth_or_array_layers: 1,
+        }
+    }
+}

@@ -27,7 +27,6 @@ pub struct PipelineCreationContext<'a> {
     pub core:               PipelineCore,
     pub texture_manager:    &'a mut TextureManager,
     pub mesh_cache:         &'a mut MeshCache,
-    pub engine_textures:    &'a EngineTextures
 }
 
 impl RenderPipelines {
@@ -167,7 +166,7 @@ impl PipelineCreator<'_> {
     pub fn create_pipeline_set(&self) -> PipelineVariants {
         PipelineVariants {
             internal_target_pipeline: self.create_pipeline(
-                constants::INTERNAL_RENDER_TARGET_FORMAT,
+                constants::INTERNAL_TEXTURE_FORMAT,
                 DepthStencilMode::None
             ),
             output_surface_pipeline: self.create_pipeline(
@@ -175,7 +174,7 @@ impl PipelineCreator<'_> {
                 DepthStencilMode::None
             ),
             internal_target_pipeline_with_depth: self.create_pipeline(
-                constants::INTERNAL_RENDER_TARGET_FORMAT,
+                constants::INTERNAL_TEXTURE_FORMAT,
                 DepthStencilMode::Standard
             ),
             output_surface_pipeline_with_depth: self.create_pipeline(

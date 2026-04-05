@@ -1,4 +1,4 @@
-use super::graphics::{EngineTextures, textures::WimpyTextureKey};
+use super::{graphics::{textures::WimpyTextureKey}, EngineTextures};
 
 #[derive(Default)]
 pub struct GlyphArea {
@@ -16,7 +16,7 @@ pub struct FontTwelvenShaded;
 pub struct FontMonoElf;
 
 pub trait FontDefinition {
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey;
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey;
     fn get_glyph(character: char) -> GlyphArea;
 
     const LINE_HEIGHT: f32;
@@ -53,8 +53,8 @@ impl FontDefinition for FontClassic {
     const LETTER_SPACING: f32 = 0.75;
     const WORD_SPACING: f32 = 2.0;
 
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey {
-        engine_textures.font_classic.key
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey {
+        textures.font_classic.key
     }
 
     fn get_glyph(character: char) -> GlyphArea {
@@ -127,8 +127,8 @@ impl FontDefinition for FontClassicOutlined {
     const LETTER_SPACING: f32 = 1.0;
     const WORD_SPACING: f32 = 6.0;
 
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey {
-        engine_textures.font_classic_outline.key
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey {
+        textures.font_classic_outline.key
     }
 
     fn get_glyph(character: char) -> GlyphArea {
@@ -290,8 +290,8 @@ impl FontDefinition for FontTwelven {
     const LETTER_SPACING: f32 = 1.0;
     const WORD_SPACING: f32 = 8.0;
 
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey {
-        engine_textures.font_twelven.key
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey {
+        textures.font_twelven.key
     }
 
     fn get_glyph(character: char) -> GlyphArea {
@@ -304,8 +304,8 @@ impl FontDefinition for FontTwelvenShaded {
     const LETTER_SPACING: f32 = 1.0;
     const WORD_SPACING: f32 = 8.0;
 
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey {
-        engine_textures.font_twelven_shaded.key
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey {
+        textures.font_twelven_shaded.key
     }
 
     fn get_glyph(character: char) -> GlyphArea {
@@ -318,8 +318,8 @@ impl FontDefinition for FontMonoElf {
     const LETTER_SPACING: f32 = 1.0;
     const WORD_SPACING: f32 = 4.0;
 
-    fn select_texture(engine_textures: &EngineTextures) -> WimpyTextureKey {
-        engine_textures.font_mono_elf.key
+    fn select_texture(textures: &EngineTextures) -> WimpyTextureKey {
+        textures.font_mono_elf.key
     }
 
     fn get_glyph(character: char) -> GlyphArea {

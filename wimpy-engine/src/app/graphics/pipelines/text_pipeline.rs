@@ -174,13 +174,13 @@ where
             context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
-        let texture = context.texture_manager.get_gpu_entry(&TFont::select_texture(&context.engine_textures));
+        let texture = context.texture_manager.get_gpu_entry(&TFont::select_texture(&context.texture_manager.engine_textures));
         let uv_scalar = WimpyVec::from(texture.size()).reciprocal() * texture.get_uv_scale();
         let key = texture.key;
 
         let bind_group = context.texture_manager.get_bind_group_single_channel(context.graphics_provider.get_device(),BindGroupChannelConfig {
-            mode: SamplerMode::NearestClamp,
-            texture: key,
+            sampler_mode: SamplerMode::NearestClamp,
+            texture_key: key,
         });
 
         render_pass.set_bind_group(TEXTURE_BIND_GROUP_INDEX,bind_group,&[]);

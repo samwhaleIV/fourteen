@@ -1,6 +1,6 @@
-use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
+use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect, TextureView};
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
-use super::{GPUTextureKey, GPUTexture, GPUTextureCache};
+use super::{WimpyTextureKey, TextureCache, BindGroupIdentity, WimpyTextureInternal};
 
 pub struct TextureAtlas {
     /// How many slots occupy a dimension
@@ -14,15 +14,13 @@ pub struct TextureAtlas {
     /// Represented as a reciprocal in order to avoid the expense of division (compared to multiplication) and divide by zero.
     size_recip: WimpyVec,
 
-    /// The surface provided to a shader
-    pub(in crate::app::graphics) texture: GPUTexture,
-
-    pub(in crate::app::graphics) texture_key: GPUTextureKey,
+    pub bind_group_id: BindGroupIdentity,
+    pub texture_view: TextureView,
 
     /// Backend cache for key/ownership logisitics
     /// 
     /// Does not contain cache values, only provides feedback for coordinated movements (inserted, dropped, or maintained)
-    residency_cache: ClockCache<GPUTextureKey>,
+    residency_cache: ClockCache<WimpyTextureKey>,
 
     encoder_commands: Vec<EncoderTextureCopyCommand>,
 
@@ -40,15 +38,15 @@ impl TextureAtlas {
     pub fn new(
         slot_length: u32,
         slot_size: u32,
-        texture:  GPUTexture,
-        texture_key: GPUTextureKey,
+        texture_view: TextureView,
+        bind_group_id: BindGroupIdentity,
     ) -> Self {
         let slot_count = slot_size.pow(2) as usize;
         Self {
-            slot_size,
             slot_length,
-            texture,
-            texture_key,
+            slot_size,
+            texture_view,
+            bind_group_id,
             size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
             uv_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
@@ -65,7 +63,7 @@ impl TextureAtlas {
                 aspect: TextureAspect::All,
             };
             let dst = TexelCopyTextureInfo {
-                texture: self.texture.view.texture(),
+                texture: self.texture_view.texture(),
                 mip_level: 0,
                 origin: Origin3d {
                     x: command.dst_origin.x,
@@ -92,15 +90,13 @@ impl TextureAtlas {
 
     fn set_texture_internal(
         &mut self,
-        frame_cache: &GPUTextureCache,
-        texture: GPUTextureKey,
+        frame_cache: &TextureCache,
+        texture: WimpyTextureKey,
         slot: usize,
     ) {
         let source_texture = match frame_cache.get(texture) {
-            Ok(container) => {
-                container.view.texture()
-            },
-            Err(_) => {
+            Ok(WimpyTextureInternal { view: Some(view), .. }) => view.texture(),
+            _ => {
                 // This is not similiar to where we would want to use the 'missing' texture. This is an internal structural issue
                 log::warn!("Texture not found; it's not in the frame cache");
                 return;
@@ -136,7 +132,7 @@ impl TextureAtlas {
         self.uv_cache[slot] = uv_area;
     }
 
-    pub fn set_texture(&mut self,frame_cache: &GPUTextureCache,texture: GPUTextureKey) -> WimpyRect {
+    pub fn set_texture(&mut self,frame_cache: &TextureCache,texture: WimpyTextureKey) -> WimpyRect {
         let cache_update = self.residency_cache.insert(texture);
         if cache_update.feedback.is_some() {
             self.set_texture_internal(frame_cache,texture,cache_update.slot);
@@ -144,7 +140,7 @@ impl TextureAtlas {
         self.uv_cache[cache_update.slot]
     }
 
-    pub fn get_uv_area(&self,texture: GPUTextureKey) -> Option<WimpyRect> {
+    pub fn get_uv_area(&self,texture: WimpyTextureKey) -> Option<WimpyRect> {
         if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
             self.uv_cache.get(slot).copied()
         } else {

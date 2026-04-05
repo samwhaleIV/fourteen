@@ -4,9 +4,6 @@ pub use texture_manager::*;
 mod texture_atlas;
 pub use texture_atlas::*;
 
-mod gpu_texture;
-pub use gpu_texture::*;
-
 mod bind_group_cache;
 
 mod render_targets;
@@ -20,20 +17,19 @@ pub use render_targets::{
 
 use crate::{UWimpyPoint, WimpyVec, WimpyRect, WimpyPointRect, collections::cache_arena::*};
 
-pub struct GPUTextureCacheConfig;
+pub struct TextureCacheConfig;
 
-impl CacheArenaConfig for GPUTextureCacheConfig {
+impl CacheArenaConfig for TextureCacheConfig {
     const ENTRIES: usize =      256;
     const LEASES: usize =       256;
     const POOL_COUNT: usize =   16;
     const POOL_SIZE: usize =    16;
 }
 
-pub type GPUTextureCache = CacheArena<u32,GPUTextureKey,GPUTexture,GPUTextureCacheConfig>;
-pub type GPUTextureCacheError = CacheArenaError<u32,GPUTextureKey>;
+pub type TextureCache = CacheArena<u32,WimpyTextureKey,WimpyTextureInternal,TextureCacheConfig>;
+pub type TextureCacheError = CacheArenaError<u32,WimpyTextureKey>;
 
 slotmap::new_key_type! {
-    pub struct GPUTextureKey;
     pub struct WimpyTextureKey;
     pub struct TextureAtlasKey;
 }
@@ -52,10 +48,14 @@ pub enum SamplerMode {
 pub struct WimpyTexture {
     /// Internal cache arena reference
     pub key:    WimpyTextureKey,
-    /// The size of the asset as suggested by WAM. Could be wrong is the asset does not match the object from storage.
+    /// The size of the asset as suggested by WAM.
+    /// 
+    /// Can be wrong if the asset description does not match the external object.
     pub size:   UWimpyPoint,
     /// If provided by WAM, this is the suggested sub-area of the texture to use, such as when WAM generates an offline atlas.
-    pub slice:  Option<WimpyPointRect>
+    /// 
+    /// Alternatively, this should be the whole area, from `(0,0)` to `size`.
+    pub slice:  WimpyPointRect
 }
 
 impl WimpyTexture {
@@ -120,24 +120,25 @@ pub struct TextureData {
     size: UWimpyPoint
 }
 
-pub trait GPUTextureCacheResolver {
+pub trait TextureCacheResolver {
     //fn get_key(&self,texture_manager: &mut TextureManager) -> GPUTextureKey;
     // Lifetime lives as long as 'texture_manager', not 'self'
-    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> GPUTextureCacheEntry<'a>;
+    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> TextureCacheEntry<'a>;
 }
 
-pub struct GPUTextureCacheEntry<'a> {
-    pub input_size:     UWimpyPoint,
-    pub texture:        &'a GPUTexture,
-    pub key:            GPUTextureKey,
+pub struct TextureCacheEntry<'a> {
+    pub input_size: UWimpyPoint,
+    pub key:        WimpyTextureKey,
+    /// May be a missing/placeholder texture if the texture isn't streamed yet
+    pub view:       &'a wgpu::TextureView,
 }
 
-impl SizeInfo for GPUTextureCacheEntry<'_> {
+impl SizeInfo for TextureCacheEntry<'_> {
     fn get_input_size(&self) -> UWimpyPoint {
         self.input_size
     }
 
     fn get_output_size(&self) -> UWimpyPoint {
-        self.texture.view.texture().size().into()
+        self.view.texture().size().into()
     }
 }

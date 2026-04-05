@@ -1,27 +1,27 @@
 use crate::UWimpyPoint;
-use super::{GPUTextureKey, FilteredSize, GPUTextureCacheResolver, SizeInfo};
+use super::{WimpyTextureKey, FilteredSize, TextureCacheResolver, SizeInfo};
 
 pub struct Output {
-    key:            GPUTextureKey,
+    key:            WimpyTextureKey,
     size:           UWimpyPoint,
     clear_color:    wgpu::Color
 }
 
 pub struct Temp {
-    key:            GPUTextureKey,
+    key:            WimpyTextureKey,
     size:           FilteredSize,
     clear_color:    wgpu::Color,
 }
 
 pub struct LongLife {
-    key:        GPUTextureKey,
+    key:        WimpyTextureKey,
     size:       FilteredSize,
 }
 
 impl Output {
     pub fn new(
         size:               UWimpyPoint,
-        gpu_texture_key:    GPUTextureKey,
+        gpu_texture_key:    WimpyTextureKey,
         clear_color:        wgpu::Color,
     ) -> Self {
         Self {
@@ -35,7 +35,7 @@ impl Output {
 impl LongLife {
     pub fn new(
         size:               FilteredSize,
-        gpu_texture_key:    GPUTextureKey,
+        gpu_texture_key:    WimpyTextureKey,
     ) -> Self {
         Self {
             size,
@@ -47,7 +47,7 @@ impl LongLife {
 impl Temp {
     pub fn new(
         size:               FilteredSize,
-        gpu_texture_key:    GPUTextureKey,
+        gpu_texture_key:    WimpyTextureKey,
         clear_color:        wgpu::Color,
     ) -> Self {
         Self {
@@ -58,10 +58,10 @@ impl Temp {
     }
 }
 
-pub trait RenderTarget: SizeInfo + GPUTextureCacheResolver {
+pub trait RenderTarget: SizeInfo + TextureCacheResolver {
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_output_surface(&self) -> bool;
-    fn get_key(&self) -> GPUTextureKey;
+    fn get_key(&self) -> WimpyTextureKey;
 }
 
 impl RenderTarget for Output {
@@ -71,7 +71,7 @@ impl RenderTarget for Output {
     fn is_output_surface(&self) -> bool {
         true
     }
-    fn get_key(&self) -> GPUTextureKey {
+    fn get_key(&self) -> WimpyTextureKey {
         self.key
     }
 }
@@ -83,7 +83,7 @@ impl RenderTarget for Temp {
     fn is_output_surface(&self) -> bool {
         false
     }
-    fn get_key(&self) -> GPUTextureKey {
+    fn get_key(&self) -> WimpyTextureKey {
         self.key
     }
 }
@@ -95,7 +95,7 @@ impl RenderTarget for LongLife {
     fn is_output_surface(&self) -> bool {
         false
     }
-    fn get_key(&self) -> GPUTextureKey {
+    fn get_key(&self) -> WimpyTextureKey {
         self.key
     }
 }

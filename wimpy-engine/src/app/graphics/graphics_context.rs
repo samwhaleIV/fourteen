@@ -23,7 +23,6 @@ pub struct GraphicsContext {
     pub pipelines:          RenderPipelines,
     pub texture_manager:    TextureManager,
     pub mesh_cache:         MeshCache,
-    pub engine_textures:    EngineTextures,
     ///A depth stencil exclusively for the output surface
     /// 
     /// This avoids possible churn when using render targets that use depth stencil render passes
@@ -86,17 +85,11 @@ impl GraphicsContext {
             TConfig::MESH_CACHE_INDEX_BUFFER_SIZE
         );
 
-        let engine_textures = EngineTextures::create(
-            &graphics_provider,
-            &mut texture_manager
-        );
-
         let pipelines = RenderPipelines::create::<TConfig>(PipelineCreationContext {
             graphics_provider: &graphics_provider,
             core: pipeline_core,
             texture_manager: &mut texture_manager,
             mesh_cache: &mut mesh_cache,
-            engine_textures: &engine_textures
         });
 
         Self {
@@ -104,7 +97,6 @@ impl GraphicsContext {
             pipelines,
             texture_manager,
             mesh_cache,
-            engine_textures,
             output_depth_stencil: None,
             depth_stencil: None,
         }
@@ -129,9 +121,9 @@ impl GraphicsContext {
         )
     }
 
-    pub fn return_temp_frame(&mut self,frame: TempRenderTarget) -> Result<(),GPUTextureCacheError> {
+    pub fn return_temp_frame(&mut self,frame: TempRenderTarget) -> Result<(),TextureCacheError> {
         let texture_key = frame.get_key();
-        self.texture_manager.gpu_cache.end_lease(texture_key)?;
+        self.texture_manager.cache.end_lease(texture_key)?;
         Ok(())
     }
 
@@ -147,9 +139,9 @@ impl GraphicsContext {
         )
     }
 
-    pub fn return_long_life_frame(&mut self,frame: LongLifeRenderTarget) -> Result<(),GPUTextureCacheError> {
+    pub fn return_long_life_frame(&mut self,frame: LongLifeRenderTarget) -> Result<(),TextureCacheError> {
         let texture_key = frame.get_key();
-        self.texture_manager.gpu_cache.remove(texture_key)?;
+        self.texture_manager.cache.remove(texture_key)?;
         Ok(())
     }
 
@@ -277,11 +269,11 @@ impl OutputBuilder<'_> {
         self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
     }
 
-    fn create_render_pass_internal<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
+    fn create_render_pass_internal<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
     where
         TRenderTarget: RenderTarget
     {
-        let view = &self.graphics_context.texture_manager.get_gpu_entry(frame).texture.view;
+        let view = &self.graphics_context.texture_manager.get_gpu_entry(frame).view;
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
             (true,  DepthStencilConfig::None) =>        PipelineVariantKey::OutputSurface,
@@ -358,14 +350,14 @@ impl OutputBuilder<'_> {
         })
     }
 
-    pub fn create_render_pass<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
+    pub fn create_render_pass<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
     where
         TRenderTarget: RenderTarget
     {
         self.create_render_pass_internal(frame,DepthStencilConfig::None)
     }
 
-    pub fn create_render_pass_with_depth_stencil<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,GPUTextureCacheError>
+    pub fn create_render_pass_with_depth_stencil<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
     where
         TRenderTarget: RenderTarget
     {
@@ -382,7 +374,7 @@ impl OutputBuilderContext<'_> {
         queue.submit(std::iter::once(self.builder.encoder.finish()));
 
         let texture_key = self.frame.get_key();
-        if let Err(error) = graphics_context.texture_manager.gpu_cache.remove(texture_key) {
+        if let Err(error) = graphics_context.texture_manager.cache.remove(texture_key) {
             log::warn!("Output frame was not present in the frame cache: {:?}",error);
         };
         self.builder.output_surface.present();
