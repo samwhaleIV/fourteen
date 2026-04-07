@@ -179,10 +179,10 @@ impl Pipeline2DPass<'_,'_> {
     where
         I: IntoIterator,
         I::Item: Borrow<DrawData2D>,
-        T: TextureCacheResolver,
+        T: WimpyTextureKeyResolver,
     {
-        let texture = texture.get_entry(&mut self.context.texture_manager);
-        let key = texture.key;
+        let key = texture.get_key();
+        let texture = self.context.texture_manager.get(key);
         let uv_scale = texture.get_uv_scale();
 
         'update_bind_group: {

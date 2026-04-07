@@ -174,7 +174,7 @@ where
             context.pipelines.text.instance_buffer.get_output_buffer().slice(..)
         );
 
-        let texture = context.texture_manager.get_gpu_entry(&TFont::select_texture(&context.texture_manager.engine_textures));
+        let texture = context.texture_manager.get(TFont::select_texture(&context.texture_manager.engine_textures));
         let uv_scalar = WimpyVec::from(texture.size()).reciprocal() * texture.get_uv_scale();
         let key = texture.key;
 

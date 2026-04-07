@@ -1,23 +1,15 @@
-use slotmap::{
-    SlotMap,
-    Key
-};
-
-use std::{
-    hash::Hash,
-    collections::HashMap,
-    marker::PhantomData
-};
+use slotmap::{SlotMap, Key};
+use std::{hash::Hash, collections::HashMap, marker::PhantomData};
 
 struct KeyData<TKey> {
-    key: TKey,
-    index: usize,
-    pool_target: PoolTarget,
+    key:            TKey,
+    index:          usize,
+    pool_target:    PoolTarget,
 }
 
 struct SlotMapItem<TKey,TValue> {
-    value: TValue,
-    key_data: Option<KeyData<TKey>>,
+    value:      TValue,
+    key_data:   Option<KeyData<TKey>>,
 }
 
 #[derive(Debug)]
@@ -52,7 +44,11 @@ impl<TKey,TReference,TItem,TConfig> Default for CacheArena<TKey,TReference,TItem
     TConfig: CacheArenaConfig
 {
     fn default() -> Self {
-        return Self::new();
+        Self {
+            slotmap: SlotMap::with_capacity_and_key(TConfig::ENTRIES),
+            pools: KeyedPools::default(),
+            phantom_config: PhantomData
+        }
     }
 }
 
@@ -60,19 +56,19 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
     TReference: Key
 {
     pub fn get(&self,reference: TReference) -> Result<&TItem,CacheArenaError<TKey,TReference>> {
-        let Some(item) = self.slotmap.get(reference) else {
-            return Err(CacheArenaError::ExpiredReference(reference));
-        };
-        return Ok(&item.value);
+        match self.slotmap.get(reference) {
+            Some(item) => Ok(&item.value),
+            None => Err(CacheArenaError::ExpiredReference(reference))
+        }
     }
     pub fn get_mut(&mut self,reference: TReference) -> Result<&mut TItem,CacheArenaError<TKey,TReference>> {
-        let Some(item) = self.slotmap.get_mut(reference) else {
-            return Err(CacheArenaError::ExpiredReference(reference));
-        };
-        return Ok(&mut item.value);
+        match self.slotmap.get_mut(reference) {
+            Some(item) => Ok(&mut item.value),
+            None => Err(CacheArenaError::ExpiredReference(reference))
+        }
     }
     pub fn insert_keyless(&mut self,item: TItem) -> TReference {
-        return self.slotmap.insert(SlotMapItem { value: item, key_data: None });
+        self.slotmap.insert(SlotMapItem { value: item, key_data: None })
     }
 }
 
@@ -81,15 +77,6 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
     TKey: Eq + Copy + Hash,
     TConfig: CacheArenaConfig 
 {
-
-    pub fn new() -> Self {
-        return Self {
-            slotmap: SlotMap::with_capacity_and_key(TConfig::ENTRIES),
-            pools: KeyedPools::new(),
-            phantom_config: PhantomData
-        }
-    }
-
     pub fn insert(&mut self,key: TKey,item: TItem) {
         let cache_pool = self.pools.get_or_create_cache_mut(key);
         let pool_target = PoolTarget::Cache;
@@ -124,7 +111,7 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
 
         lease_pool.push(reference);
 
-        return reference;
+        reference
     }
 
     pub fn remove(&mut self,reference: TReference) -> Result<TItem,CacheArenaError<TKey,TReference>> {
@@ -214,7 +201,7 @@ impl<TKey,TReference,TItem,TConfig> CacheArena<TKey,TReference,TItem,TConfig> wh
     }
 
     pub fn end_lease(&mut self,reference: TReference) -> Result<(),CacheArenaError<TKey,TReference>> {
-        return self.pool_swap::<MoveToCache>(reference);
+        self.pool_swap::<MoveToCache>(reference)
     }
 
     pub fn end_all_leases(&mut self) {
@@ -257,7 +244,6 @@ pub enum PoolTarget {
 pub struct MoveToLease;
 pub struct MoveToCache;
 
-
 pub struct KeyedPools<TKey,T,TConfig> {
     leases: Pool<T>,
     cache_container: HashMap<TKey,Pool<T>>,
@@ -275,20 +261,25 @@ pub struct PoolOriginDestination<'a,T> {
     pub target: PoolTarget,
 }
 
+impl<TKey,T,TConfig> Default for KeyedPools<TKey,T,TConfig> where
+    TKey: Eq + Hash,
+    TConfig: CacheArenaConfig 
+{
+    fn default() -> Self {
+        Self {
+            cache_container: HashMap::with_capacity(TConfig::POOL_COUNT),
+            leases: Vec::with_capacity(TConfig::LEASES),
+            phantom_config: PhantomData
+        }
+    }
+}
+
 impl<TKey,T,TConfig> KeyedPools<TKey,T,TConfig> where
     TKey: Eq + Hash,
     TConfig: CacheArenaConfig 
 {
     fn create_pool() -> Pool<T> {
-        return Vec::with_capacity(TConfig::POOL_SIZE);
-    }
-
-    pub fn new() -> Self {
-        return Self {
-            cache_container: HashMap::with_capacity(TConfig::POOL_COUNT),
-            leases: Vec::with_capacity(TConfig::LEASES),
-            phantom_config: PhantomData
-        };
+        Vec::with_capacity(TConfig::POOL_SIZE)
     }
 
     pub fn ensure_cache(&mut self,key: TKey) {

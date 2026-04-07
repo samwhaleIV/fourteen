@@ -1,6 +1,6 @@
-use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect, TextureView};
+use wgpu::{CommandEncoder, Origin3d, TexelCopyTextureInfo, TextureAspect};
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
-use super::{WimpyTextureKey, TextureCache, BindGroupIdentity, WimpyTextureInternal};
+use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, SizeInfo};
 
 pub struct TextureAtlas {
     /// How many slots occupy a dimension
@@ -15,7 +15,7 @@ pub struct TextureAtlas {
     size_recip: WimpyVec,
 
     pub bind_group_id: BindGroupIdentity,
-    pub texture_view: TextureView,
+    pub key: WimpyTextureKey,
 
     /// Backend cache for key/ownership logisitics
     /// 
@@ -25,11 +25,25 @@ pub struct TextureAtlas {
     encoder_commands: Vec<EncoderTextureCopyCommand>,
 
     /// A cache of sub-UV areas within the atlas surface
-    uv_cache: Vec<WimpyRect>,
+    metadata_cache: Vec<MetadataEntry>,
+}
+
+#[derive(Default,Copy,Clone,Eq,PartialEq)]
+enum TextureCondition {
+    #[default]
+    Uninitialized,
+    Placeholder(WimpyTextureKey),
+    Loaded(WimpyTextureKey)
+}
+
+#[derive(Default,Copy,Clone)]
+struct MetadataEntry {
+    uv_area: WimpyRect,
+    condition: TextureCondition
 }
 
 struct EncoderTextureCopyCommand {
-    texture:    wgpu::Texture,
+    key:        WimpyTextureKey,
     src_size:   UWimpyPoint,
     dst_origin: UWimpyPoint,
 }
@@ -38,46 +52,56 @@ impl TextureAtlas {
     pub fn new(
         slot_length: u32,
         slot_size: u32,
-        texture_view: TextureView,
+        texture_key: WimpyTextureKey,
         bind_group_id: BindGroupIdentity,
     ) -> Self {
         let slot_count = slot_size.pow(2) as usize;
         Self {
             slot_length,
             slot_size,
-            texture_view,
+            key: texture_key,
             bind_group_id,
             size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
-            uv_cache: vec![Default::default();slot_count],
+            metadata_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
             encoder_commands: Vec::with_capacity(slot_count / 4)
         }
     }
 
-    pub fn flush(&mut self,encoder: &mut CommandEncoder) {
+    /// Execute batched update commands for use with `encoder.copy_texture_to_texture`. The update command buffer is also drained.
+    pub fn flush(
+        &mut self,
+        texture_manager: &mut TextureManager,
+        encoder: &mut CommandEncoder
+    ) {
+        let dst_texture = match texture_manager.get_readonly(self.key) {
+            Ok(texture) => texture.view.texture(),
+            Err(error) => {
+                log::warn!("Failure to retrieve atlas destination texture: {:?}",error);
+                return;
+            }
+        };
         for command in self.encoder_commands.drain(..) {
+            let src_texture = match texture_manager.get_readonly(command.key) {
+                Ok(texture) => texture.view.texture(),
+                Err(error) => {
+                    log::warn!("Failure to retrieve atlas source texture: {:?}",error);
+                    continue;
+                }
+            };
             let src = TexelCopyTextureInfo {
-                texture: &command.texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
+                texture:    src_texture,
+                origin:     Origin3d::ZERO,
+                aspect:     TextureAspect::All,
+                mip_level:  0,
             };
             let dst = TexelCopyTextureInfo {
-                texture: self.texture_view.texture(),
-                mip_level: 0,
-                origin: Origin3d {
-                    x: command.dst_origin.x,
-                    y: command.dst_origin.y,
-                    z: 0,
-                },
-                aspect: TextureAspect::All,
+                texture:    dst_texture,
+                origin:     command.dst_origin.into(),
+                aspect:     TextureAspect::All,
+                mip_level:  0,
             };
-            let copy_size = Extent3d {
-                width:  command.src_size.x,
-                height: command.src_size.y,
-                depth_or_array_layers: 1,
-            };
-            encoder.copy_texture_to_texture(src,dst,copy_size);
+            encoder.copy_texture_to_texture(src,dst,command.src_size.into());
         }
     }
 
@@ -90,21 +114,14 @@ impl TextureAtlas {
 
     fn set_texture_internal(
         &mut self,
-        frame_cache: &TextureCache,
-        texture: WimpyTextureKey,
-        slot: usize,
+        texture_manager: &mut TextureManager,
+        src_texture_key: WimpyTextureKey,
+        cache_slot:      usize,
     ) {
-        let source_texture = match frame_cache.get(texture) {
-            Ok(WimpyTextureInternal { view: Some(view), .. }) => view.texture(),
-            _ => {
-                // This is not similiar to where we would want to use the 'missing' texture. This is an internal structural issue
-                log::warn!("Texture not found; it's not in the frame cache");
-                return;
-            },
-        };
+        let src_texture = texture_manager.get(src_texture_key);
 
         let slot_size = self.slot_size;
-        let mut src_size = UWimpyPoint::from(source_texture.size());
+        let mut src_size = UWimpyPoint::from(src_texture.size());
 
         if src_size.x > slot_size {
             log::warn!("Texture width '{}' too big for atlas slot '{}'",src_size.x,slot_size);
@@ -116,33 +133,48 @@ impl TextureAtlas {
             src_size.y = src_size.y.min(slot_size);
         }
 
-        let dst_origin = self.get_slot_origin(slot as u32);
+        let dst_origin = self.get_slot_origin(cache_slot as u32);
 
         self.encoder_commands.push(EncoderTextureCopyCommand {
-            texture: source_texture.clone(),
+            key: src_texture_key,
             src_size,
             dst_origin,
         });
 
-        let uv_area = WimpyRect {
-            position: WimpyVec::from(dst_origin),
-            size: WimpyVec::from(src_size)
-        } * self.size_recip;
+        let uv_area = {
+            let position = WimpyVec::from(dst_origin);
+            let size =     WimpyVec::from(src_size);
+            WimpyRect { position, size } * self.size_recip
+        };
 
-        self.uv_cache[slot] = uv_area;
+        let condition = match (self.metadata_cache[cache_slot].condition,src_texture.is_placeholder_view) {
+            (TextureCondition::Uninitialized, true) => todo!(),
+            (TextureCondition::Uninitialized, false) => todo!(),
+            (TextureCondition::Placeholder(wimpy_texture_key), true) => todo!(),
+            (TextureCondition::Placeholder(wimpy_texture_key), false) => todo!(),
+            (TextureCondition::Loaded, true) => todo!(),
+            (TextureCondition::Loaded, false) => todo!(),
+        };
+
+        self.metadata_cache[cache_slot] = MetadataEntry { uv_area, condition };
     }
 
-    pub fn set_texture(&mut self,frame_cache: &TextureCache,texture: WimpyTextureKey) -> WimpyRect {
-        let cache_update = self.residency_cache.insert(texture);
-        if cache_update.feedback.is_some() {
-            self.set_texture_internal(frame_cache,texture,cache_update.slot);
+    pub fn set_texture(
+        &mut self,
+        texture_manager: &mut TextureManager,
+        src_texture_key: WimpyTextureKey
+    ) -> WimpyRect {
+        let cache_update = self.residency_cache.insert(src_texture_key);
+        
+        if cache_update.feedback.is_some() || src_texture_key {
+            self.set_texture_internal(texture_manager,src_texture_key,cache_update.slot);
         }
-        self.uv_cache[cache_update.slot]
+        self.metadata_cache[cache_update.slot]
     }
 
     pub fn get_uv_area(&self,texture: WimpyTextureKey) -> Option<WimpyRect> {
         if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
-            self.uv_cache.get(slot).copied()
+            self.metadata_cache.get(slot).copied()
         } else {
             None
         }

@@ -31,7 +31,6 @@ pub type TextureCacheError = CacheArenaError<u32,WimpyTextureKey>;
 
 slotmap::new_key_type! {
     pub struct WimpyTextureKey;
-    pub struct TextureAtlasKey;
 }
 
 #[derive(PartialEq,Eq,Copy,Clone,Hash)]
@@ -120,17 +119,12 @@ pub struct TextureData {
     size: UWimpyPoint
 }
 
-pub trait TextureCacheResolver {
-    //fn get_key(&self,texture_manager: &mut TextureManager) -> GPUTextureKey;
-    // Lifetime lives as long as 'texture_manager', not 'self'
-    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> TextureCacheEntry<'a>;
-}
-
 pub struct TextureCacheEntry<'a> {
-    pub input_size: UWimpyPoint,
-    pub key:        WimpyTextureKey,
+    pub input_size:             UWimpyPoint,
+    pub key:                    WimpyTextureKey,
     /// May be a missing/placeholder texture if the texture isn't streamed yet
-    pub view:       &'a wgpu::TextureView,
+    pub view:                   &'a wgpu::TextureView,
+    pub is_placeholder_view:    bool
 }
 
 impl SizeInfo for TextureCacheEntry<'_> {
@@ -140,5 +134,21 @@ impl SizeInfo for TextureCacheEntry<'_> {
 
     fn get_output_size(&self) -> UWimpyPoint {
         self.view.texture().size().into()
+    }
+}
+
+pub trait WimpyTextureKeyResolver {
+    fn get_key(&self) -> WimpyTextureKey;
+}
+
+impl WimpyTextureKeyResolver for WimpyTexture {
+    fn get_key(&self) -> WimpyTextureKey {
+        self.key
+    }
+}
+
+impl WimpyTextureKeyResolver for WimpyTextureKey {
+    fn get_key(&self) -> WimpyTextureKey {
+        *self
     }
 }

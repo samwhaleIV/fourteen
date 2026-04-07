@@ -1,8 +1,6 @@
 const UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE: usize =    16;
-const ATLAS_START_QUANTITY: usize =                     2;
 
 use wgpu::*;
-use slotmap::SlotMap;
 use std::num::NonZeroU32;
 
 use super::{*,bind_group_cache::{BindGroupCache, BindGroupChannelSet, BindGroupChannel}};
@@ -10,33 +8,33 @@ use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, wam::HardAsset, ImageDat
 
 #[derive(Default,Clone,Copy)]
 pub enum StreamingPolicy {
-    /// Can be loaded from hard storage multiple times upon cache's time to live determinations
+    /// Can be loaded from hard storage multiple times upon cache's time to live determinations.
     /// 
-    /// May be dropped from local memory when a GPU resource is created
+    /// May be dropped from local memory when a GPU resource is created.
     #[default]
     Default,
 
-    /// Local memory copy retained even after a GPU resource is created
+    /// Local memory copy retained even after a GPU resource is created.
     /// 
-    /// May read from storage multiple times if the GPU resource is lost
+    /// May read from storage multiple times if the GPU resource is lost.
     /// 
-    /// More useful in the browser enviroment or consoles if the total mass of game assets are on the smaller side
+    /// More useful in the browser enviroment or consoles if the total mass of game assets are on the smaller side.
     Retained,
 
-    /// Suggestion to only load from hard storage once
+    /// Suggestion to only load from hard storage once.
     /// 
-    /// GPU only textures cannot be unloaded
+    /// GPU only textures cannot be unloaded.
     StaticGPU,
 }
 
 #[derive(Default,Clone,Copy)]
 pub enum StreamingHint {
-    /// No particular stream policy tuning
+    /// No particular stream policy tuning.
     #[default]
     None,
-    /// Adjusts the streaming policy to optimize for atlas usage
+    /// Adjusts the streaming policy to optimize for atlas usage.
     Atlas,
-    /// Tells the streaming policy this texture should always behave as `StaticGPU`
+    /// Tells the streaming policy this texture should always behave as `StaticGPU`.
     Static,
 }
 
@@ -52,7 +50,7 @@ pub struct TextureCreationParameters {
     pub wam_id:         HardAsset,
     /// A verified size or a hint provided by WAM.
     /// 
-    /// If provided by WAM, the asset's real size in storage may be in disagreement with the manifest
+    /// If provided by WAM, the asset's real size in storage may be in disagreement with the manifest.
     pub size_hint:      UWimpyPoint,
     pub policy_hint:    StreamingHint,
     pub slice:          Option<WimpyPointRect>
@@ -64,16 +62,16 @@ pub enum BindGroupIdentity {
     Known(NonZeroU32)
 }
 
-/// An online texture container for textures that are on the GPU
+/// An online texture container for textures that are on the GPU.
 /// 
 /// It's a handle to a handle
 pub struct WimpyTextureInternal {
-    /// The size of the texture according to WAM metadata or similiar
+    /// The size of the texture according to WAM metadata or similiar.
     size_hint:          UWimpyPoint,
     wam_id:             Option<HardAsset>,
     pub bind_group_id:  BindGroupIdentity,
     pub view:           Option<TextureView>,
-    /// RGBA8 Representation of texture information. TODO: Determine if this is linear or gamma space
+    /// RGBA8 Representation of texture information. TODO: Determine if this is linear or gamma space.
     local_data:         Option<Vec<u8>>,
     policy_hint:        StreamingHint,
 }
@@ -131,7 +129,7 @@ impl BindGroupIdentityGenerator {
 
 pub struct TextureViewConfig<'a> {
     size:               UWimpyPoint,
-    /// Specify if this texture resource will ever be used as a render pass attachment
+    /// Specify if this texture resource will ever be used as a render pass attachment.
     render_attachment:  bool,
     image_data:         Option<&'a [u8]>
 }
@@ -197,17 +195,24 @@ pub struct TextureManager {
     /// These fallback to the internal missing texture if not found.
     pub engine_textures:    EngineTextures,
     /// Provides an infalliable source to a texture view
+    /// 
+    /// This is useful because the textures of `runtime_textures` still require unwrapping
     fallback_texture:       FallbackTexture,
     bind_groups:            BindGroupCache,
     id_generator:           BindGroupIdentityGenerator,
     update_queue:           Vec<UpdateOperation>,
     streaming_policy:       StreamingPolicy,
-    atlases:                SlotMap<TextureAtlasKey,TextureAtlas>, //TODO: Should this be an atlas?
+}
+
+#[derive(Debug)]
+pub enum TextureManagerError {
+    CacheFault(CacheArenaError<u32,WimpyTextureKey>),
+    NoAvailableView
 }
 
 enum UpdateOperation {
     /// Contact operation to stream or refresh texture time to live
-    Refresh(WimpyTextureKey),
+    Touch(WimpyTextureKey),
     CopyTextureToTexture(TextureCopyParameters)
 }
 
@@ -218,9 +223,10 @@ pub struct TextureAtlasConfig {
     pub slot_length: u32
 }
 
-/// A set of built in, always available texture assets.
+/// A set of built in, always available texture assets. Note, however, they still require unwrapping.
 /// 
-/// Note, however, they still require unwrapping.
+/// Runtime textures are stored in the same format, `WimpyTexture`, that is used at the application layer.
+/// This simplifies the work of pipeline texture management.
 pub struct RuntimeTextures {
     pub missing:            WimpyTexture,
     pub opaque_white:       WimpyTexture,
@@ -313,7 +319,7 @@ impl TextureManager {
         texture_layout:     BindGroupLayout,
         streaming_policy:   StreamingPolicy
     ) -> Self {
-        let mut cache = TextureCache::new();
+        let mut cache = TextureCache::default();
         let mut id_generator = BindGroupIdentityGenerator::default();
 
         let missing_texture_data = &MissingTexture::create_data();
@@ -356,7 +362,6 @@ impl TextureManager {
             fallback_texture,
             streaming_policy,
             bind_groups:        BindGroupCache::create(graphics_provider.get_device(),texture_layout),
-            atlases:            SlotMap::with_capacity_and_key(ATLAS_START_QUANTITY),
             update_queue:       Vec::with_capacity(UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE),
         }
     }
@@ -400,13 +405,13 @@ impl TextureManager {
         }
     }
 
-    // // fn copy_texture_to_texture(&mut self,parameters: TextureCopyParameters) {
-    // //     self.update_queue.push(UpdateOperation::CopyTextureToTexture(parameters));
-    // // }
+    // fn copy_texture_to_texture(&mut self,parameters: TextureCopyParameters) {
+    //     self.update_queue.push(UpdateOperation::CopyTextureToTexture(parameters));
+    // }
 
-    /// Refreshes time to live or restreams the texture to a gpu container
-    fn refresh(&mut self,texture_key: WimpyTextureKey) {
-        self.update_queue.push(UpdateOperation::Refresh(texture_key));
+    /// Refreshes time to live or restreams the texture to a GPU container.
+    fn touch(&mut self,texture_key: WimpyTextureKey) {
+        self.update_queue.push(UpdateOperation::Touch(texture_key));
     }
 
     pub fn has_updates(&self) -> bool {
@@ -487,12 +492,56 @@ impl TextureManager {
         self.cache.insert_keyless(texture)
     }
 
-    // This return values lives as long as 'self', not texture
-    pub fn get_gpu_entry<'a,T>(&'a mut self,texture: &T) -> TextureCacheEntry<'a>
-    where
-        T: TextureCacheResolver
-    {
-        texture.get_entry(self)
+    /// Resolve a key to a WGPU texture view. Does NOT emit touch/streaming requests.
+    /// 
+    /// Note: Multiple disjoint texture entries can be obtained because `self` is not `mut`.
+    pub fn get_readonly<'a>(&'a self,key: WimpyTextureKey) -> Result<TextureCacheEntry<'a>,TextureManagerError> {
+        match self.cache.get(key) {
+            Ok(WimpyTextureInternal { view: Some(view), size_hint, .. }) => {
+                Ok(TextureCacheEntry {
+                    input_size: *size_hint,
+                    key,
+                    view,
+                    is_placeholder_view: false
+                })
+            },
+            Ok(WimpyTextureInternal { view: None, .. }) => {
+                Err(TextureManagerError::NoAvailableView)
+            },
+            Err(error) => {
+                Err(TextureManagerError::CacheFault(error))
+            },
+        }
+    }
+
+    /// Resolve a key to a WGPU texture view. Emits touch/streaming requests.
+    /// 
+    /// Will request that the texture asset is loaded if not already available. Returns a fallback value until then.
+    /// 
+    /// Note: If multiple texture views are needed, use `get_readonly` or `get_readonly_or_default` instead.
+    pub fn get<'a>(&'a mut self,key: WimpyTextureKey) -> TextureCacheEntry<'a> {
+        match self.cache.get(key) {
+            Ok(WimpyTextureInternal { view: Some(view), size_hint, .. }) => TextureCacheEntry {
+                input_size: *size_hint,
+                key,
+                view,
+                is_placeholder_view: false
+            },
+            // TODO: Touch
+            _ => {
+                let fallback = self.runtime_textures.missing;
+                TextureCacheEntry {
+                    input_size: fallback.size,
+                    key:        fallback.key,
+                    view:       &self.fallback_texture.view,
+                    is_placeholder_view: true
+                }
+            }
+        }
+    }
+
+    pub fn set_atlas_texture(&mut self,atlas: &mut TextureAtlas,key: WimpyTextureKey) -> WimpyRect {
+        atlas.set_texture(self,key)
     }
 
     // TODO: Bind group cache entries much be attached to their GPU textures otherwise they will leak GPU resources when dropping textures is intended
@@ -504,6 +553,7 @@ impl TextureManager {
         self.bind_groups.get(device,&BindGroupChannelSet::Single { ch_0: BindGroupChannel { sampler_mode: channel.sampler_mode, texture_view, id }})
     }
 
+    // TODO: reconcile 'array'-like pattern with enumeration-ish fields
     pub fn get_bind_group_dual_channel<'a>(&'a mut self,device: &Device,channels: [BindGroupChannelConfig;2]) -> &'a BindGroup {
         let [ch_0, ch_1] = channels.map(|channel|{
             let (texture_view, id): (&TextureView, BindGroupIdentity) = match self.cache.get(channel.texture_key) {
@@ -520,41 +570,4 @@ impl TextureManager {
 pub struct BindGroupChannelConfig {
     pub sampler_mode:   SamplerMode,
     pub texture_key:    WimpyTextureKey,
-}
-
-impl TextureCacheResolver for WimpyTextureKey {
-    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> TextureCacheEntry<'a> {
-        match texture_manager.cache.get(*self) {
-            Ok(WimpyTextureInternal { view: Some(view), size_hint, .. }) => {
-                TextureCacheEntry {
-                    input_size: *size_hint,
-                    key: *self,
-                    view,
-                }
-            },
-            _ => {
-                let fallback_texture = texture_manager.runtime_textures.missing;
-                TextureCacheEntry {
-                    input_size: fallback_texture.size,
-                    key: fallback_texture.key,
-                    view: &texture_manager.fallback_texture.view,
-                }
-            }
-        }
-    }
-}
-
-impl TextureCacheResolver for WimpyTexture {
-    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> TextureCacheEntry<'a> {
-        self.key.get_entry(texture_manager)
-    }
-}
-
-impl<T> TextureCacheResolver for T
-where
-    T: render_targets::RenderTarget
-{
-    fn get_entry<'a>(&self,texture_manager: &'a mut TextureManager) -> TextureCacheEntry<'a> {
-        self.get_key().get_entry(texture_manager)
-    }
 }

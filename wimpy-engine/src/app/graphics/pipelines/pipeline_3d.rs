@@ -210,9 +210,13 @@ impl Pipeline3D {
         }
     }
 
-    pub fn flush_encoder(&mut self,encoder: &mut CommandEncoder) {
-        self.diffuse_atlas.flush(encoder);
-        self.lightmap_atlas.flush(encoder);
+    pub fn flush_atlases(
+        &mut self,
+        texture_manager: &mut TextureManager,
+        encoder: &mut CommandEncoder,
+    ) {
+        self.diffuse_atlas.flush(texture_manager,encoder);
+        self.lightmap_atlas.flush(texture_manager,encoder);
     }
 
     pub fn batch<I>(context: &mut GraphicsContext,texture_strategy: TextureStrategy,draw_data: I)
@@ -225,39 +229,27 @@ impl Pipeline3D {
 
             let meshlets = context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
 
-            let transform_0 = draw_data.transform.x_axis.into();
-            let transform_1 = draw_data.transform.y_axis.into();
-            let transform_2 = draw_data.transform.z_axis.into();
-            let transform_3 = draw_data.transform.w_axis.into();
-
             for meshlet in meshlets {
-                let (diffuse,lightmap)  = match texture_strategy {
-                    TextureStrategy::Standard => (
-                        meshlet.diffuse,
-                        meshlet.lightmap
-                    ),
-                    TextureStrategy::LightmapToDiffuse => (
-                        meshlet.lightmap,
-                        context.texture_manager.runtime_textures.opaque_white.key
-                    ),
-                    TextureStrategy::NoLightmap => (
-                        meshlet.diffuse,
-                        context.texture_manager.runtime_textures.opaque_white.key
-                    )
-                };
-
-                let diffuse_key = context.texture_manager.get_gpu_entry(&diffuse).key;
-                let lightmap_key = context.texture_manager.get_gpu_entry(&lightmap).key;
-
-                let uv_diffuse = pipeline_3d.diffuse_atlas.set_texture(
-                    &context.texture_manager.cache,
-                    diffuse_key
-                );
-
-                let uv_lightmap = pipeline_3d.lightmap_atlas.set_texture(
-                    &context.texture_manager.cache,
-                    lightmap_key
-                );
+                let [uv_diffuse, uv_lightmap] = {
+                    let (diffuse,lightmap) = match texture_strategy {
+                        TextureStrategy::Standard => (
+                            meshlet.diffuse,
+                            meshlet.lightmap
+                        ),
+                        TextureStrategy::LightmapToDiffuse => (
+                            meshlet.lightmap,
+                            context.texture_manager.runtime_textures.opaque_white.key
+                        ),
+                        TextureStrategy::NoLightmap => (
+                            meshlet.diffuse,
+                            context.texture_manager.runtime_textures.opaque_white.key
+                        )
+                    };
+                    [
+                        (diffuse,&mut pipeline_3d.diffuse_atlas),
+                        (lightmap,&mut pipeline_3d.lightmap_atlas)
+                    ]
+                }.map(|(key,atlas)|context.texture_manager.set_atlas_texture(atlas,key));
 
                 let range = &meshlet.range;
 
@@ -265,10 +257,10 @@ impl Pipeline3D {
                     uv_diffuse: uv_diffuse.into(),
                     uv_lightmap: uv_lightmap.into(),
 
-                    transform_0,
-                    transform_1,
-                    transform_2,
-                    transform_3,
+                    transform_0: draw_data.transform.x_axis.into(),
+                    transform_1: draw_data.transform.y_axis.into(),
+                    transform_2: draw_data.transform.z_axis.into(),
+                    transform_3: draw_data.transform.w_axis.into(),
 
                     base_vertex: range.base_vertex,
                     index_start: range.index_start,
@@ -340,11 +332,11 @@ impl Pipeline3DPass<'_,'_> {
             [
                 BindGroupChannelConfig {
                     sampler_mode: diffuse_sampler,
-                    texture_key: pipeline.diffuse_atlas.texture_key,
+                    texture_key: pipeline.diffuse_atlas.key,
                 },
                 BindGroupChannelConfig {
                     sampler_mode: SamplerMode::LinearClamp,
-                    texture_key: pipeline.lightmap_atlas.texture_key
+                    texture_key: pipeline.lightmap_atlas.key
                 }
             ]
         );

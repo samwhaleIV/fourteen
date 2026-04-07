@@ -7,7 +7,7 @@ const RIGHT_EDGE_VIRTUAL_MODE_MARGIN: u32 = 8;
 use std::{collections::HashMap, path::Path};
 use sdl2::{EventPump, GameControllerSubsystem, Sdl, TimerSubsystem, VideoSubsystem, controller::{Axis, Button, GameController}, event::{Event, WindowEvent}, mouse::MouseButton, video::Window};
 use wgpu::{Instance, Limits, Surface};
-use wimpy_engine::{WimpyRect, WimpyVec, app::{*,input::*,graphics::*}};
+use wimpy_engine::{WimpyRect, WimpyVec, app::{*,input::*,graphics::{*,textures::StreamingPolicy}}};
 
 use crate::{
     desktop_io::DekstopAppIO,

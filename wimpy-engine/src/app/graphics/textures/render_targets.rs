@@ -1,8 +1,8 @@
 use crate::UWimpyPoint;
-use super::{WimpyTextureKey, FilteredSize, TextureCacheResolver, SizeInfo};
+use super::{WimpyTextureKey, FilteredSize, SizeInfo, WimpyTextureKeyResolver};
 
 pub struct Output {
-    key:            WimpyTextureKey,
+    key:        WimpyTextureKey,
     size:           UWimpyPoint,
     clear_color:    wgpu::Color
 }
@@ -14,8 +14,8 @@ pub struct Temp {
 }
 
 pub struct LongLife {
-    key:        WimpyTextureKey,
-    size:       FilteredSize,
+    key:    WimpyTextureKey,
+    size:   FilteredSize,
 }
 
 impl Output {
@@ -58,10 +58,9 @@ impl Temp {
     }
 }
 
-pub trait RenderTarget: SizeInfo + TextureCacheResolver {
+pub trait RenderTarget: SizeInfo + WimpyTextureKeyResolver {
     fn get_clear_color(&self) -> Option<wgpu::Color>;
     fn is_output_surface(&self) -> bool;
-    fn get_key(&self) -> WimpyTextureKey;
 }
 
 impl RenderTarget for Output {
@@ -70,9 +69,6 @@ impl RenderTarget for Output {
     }
     fn is_output_surface(&self) -> bool {
         true
-    }
-    fn get_key(&self) -> WimpyTextureKey {
-        self.key
     }
 }
 
@@ -83,9 +79,6 @@ impl RenderTarget for Temp {
     fn is_output_surface(&self) -> bool {
         false
     }
-    fn get_key(&self) -> WimpyTextureKey {
-        self.key
-    }
 }
 
 impl RenderTarget for LongLife {
@@ -95,6 +88,21 @@ impl RenderTarget for LongLife {
     fn is_output_surface(&self) -> bool {
         false
     }
+}
+
+impl WimpyTextureKeyResolver for Output {
+    fn get_key(&self) -> WimpyTextureKey {
+        self.key
+    }
+}
+
+impl WimpyTextureKeyResolver for Temp {
+    fn get_key(&self) -> WimpyTextureKey {
+        self.key
+    }
+}
+
+impl WimpyTextureKeyResolver for LongLife {
     fn get_key(&self) -> WimpyTextureKey {
         self.key
     }

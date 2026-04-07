@@ -219,3 +219,13 @@ impl From<UWimpyPoint> for wgpu::Extent3d {
         }
     }
 }
+
+impl From<UWimpyPoint> for wgpu::Origin3d {
+    fn from(value: UWimpyPoint) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+            z: 0,
+        }
+    }
+}

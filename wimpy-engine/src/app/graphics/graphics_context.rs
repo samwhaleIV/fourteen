@@ -266,14 +266,14 @@ impl OutputBuilder<'_> {
 
     /// Must be called before the first render pass that will draw meshes executes
     pub fn submit_batched_meshes(&mut self) {
-        self.graphics_context.pipelines.pipeline_3d.flush_encoder(&mut self.encoder);
+        self.graphics_context.pipelines.pipeline_3d.flush_atlases(&mut self.graphics_context.texture_manager,&mut self.encoder);
     }
 
-    fn create_render_pass_internal<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
+    fn create_render_pass_internal<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget,depth_stencil_config: DepthStencilConfig) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureManagerError>
     where
         TRenderTarget: RenderTarget
     {
-        let view = &self.graphics_context.texture_manager.get_gpu_entry(frame).view;
+        let view = self.graphics_context.texture_manager.get_readonly(frame.get_key())?.view;
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
             (true,  DepthStencilConfig::None) =>        PipelineVariantKey::OutputSurface,
@@ -350,14 +350,14 @@ impl OutputBuilder<'_> {
         })
     }
 
-    pub fn create_render_pass<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
+    pub fn create_render_pass<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureManagerError>
     where
         TRenderTarget: RenderTarget
     {
         self.create_render_pass_internal(frame,DepthStencilConfig::None)
     }
 
-    pub fn create_render_pass_with_depth_stencil<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureCacheError>
+    pub fn create_render_pass_with_depth_stencil<'a,TRenderTarget>(&'a mut self,frame: &'a TRenderTarget) -> Result<RenderPassBuilder<'a,TRenderTarget>,TextureManagerError>
     where
         TRenderTarget: RenderTarget
     {
