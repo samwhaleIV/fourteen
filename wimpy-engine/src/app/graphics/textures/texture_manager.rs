@@ -171,7 +171,7 @@ fn create_texture_view(
         graphics_provider.get_queue().write_texture(
             TexelCopyTextureInfo {
                 texture: &texture,
-                mip_level: 1,
+                mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
@@ -331,7 +331,7 @@ impl TextureManager {
             let size = MissingTexture::SIZE.into();
             let view = create_texture_view(graphics_provider,TextureViewConfig {
                 size,
-                render_attachment: false,
+                render_attachment: false, //should probably be false copy to copy doesn't
                 image_data: Some(missing_texture_data),
             });
             FallbackTexture {
@@ -379,9 +379,9 @@ impl TextureManager {
             policy_hint:    parameters.policy_hint,
             load_state:     TextureLoadState::Unloaded,
         };
-        let key = self.cache.insert_keyless(texture);
+        let texture_key = self.cache.insert_keyless(texture);
         WimpyTexture {
-            key,
+            key: texture_key,
             size: parameters.size_hint,
             slice: parameters.slice.unwrap_or_else(||WimpyPointRect::area_from_size(parameters.size_hint))
         }
@@ -402,9 +402,9 @@ impl TextureManager {
             policy_hint:    StreamingHint::Static,
             load_state:     TextureLoadState::Loaded
         };
-        let key = self.cache.insert_keyless(texture);
+        let texture_key = self.cache.insert_keyless(texture);
         WimpyTexture {
-            key,
+            key: texture_key,
             size: image_data.size,
             slice: WimpyPointRect::area_from_size(image_data.size),
         }
@@ -423,7 +423,7 @@ impl TextureManager {
         self.update_queue.len() > 0
     }
 
-    pub async fn update<IO: WimpyIO>(&mut self) {
+    pub fn update<IO: WimpyIO>(&mut self) {
         for update in self.update_queue.drain(..) {
             todo!();
         }
@@ -434,8 +434,40 @@ impl TextureManager {
         graphics_provider: &GraphicsProvider,
         config: &TextureAtlasConfig
     ) -> TextureAtlas {
+
+        //TODO: validate size with graphics provider
+
+        let length = config.slot_size * config.slot_length;
+        let size: UWimpyPoint = length.into();
+
+        let texture_view = create_texture_view(graphics_provider,TextureViewConfig {
+            size,
+            render_attachment: false,
+            image_data: None // should we create a blank texture first ?
+        });
+
+        let bind_group_id: BindGroupIdentity = self.id_generator.next();
+
+        let texture = WimpyTextureInternal {
+            size_hint:      size,
+            wam_id:         None,
+            bind_group_id:  bind_group_id,
+            view:           Some(texture_view),
+            local_data:     None,
+            policy_hint:    StreamingHint::Static,
+            load_state:     TextureLoadState::Loaded
+        };
+
+        let texture_key: WimpyTextureKey = self.cache.insert_keyless(texture);
         //todo: validate size with graphics provider
-        todo!()
+        let atlas = TextureAtlas::new(
+            config.slot_length,
+            config.slot_size,
+            texture_key,
+            bind_group_id
+        );
+
+        return atlas;
     }
 
     pub fn create_keyless_render_target(
