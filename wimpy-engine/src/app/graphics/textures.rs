@@ -114,24 +114,21 @@ pub trait SizeInfo {
     }
 }
 
-pub struct TextureData {
-    data: Vec<u8>,
-    size: UWimpyPoint
-}
-
-#[derive(Default)]
+#[derive(Copy,Clone,PartialEq,Eq)]
 pub enum TextureLoadState {
-    #[default]
-    Pending,
-    PendingContinuous,
-    Failed,
-    Complete
+    Unloaded,
+    Loading {
+        generation: u8
+    },
+    Loaded,
+    /// Could be a placeholder texture or an outright failure
+    Fallback,
 }
 
 pub struct TextureCacheEntry<'a> {
     pub input_size:             UWimpyPoint,
     pub key:                    WimpyTextureKey,
-    /// May be a missing/placeholder texture if the texture isn't streamed yet
+    /// May be a missing/placeholder texture if the texture isn't streamed yet.
     pub view:                   &'a wgpu::TextureView,
     pub load_state:             TextureLoadState,
 }

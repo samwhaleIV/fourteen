@@ -1,6 +1,6 @@
 use wgpu::{CommandEncoder, Origin3d, TexelCopyTextureInfo, TextureAspect};
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
-use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, SizeInfo, TextureLoadState};
+use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, TextureCacheEntry, TextureLoadState};
 
 pub struct TextureAtlas {
     /// How many slots occupy a dimension
@@ -28,12 +28,11 @@ pub struct TextureAtlas {
     cell_cache: Vec<Cell>,
 }
 
-#[derive(Default,Copy,Clone)]
+#[derive(Default,Copy,Clone,PartialEq,Eq)]
 enum CellCondition {
     #[default]
     Empty,
-    Temporary(WimpyTextureKey),
-    Finalized(WimpyTextureKey)
+    Registered(WimpyTextureKey, TextureLoadState)
 }
 
 #[derive(Default,Copy,Clone)]
@@ -114,33 +113,14 @@ impl TextureAtlas {
 
     fn set_texture_internal(
         &mut self,
-        texture_manager: &mut TextureManager,
-        new_key:         WimpyTextureKey,
-        cache_slot:      usize,
+        src_texture: TextureCacheEntry,
+        cache_slot:  usize,
     ) {
-        let src_texture = texture_manager.get(new_key);
-
-        let old_condition = self.cell_cache[cache_slot].condition;
-        let load_state = src_texture.load_state;
-
-        use CellCondition::*;
-        use TextureLoadState::*;
-
-
-        let new_condition: Option<CellCondition> = match old_condition {
-            Empty => todo!(),
-            condition @ (Temporary(old_key) | Finalized(old_key)) => {
-
-            }
-        };
- 
-        let Some(new_condition) = new_condition else {
-            return;
-        };
+        let new_key = src_texture.key;
+        let new_condition = CellCondition::Registered(new_key, src_texture.load_state);
+        let mut src_size = src_texture.input_size;
 
         let slot_size = self.slot_size;
-        let mut src_size = UWimpyPoint::from(src_texture.size());
-
         if src_size.x > slot_size {
             log::warn!("Texture width '{}' too big for atlas slot '{}'",src_size.x,slot_size);
             src_size.x = src_size.x.min(slot_size);
@@ -173,19 +153,33 @@ impl TextureAtlas {
         texture_manager: &mut TextureManager,
         src_texture_key: WimpyTextureKey
     ) -> WimpyRect {
+        let src_texture = texture_manager.get(src_texture_key);
         let cache_update = self.residency_cache.insert(src_texture_key);
 
-        if cache_update.feedback.is_some() {
-            self.set_texture_internal(texture_manager,src_texture_key,cache_update.slot);
+        let texture_status_changed = {
+            if let Some(cell_state) = self.cell_cache.get(cache_update.slot) {
+                // If this is NOT equal, the texture state changed (E.g., incremental load progress, failure, etc.)
+                cell_state.condition != CellCondition::Registered(src_texture_key, src_texture.load_state)
+            } else {
+                true
+            }
+        };
+
+        if cache_update.feedback.is_some() || texture_status_changed {
+            self.set_texture_internal(src_texture, cache_update.slot);
         }
-        self.cell_cache[cache_update.slot]
+        
+        self.cell_cache[cache_update.slot].uv_area
     }
 
     pub fn get_uv_area(&self,texture: WimpyTextureKey) -> Option<WimpyRect> {
-        if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
-            self.cell_cache.get(slot).copied()
-        } else {
-            None
-        }
+        let Some(slot) = self.residency_cache.get_slot_for_key(texture) else {
+            return None;
+        };
+        let Some(cell) = self.cell_cache.get(slot) else {
+            // Should this return a placeholder value instead of none?
+            return None;
+        };
+        return Some(cell.uv_area);
     }
 }

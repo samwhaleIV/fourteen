@@ -74,6 +74,7 @@ pub struct WimpyTextureInternal {
     /// RGBA8 Representation of texture information. TODO: Determine if this is linear or gamma space.
     local_data:         Option<Vec<u8>>,
     policy_hint:        StreamingHint,
+    pub load_state:     TextureLoadState
 }
 
 struct FallbackTexture {
@@ -98,6 +99,7 @@ impl WimpyTextureInternal {
             })),
             local_data: None,
             policy_hint: StreamingHint::Static,
+            load_state: TextureLoadState::Loaded
         }
     }
 }
@@ -303,6 +305,7 @@ impl RuntimeTextureGenerator<'_> {
             view: Some(view),
             local_data: None,
             policy_hint: StreamingHint::Static,
+            load_state: TextureLoadState::Loaded
         };
         let key = self.texture_cache.insert_keyless(texture);
         WimpyTexture {
@@ -374,6 +377,7 @@ impl TextureManager {
             view:           None,
             local_data:     None,
             policy_hint:    parameters.policy_hint,
+            load_state:     TextureLoadState::Unloaded,
         };
         let key = self.cache.insert_keyless(texture);
         WimpyTexture {
@@ -396,6 +400,7 @@ impl TextureManager {
             view:           Some(texture_view),
             local_data:     None,
             policy_hint:    StreamingHint::Static,
+            load_state:     TextureLoadState::Loaded
         };
         let key = self.cache.insert_keyless(texture);
         WimpyTexture {
@@ -488,6 +493,7 @@ impl TextureManager {
             view: Some(texture_view),
             local_data: None,
             policy_hint: StreamingHint::Static,
+            load_state:  TextureLoadState::Loaded
         };
         self.cache.insert_keyless(texture)
     }
@@ -497,12 +503,12 @@ impl TextureManager {
     /// Note: Multiple disjoint texture entries can be obtained because `self` is not `mut`.
     pub fn get_readonly<'a>(&'a self,key: WimpyTextureKey) -> Result<TextureCacheEntry<'a>,TextureManagerError> {
         match self.cache.get(key) {
-            Ok(WimpyTextureInternal { view: Some(view), size_hint, .. }) => {
+            Ok(WimpyTextureInternal { view: Some(view), size_hint, load_state, .. }) => {
                 Ok(TextureCacheEntry {
                     input_size: *size_hint,
                     key,
                     view,
-                    is_placeholder_view: false
+                    load_state: *load_state
                 })
             },
             Ok(WimpyTextureInternal { view: None, .. }) => {
@@ -519,22 +525,25 @@ impl TextureManager {
     /// Will request that the texture asset is loaded if not already available. Returns a fallback value until then.
     /// 
     /// Note: If multiple texture views are needed, use `get_readonly` or `get_readonly_or_default` instead.
-    pub fn get<'a>(&'a mut self,key: WimpyTextureKey) -> TextureCacheEntry<'a> {
+    pub fn get<'a>(&'a mut self, key: WimpyTextureKey) -> TextureCacheEntry<'a> {
+        self.touch(key);
+
         match self.cache.get(key) {
-            Ok(WimpyTextureInternal { view: Some(view), size_hint, .. }) => TextureCacheEntry {
-                input_size: *size_hint,
-                key,
-                view,
-                load_state: Loadstate
+            Ok(WimpyTextureInternal { view, size_hint, load_state, .. }) => {
+                TextureCacheEntry {
+                    input_size: *size_hint,
+                    key,
+                    view: view.as_ref().unwrap_or(&self.fallback_texture.view), 
+                    load_state: *load_state,
+                }
             },
-            // TODO: Touch
-            _ => {
+            Err(_) => {
                 let fallback = self.runtime_textures.missing;
                 TextureCacheEntry {
                     input_size: fallback.size,
-                    key:        fallback.key,
-                    view:       &self.fallback_texture.view,
-                    is_placeholder_view: true
+                    key: fallback.key, 
+                    view: &self.fallback_texture.view,
+                    load_state: TextureLoadState::Fallback,
                 }
             }
         }
