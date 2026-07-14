@@ -119,12 +119,21 @@ pub struct TextureData {
     size: UWimpyPoint
 }
 
+#[derive(Default)]
+pub enum TextureLoadState {
+    #[default]
+    Pending,
+    PendingContinuous,
+    Failed,
+    Complete
+}
+
 pub struct TextureCacheEntry<'a> {
     pub input_size:             UWimpyPoint,
     pub key:                    WimpyTextureKey,
     /// May be a missing/placeholder texture if the texture isn't streamed yet
     pub view:                   &'a wgpu::TextureView,
-    pub is_placeholder_view:    bool
+    pub load_state:             TextureLoadState,
 }
 
 impl SizeInfo for TextureCacheEntry<'_> {

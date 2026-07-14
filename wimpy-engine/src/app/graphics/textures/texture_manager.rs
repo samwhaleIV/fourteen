@@ -525,7 +525,7 @@ impl TextureManager {
                 input_size: *size_hint,
                 key,
                 view,
-                is_placeholder_view: false
+                load_state: Loadstate
             },
             // TODO: Touch
             _ => {

@@ -1,6 +1,6 @@
 use wgpu::{CommandEncoder, Origin3d, TexelCopyTextureInfo, TextureAspect};
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
-use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, SizeInfo};
+use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, SizeInfo, TextureLoadState};
 
 pub struct TextureAtlas {
     /// How many slots occupy a dimension
@@ -25,21 +25,21 @@ pub struct TextureAtlas {
     encoder_commands: Vec<EncoderTextureCopyCommand>,
 
     /// A cache of sub-UV areas within the atlas surface
-    metadata_cache: Vec<MetadataEntry>,
-}
-
-#[derive(Default,Copy,Clone,Eq,PartialEq)]
-enum TextureCondition {
-    #[default]
-    Uninitialized,
-    Placeholder(WimpyTextureKey),
-    Loaded(WimpyTextureKey)
+    cell_cache: Vec<Cell>,
 }
 
 #[derive(Default,Copy,Clone)]
-struct MetadataEntry {
+enum CellCondition {
+    #[default]
+    Empty,
+    Temporary(WimpyTextureKey),
+    Finalized(WimpyTextureKey)
+}
+
+#[derive(Default,Copy,Clone)]
+struct Cell {
     uv_area: WimpyRect,
-    condition: TextureCondition
+    condition: CellCondition
 }
 
 struct EncoderTextureCopyCommand {
@@ -62,7 +62,7 @@ impl TextureAtlas {
             key: texture_key,
             bind_group_id,
             size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
-            metadata_cache: vec![Default::default();slot_count],
+            cell_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
             encoder_commands: Vec::with_capacity(slot_count / 4)
         }
@@ -115,10 +115,28 @@ impl TextureAtlas {
     fn set_texture_internal(
         &mut self,
         texture_manager: &mut TextureManager,
-        src_texture_key: WimpyTextureKey,
+        new_key:         WimpyTextureKey,
         cache_slot:      usize,
     ) {
-        let src_texture = texture_manager.get(src_texture_key);
+        let src_texture = texture_manager.get(new_key);
+
+        let old_condition = self.cell_cache[cache_slot].condition;
+        let load_state = src_texture.load_state;
+
+        use CellCondition::*;
+        use TextureLoadState::*;
+
+
+        let new_condition: Option<CellCondition> = match old_condition {
+            Empty => todo!(),
+            condition @ (Temporary(old_key) | Finalized(old_key)) => {
+
+            }
+        };
+ 
+        let Some(new_condition) = new_condition else {
+            return;
+        };
 
         let slot_size = self.slot_size;
         let mut src_size = UWimpyPoint::from(src_texture.size());
@@ -135,28 +153,19 @@ impl TextureAtlas {
 
         let dst_origin = self.get_slot_origin(cache_slot as u32);
 
-        self.encoder_commands.push(EncoderTextureCopyCommand {
-            key: src_texture_key,
-            src_size,
-            dst_origin,
-        });
-
         let uv_area = {
             let position = WimpyVec::from(dst_origin);
             let size =     WimpyVec::from(src_size);
             WimpyRect { position, size } * self.size_recip
         };
 
-        let condition = match (self.metadata_cache[cache_slot].condition,src_texture.is_placeholder_view) {
-            (TextureCondition::Uninitialized, true) => todo!(),
-            (TextureCondition::Uninitialized, false) => todo!(),
-            (TextureCondition::Placeholder(wimpy_texture_key), true) => todo!(),
-            (TextureCondition::Placeholder(wimpy_texture_key), false) => todo!(),
-            (TextureCondition::Loaded, true) => todo!(),
-            (TextureCondition::Loaded, false) => todo!(),
-        };
+        self.encoder_commands.push(EncoderTextureCopyCommand {
+            key: new_key,
+            src_size,
+            dst_origin,
+        });
 
-        self.metadata_cache[cache_slot] = MetadataEntry { uv_area, condition };
+        self.cell_cache[cache_slot] = Cell { uv_area, condition: new_condition };
     }
 
     pub fn set_texture(
@@ -165,16 +174,16 @@ impl TextureAtlas {
         src_texture_key: WimpyTextureKey
     ) -> WimpyRect {
         let cache_update = self.residency_cache.insert(src_texture_key);
-        
-        if cache_update.feedback.is_some() || src_texture_key {
+
+        if cache_update.feedback.is_some() {
             self.set_texture_internal(texture_manager,src_texture_key,cache_update.slot);
         }
-        self.metadata_cache[cache_update.slot]
+        self.cell_cache[cache_update.slot]
     }
 
     pub fn get_uv_area(&self,texture: WimpyTextureKey) -> Option<WimpyRect> {
         if let Some(slot) = self.residency_cache.get_slot_for_key(texture) {
-            self.metadata_cache.get(slot).copied()
+            self.cell_cache.get(slot).copied()
         } else {
             None
         }
