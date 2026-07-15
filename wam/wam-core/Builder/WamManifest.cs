@@ -4,7 +4,7 @@ using WAM.Core.Builder.TexturePack;
 using WAM.Core.Internal.Generator;
 
 namespace WAM.Core.Builder {
-    using static System.Net.Mime.MediaTypeNames;
+
     using InputManifestResult = Result<InputManifest>;
     using ModelManifestResult = Result<ModelManifest>;
 
@@ -47,7 +47,7 @@ namespace WAM.Core.Builder {
         private readonly List<GeneratedFile> generatedFiles = [];
         private readonly Dictionary<uint,string> compileTimeDestinations = [];
 
-        private readonly List<VirtualModelAssetMeshletDescriptor> meshlet_builder = new(16);
+        private readonly List<VirtualModelAssetMeshletDescriptor> meshletBuilder = new(16);
 
         private void Reset() {
             namespaces.Clear();
@@ -57,7 +57,7 @@ namespace WAM.Core.Builder {
             namespaceBuilder.Reset();
             texturePackBuilder.Reset();
             compileTimeDestinations.Clear();
-            meshlet_builder.Clear();
+            meshletBuilder.Clear();
         }
 
         public IEnumerable<FileMap> GetFileMaps() {
@@ -112,6 +112,30 @@ namespace WAM.Core.Builder {
                     Destination = compileTimeDestination
                 };
                 fileMaps.Add(fileMap);
+
+                if(type == FileType.Image)
+                {
+                    using var fileStream = File.OpenRead(compileTimeSourcePath);
+                    int width, height;
+                    try
+                    {
+                        var skImageInfo = SKBitmap.DecodeBounds(fileStream);
+                        width = skImageInfo.Width;
+                        height = skImageInfo.Height;
+                    }
+                    catch(Exception exception)
+                    {
+                        Console.WriteLine($"Could not decode image bounds for '{compileTimeSourcePath}': {exception}");
+                        width = 0;
+                        height = 0;
+                    }
+                    namespaceBuilder.AddImageSizeHint(new()
+                    {
+                        ID = ID,
+                        X = (uint)width,
+                        Y = (uint)height
+                    });
+                }
             }
 
             return ID;
@@ -165,7 +189,7 @@ namespace WAM.Core.Builder {
 
             var meshlets = modelManifest.Meshlets ?? [];
 
-            meshlet_builder.Clear();
+            meshletBuilder.Clear();
 
             foreach(var meshlet in meshlets) {
                 var diffuse = TryGetModelItem(manifest,directory,runtimeFileName,meshlet.Diffuse,"diffuse",FileType.Image);
@@ -177,13 +201,13 @@ namespace WAM.Core.Builder {
                 if(lightmap.Error != null) {
                     return lightmap.Error;
                 }
-                meshlet_builder.Add(new VirtualModelAssetMeshletDescriptor(diffuse.ID,lightmap.ID));
+                meshletBuilder.Add(new VirtualModelAssetMeshletDescriptor(diffuse.ID,lightmap.ID));
             }
 
             namespaceBuilder.AddVirtualModelAsset(new() {
                 ID = model.ID,
                 Name = runtimeFileName,
-                Meshlets = [.. meshlet_builder]
+                Meshlets = [.. meshletBuilder]
             });
 
             return null;
@@ -250,22 +274,6 @@ namespace WAM.Core.Builder {
                         Name = runtimeFileName,
                         ID = id
                     });
-                    if(type == FileType.Image) {
-                        using var fileStream = File.OpenRead(file);
-                        int width, height;
-                        try {
-                            var skImageInfo = SKBitmap.DecodeBounds(fileStream);
-                            width = skImageInfo.Width;
-                            height = skImageInfo.Height;
-                        } catch(Exception exception) {
-                            return Error.Create($"Could not decode image bounds: {exception}");
-                        }
-                        namespaceBuilder.AddImageSizeHint(new() {
-                            ID = id,
-                            X = (uint)width,
-                            Y = (uint)height
-                        });
-                    }
                 }
             }
             return null;

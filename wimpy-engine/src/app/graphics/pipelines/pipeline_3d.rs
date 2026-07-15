@@ -227,10 +227,10 @@ impl Pipeline3D {
 
         for draw_data in draw_data.into_iter() {
 
-            let meshlets = context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
+            let meshlets: &[TexturedMeshlet] = context.mesh_cache.get_textured_mesh_ref(draw_data.mesh);
 
             for meshlet in meshlets {
-                let [uv_diffuse, uv_lightmap] = {
+                let [uv_diffuse, uv_lightmap]: [WimpyRect; 2] = {
                     let (diffuse,lightmap) = match texture_strategy {
                         TextureStrategy::Standard => (
                             meshlet.diffuse,

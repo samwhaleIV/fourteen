@@ -10,6 +10,8 @@ const DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY: usize = 32;
 
 #[derive(Debug,Default)]
 pub struct WamManifest {
+    string_builder: String,
+
     pub hard_assets: SlotMap<HardAssetKey,HardAsset>,
 
     pub size_hints: SparseSecondaryMap<HardAssetKey,UWimpyPoint>,
@@ -17,8 +19,6 @@ pub struct WamManifest {
     pub text_assets:    HashMap<Rc<str>,    reference_types::Text>,
     pub image_assets:   HashMap<Rc<str>,    reference_types::Image>,
     pub model_assets:   HashMap<Rc<str>,    reference_types::Model>,
-
-    string_builder: String,
 }
 
 #[derive(Debug)]
@@ -68,8 +68,8 @@ impl WamManifest {
         };
 
         let mut manifest = Self {
-            hard_assets:    SlotMap::with_capacity_and_key      (DEFAULT_HARD_ASSET_CAPACITY),
             string_builder: String::with_capacity               (DEFAULT_NAME_STRING_BUILDER_CAPACITY),
+            hard_assets:    SlotMap::with_capacity_and_key      (DEFAULT_HARD_ASSET_CAPACITY),
             text_assets:    HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
             image_assets:   HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),
             model_assets:   HashMap::with_capacity              (DEFAULT_VIRTUAL_ASSET_BUCKET_CAPACITY),

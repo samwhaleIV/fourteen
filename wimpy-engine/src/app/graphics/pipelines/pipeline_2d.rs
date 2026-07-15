@@ -182,7 +182,7 @@ impl Pipeline2DPass<'_,'_> {
         T: WimpyTextureKeyResolver,
     {
         let key = texture.get_key();
-        let texture = self.context.texture_manager.get(key);
+        let texture = self.context.texture_manager.get_or_default(key);
         let uv_scale = texture.get_uv_scale();
 
         'update_bind_group: {

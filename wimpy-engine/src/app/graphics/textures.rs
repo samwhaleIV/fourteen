@@ -121,7 +121,7 @@ pub enum TextureLoadState {
         generation: u8
     },
     Loaded,
-    /// Could be a placeholder texture or an outright failure
+    /// Could be a placeholder texture or an outright failure.
     Fallback,
 }
 

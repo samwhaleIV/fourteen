@@ -1,4 +1,4 @@
-use wgpu::{CommandEncoder, Origin3d, TexelCopyTextureInfo, TextureAspect};
+use wgpu::{CommandEncoder, Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
 use crate::{UWimpyPoint, WimpyRect, WimpyVec, collections::clock_cache::ClockCache};
 use super::{WimpyTextureKey, BindGroupIdentity, TextureManager, TextureCacheEntry, TextureLoadState};
 
@@ -54,13 +54,14 @@ impl TextureAtlas {
         texture_key: WimpyTextureKey,
         bind_group_id: BindGroupIdentity,
     ) -> Self {
-        let slot_count = slot_size.pow(2) as usize;
+        let slot_count = slot_length.pow(2) as usize;
+        let atlas_width = slot_size * slot_length;
         Self {
             slot_length,
             slot_size,
             key: texture_key,
             bind_group_id,
-            size_recip: WimpyVec::ONE / WimpyVec::from(slot_size),
+            size_recip: WimpyVec::ONE / WimpyVec::from(atlas_width), 
             cell_cache: vec![Default::default();slot_count],
             residency_cache: ClockCache::new(slot_count),
             encoder_commands: Vec::with_capacity(slot_count / 4)
@@ -73,7 +74,7 @@ impl TextureAtlas {
         texture_manager: &mut TextureManager,
         encoder: &mut CommandEncoder
     ) {
-        let dst_texture = match texture_manager.get_readonly(self.key) {
+        let dst_texture = match texture_manager.get_no_touch(self.key) {
             Ok(texture) => texture.view.texture(),
             Err(error) => {
                 log::warn!("Failure to retrieve atlas destination texture: {:?}",error);
@@ -81,15 +82,12 @@ impl TextureAtlas {
             }
         };
         for command in self.encoder_commands.drain(..) {
-            let src_texture = match texture_manager.get_readonly(command.key) {
-                Ok(texture) => texture.view.texture(),
-                Err(error) => {
-                    log::warn!("Failure to retrieve atlas source texture: {:?}",error);
-                    continue;
-                }
+            let src_texture = match texture_manager.get_no_touch(command.key) {
+                Ok(entry) => entry,
+                Err(_) => texture_manager.get_fallback_texture(command.key),
             };
             let src = TexelCopyTextureInfo {
-                texture:    src_texture,
+                texture:    src_texture.view.texture(),
                 origin:     Origin3d::ZERO,
                 aspect:     TextureAspect::All,
                 mip_level:  0,
@@ -100,7 +98,11 @@ impl TextureAtlas {
                 aspect:     TextureAspect::All,
                 mip_level:  0,
             };
-            encoder.copy_texture_to_texture(src,dst,command.src_size.into());
+            encoder.copy_texture_to_texture(src, dst, Extent3d {
+                width: command.src_size.x.min(src.texture.width()),
+                height: command.src_size.y.min(src.texture.height()),
+                depth_or_array_layers: 1,
+            });
         }
     }
 
@@ -133,9 +135,15 @@ impl TextureAtlas {
 
         let dst_origin = self.get_slot_origin(cache_slot as u32);
 
-        let uv_area = {
-            let position = WimpyVec::from(dst_origin);
-            let size =     WimpyVec::from(src_size);
+        let uv_area = { // UV area with a pixel of total inset and half a pixel of offset
+            let position = WimpyVec {
+                x: dst_origin.x as f32 + 0.5,
+                y: dst_origin.y as f32 + 0.5,
+            };
+            let size = WimpyVec {
+                x: (src_size.x as f32 - 1.0).max(0.0),
+                y: (src_size.y as f32 - 1.0).max(0.0),
+            };
             WimpyRect { position, size } * self.size_recip
         };
 
@@ -153,7 +161,7 @@ impl TextureAtlas {
         texture_manager: &mut TextureManager,
         src_texture_key: WimpyTextureKey
     ) -> WimpyRect {
-        let src_texture = texture_manager.get(src_texture_key);
+        let src_texture = texture_manager.get_or_default(src_texture_key);
         let cache_update = self.residency_cache.insert(src_texture_key);
 
         let texture_status_changed = {

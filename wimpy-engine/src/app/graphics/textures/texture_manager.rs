@@ -530,10 +530,20 @@ impl TextureManager {
         self.cache.insert_keyless(texture)
     }
 
+    pub fn get_fallback_texture<'a>(&'a self,key: WimpyTextureKey) -> TextureCacheEntry<'a> {
+        let fallback = self.runtime_textures.missing;
+        TextureCacheEntry {
+            input_size: fallback.size,
+            key: key, 
+            view: &self.fallback_texture.view,
+            load_state: TextureLoadState::Fallback,
+        }
+    }
+
     /// Resolve a key to a WGPU texture view. Does NOT emit touch/streaming requests.
     /// 
     /// Note: Multiple disjoint texture entries can be obtained because `self` is not `mut`.
-    pub fn get_readonly<'a>(&'a self,key: WimpyTextureKey) -> Result<TextureCacheEntry<'a>,TextureManagerError> {
+    pub fn get_no_touch<'a>(&'a self,key: WimpyTextureKey) -> Result<TextureCacheEntry<'a>,TextureManagerError> {
         match self.cache.get(key) {
             Ok(WimpyTextureInternal { view: Some(view), size_hint, load_state, .. }) => {
                 Ok(TextureCacheEntry {
@@ -552,32 +562,15 @@ impl TextureManager {
         }
     }
 
-    /// Resolve a key to a WGPU texture view. Emits touch/streaming requests.
-    /// 
-    /// Will request that the texture asset is loaded if not already available. Returns a fallback value until then.
-    /// 
-    /// Note: If multiple texture views are needed, use `get_readonly` or `get_readonly_or_default` instead.
-    pub fn get<'a>(&'a mut self, key: WimpyTextureKey) -> TextureCacheEntry<'a> {
+    pub fn get_or_default<'a>(&'a mut self, key: WimpyTextureKey) -> TextureCacheEntry<'a> {
         self.touch(key);
 
-        match self.cache.get(key) {
-            Ok(WimpyTextureInternal { view, size_hint, load_state, .. }) => {
-                TextureCacheEntry {
-                    input_size: *size_hint,
-                    key,
-                    view: view.as_ref().unwrap_or(&self.fallback_texture.view), 
-                    load_state: *load_state,
-                }
+        match self.get_no_touch(key) {
+            Ok(entry) => entry,
+            Err(_error) => {
+                //log::trace!("Can't get texture, getting default. Reason: {:?}",error);
+                self.get_fallback_texture(key)
             },
-            Err(_) => {
-                let fallback = self.runtime_textures.missing;
-                TextureCacheEntry {
-                    input_size: fallback.size,
-                    key: fallback.key, 
-                    view: &self.fallback_texture.view,
-                    load_state: TextureLoadState::Fallback,
-                }
-            }
         }
     }
 

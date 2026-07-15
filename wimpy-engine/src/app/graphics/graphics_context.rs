@@ -273,7 +273,7 @@ impl OutputBuilder<'_> {
     where
         TRenderTarget: RenderTarget
     {
-        let view = self.graphics_context.texture_manager.get_readonly(frame.get_key())?.view;
+        let view = self.graphics_context.texture_manager.get_no_touch(frame.get_key())?.view;
 
         let pipeline_variant = match (frame.is_output_surface(),depth_stencil_config) {
             (true,  DepthStencilConfig::None) =>        PipelineVariantKey::OutputSurface,

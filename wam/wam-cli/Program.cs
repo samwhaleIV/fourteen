@@ -1,4 +1,5 @@
-﻿using WAM.Core;
+﻿using System.Text.RegularExpressions;
+using WAM.Core;
 using WAM.Core.Builder;
 
 namespace WAM.CLI {
@@ -107,8 +108,21 @@ namespace WAM.CLI {
             }
 
             Console.Write("enter command (or 'help' for a list of commands): ");
-            var input = Console.ReadLine()?.Split(' ') ?? [];
+            var input = GetArguments(Console.ReadLine() ?? string.Empty);
             Execute(FilterArgs(input));
+        }
+
+        private static string[] GetArguments(string input)
+        {
+            if(string.IsNullOrWhiteSpace(input))
+                return Array.Empty<string>();
+
+            var pattern = @"(?<match>[^\s""']+)|""(?<match>[^""]*)""|'(?<match>[^']*)'";
+
+            return Regex.Matches(input, pattern)
+                .Cast<Match>()
+                .Select(m => m.Groups["match"].Value)
+                .ToArray();
         }
 
         static void InvertColors(IEnumerable<string> args) {
