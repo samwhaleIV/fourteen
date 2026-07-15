@@ -6,7 +6,7 @@ use wasm_bindgen::{JsCast, JsValue, prelude::Closure};
 use web_sys::{js_sys::Float32Array, Document, Event, HtmlCanvasElement, KeyboardEvent, Window};
 use wgpu::{InstanceDescriptor, Limits, SurfaceTarget};
 
-use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::{*, graphics::*, input::*}};
+use wimpy_engine::{UWimpyPoint, WimpyRect, WimpyVec, app::{*, graphics::{*, textures::StreamingPolicy}, input::*}};
 
 const CANVAS_ID: &'static str = "main-canvas";
 
@@ -24,7 +24,6 @@ pub enum WebAppError {
     KeyEventBindFailure,
     RequestAnimationFrameFailure,
     ResizeEventBindFailure,
-    WimpyContextCreationFailure,
 }
 
 pub struct WebApp<TWimpyApp> {
@@ -107,16 +106,14 @@ where
             },
         }?;
 
-        let app_context = WimpyAppContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
+        let mut app_context = WimpyAppContext::create::<WimpyWebIO,TConfig>(WimpyContextCreationConfig {
             manifest_path,
-            input_device_hint: InputDevice::Unknown,
+            input_device_hint: InputDevice::MouseAndKeyboard,
             graphics_provider,
             texture_stream_policy: StreamingPolicy::Retained,
-        }).await else {
-            return Err(WebAppError::WimpyContextCreationFailure);
-        };
+        }).await;
 
-        let app = TWimpyApp::load(&mut app_context).await;
+        let app = TWimpyApp::create(&mut app_context).await;
 
         return Ok(Rc::new(RefCell::new(Self {
             last_frame_time: 0.0,
@@ -180,18 +177,18 @@ where
         update_virtual_cursor(
             mouse_shell_state.position.x,
             mouse_shell_state.position.y,
-            match mouse_shell_state.cursor_glyph {
+            match mouse_shell_state.glyph {
                 MouseGlyph::None => 1,
                 MouseGlyph::Default => 2,
                 MouseGlyph::CanInteract => 3,
                 MouseGlyph::IsInteracting => 4,
                 MouseGlyph::CameraCrosshair => 5,
             },
-            match mouse_shell_state.likely_active_device {
-                LikelyActiveDevice::Mouse => false,
-                LikelyActiveDevice::Gamepad => true,
+            match mouse_shell_state.device {
+                InputDevice::MouseAndKeyboard => false,
+                InputDevice::Gamepad => true,
             },
-            match mouse_shell_state.mouse_mode {
+            match mouse_shell_state.mode {
                 MouseMode::Interface => 1,
                 MouseMode::Camera => 2,
             }

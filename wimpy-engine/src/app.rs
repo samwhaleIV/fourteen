@@ -12,6 +12,9 @@ use wam::AssetManager;
 use debug_shell::DebugShell;
 use input::{InputManager, InputDevice};
 use kvs::KeyValueStore;
+use wgpu::{Queue, Texture};
+
+use crate::UWimpyPoint;
 
 #[derive(Debug,serde::Deserialize)]
 pub enum FileError {
@@ -29,9 +32,28 @@ pub enum FileError {
 /// Textured data expected to be provided in \[u8;4\] RGBA
 /// 
 /// TODO: Determine if the input format should be linear or gamma space
-pub struct ImageData {
-    pub size: crate::UWimpyPoint,
-    pub data: Vec<u8>
+pub enum WimpyImageData<'a> {
+    Buffer {
+        size: UWimpyPoint,
+        data: &'a [u8]
+    },
+    Custom {
+        data: Box<dyn WimpyImageDataWriter>
+    }
+}
+
+pub trait WimpyImageDataWriter {
+    fn write(self: Box<Self>,queue: &Queue,texture: &Texture,max_size: UWimpyPoint);
+    fn size(&self) -> UWimpyPoint;
+}
+
+impl WimpyImageData<'_> {
+    pub fn size(&self) -> UWimpyPoint {
+        match self {
+            WimpyImageData::Buffer { size, .. } => *size,
+            WimpyImageData::Custom{ data } => data.size()
+        }
+    }
 }
 
 pub trait WimpyIO {
@@ -41,7 +63,7 @@ pub trait WimpyIO {
     fn load_binary_file(path: &Path) ->     impl Future<Output = Result<Vec<u8>,FileError>>;
     fn load_text_file(path: &Path) ->       impl Future<Output = Result<String,FileError>>;
 
-    fn load_image_file(path: &Path) ->      impl Future<Output = Result<ImageData,FileError>>;
+    fn load_image_file(path: &Path) ->      impl Future<Output = Result<WimpyImageData<'_>,FileError>>;
 }
 
 pub struct WimpyAppContext {

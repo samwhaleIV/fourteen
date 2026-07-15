@@ -1,10 +1,11 @@
 const UPDATE_OPERATIONS_BUFFER_DEFAULT_SIZE: usize =    16;
 
+use gltf::Image;
 use wgpu::*;
 use std::num::NonZeroU32;
 
 use super::{*,bind_group_cache::{BindGroupCache, BindGroupChannelSet, BindGroupChannel}};
-use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, wam::HardAsset, ImageData, EngineTextures, graphics::{GraphicsProvider, constants}}};
+use crate::{UWimpyPoint, WimpyPointRect, app::{WimpyIO, wam::HardAsset, WimpyImageData, EngineTextures, graphics::{GraphicsProvider, constants}}};
 
 #[derive(Default,Clone,Copy)]
 pub enum StreamingPolicy {
@@ -133,7 +134,7 @@ pub struct TextureViewConfig<'a> {
     size:               UWimpyPoint,
     /// Specify if this texture resource will ever be used as a render pass attachment.
     render_attachment:  bool,
-    image_data:         Option<&'a [u8]>
+    image_data:         Option<WimpyImageData<'a>>
 }
 
 fn create_texture_view(
@@ -150,10 +151,10 @@ fn create_texture_view(
         usage_flags |= TextureUsages::RENDER_ATTACHMENT;
     };
 
-    let size = config.size.into();
+    let max_size: UWimpyPoint = config.size;
 
     let texture = graphics_provider.get_device().create_texture(&wgpu::TextureDescriptor {
-        size,
+        size: max_size.into(),
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -168,21 +169,33 @@ fn create_texture_view(
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     if let Some(data) = config.image_data {
-        graphics_provider.get_queue().write_texture(
-            TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
+        match data {
+            WimpyImageData::Buffer { size, data } => {
+
+                graphics_provider.get_queue().write_texture(
+                    TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    &data,
+                    TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row:  Some(4 * size.x),
+                        rows_per_image: Some(size.y),
+                    },
+                    Extent3d {
+                        width: size.x.min(max_size.x),
+                        height: size.y.min(max_size.y),
+                        depth_or_array_layers: 1,
+                    },
+                )
             },
-            data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row:  Some(4 * size.width),
-                rows_per_image: Some(size.height),
+            WimpyImageData::Custom { data } => {
+                data.write(graphics_provider.get_queue(),&texture,max_size);
             },
-            size,
-        );
+        }
     }
 
     view
@@ -296,7 +309,7 @@ impl RuntimeTextureGenerator<'_> {
         let view = create_texture_view(self.graphics_provider,TextureViewConfig {
             size,
             render_attachment: false,
-            image_data: Some(data),
+            image_data: Some(WimpyImageData::Buffer { size, data }),
         });
         let texture = WimpyTextureInternal {
             size_hint: size,
@@ -332,7 +345,7 @@ impl TextureManager {
             let view = create_texture_view(graphics_provider,TextureViewConfig {
                 size,
                 render_attachment: false, //should probably be false copy to copy doesn't
-                image_data: Some(missing_texture_data),
+                image_data: Some(WimpyImageData::Buffer { size, data: missing_texture_data }),
             });
             FallbackTexture {
                 id: id_generator.next(),
@@ -387,14 +400,15 @@ impl TextureManager {
         }
     }
 
-    pub fn create_static_gpu_texture(&mut self,graphics_provider: &GraphicsProvider,image_data: ImageData) -> WimpyTexture {
+    pub fn create_static_gpu_texture(&mut self,graphics_provider: &GraphicsProvider,image_data: WimpyImageData) -> WimpyTexture {
+        let size = image_data.size();
         let texture_view = create_texture_view(graphics_provider,TextureViewConfig {
-            size: image_data.size,
+            size,
             render_attachment: false,
-            image_data: Some(&image_data.data)
+            image_data: Some(image_data)
         });
         let texture = WimpyTextureInternal {
-            size_hint:      image_data.size,
+            size_hint:      size,
             wam_id:         None,
             bind_group_id:  self.id_generator.next(),
             view:           Some(texture_view),
@@ -405,8 +419,8 @@ impl TextureManager {
         let texture_key = self.cache.insert_keyless(texture);
         WimpyTexture {
             key: texture_key,
-            size: image_data.size,
-            slice: WimpyPointRect::area_from_size(image_data.size),
+            size,
+            slice: WimpyPointRect::area_from_size(size),
         }
     }
 

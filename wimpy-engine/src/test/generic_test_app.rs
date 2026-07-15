@@ -166,11 +166,11 @@ where
             // pipeline_pass_2d.draw_untextured(&[DrawData2D {
             //     destination,
             //     source: WimpyRect::ONE,
-            //     color: WimpyColor::from((WimpyNamedColor::Red,WimpyOpacity::Percent50)),
+            //     color: WimpyColorLinear::from((WimpyNamedColor::Red,WimpyOpacity::Percent50)),
             //     rotation: 0.0,
             // }]);
 
-            //context.debug.render(&mut render_pass);
+            context.debug_shell.render(&mut render_pass);
 
             let mut lines_pass = render_pass.set_pipeline_lines_2d();
             lines_pass.draw_list(&self.lines);

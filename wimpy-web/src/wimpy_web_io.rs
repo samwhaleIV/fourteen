@@ -2,8 +2,8 @@ use std::path::Path;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{ImageBitmap, js_sys::{Object, Reflect, Uint8Array}};
-use wgpu::{CopyExternalImageDestInfo, CopyExternalImageSourceInfo, ExternalImageSource, Origin2d};
-use wimpy_engine::{UWimpyPoint, app::{FileError, WimpyIO, graphics::{TextureData, TextureDataWriteParameters}}};
+use wgpu::{CopyExternalImageDestInfo, CopyExternalImageSourceInfo, Extent3d, ExternalImageSource, Origin2d, Origin3d, Queue, Texture};
+use wimpy_engine::{UWimpyPoint, app::{FileError, WimpyIO, WimpyImageData, WimpyImageDataWriter}};
 
 pub struct WimpyWebIO;
 
@@ -80,16 +80,54 @@ impl WimpyIO for WimpyWebIO {
         }
     }
 
-    async fn load_image_file(path: &Path) -> Result<impl TextureData + 'static,FileError> {
+    async fn load_image_file(path: &Path) -> Result<WimpyImageData<'_>,FileError> {
         let path_str = path_to_str(path)?.to_string();
         let js_value = get_js_file_function_result(load_image_file_js(path_str).await)?;
         if js_value.is_instance_of::<ImageBitmap>() {
             let image = ImageBitmap::from(js_value);
-            Ok(ExternalImageSourceWrapper {
+            let wrapper = ExternalImageSourceWrapper {
                 value: ExternalImageSource::ImageBitmap(image),
-            })
+            };
+            let image_data = WimpyImageData::Custom { data: Box::new(wrapper) };
+            Ok(image_data)
         } else {
             Err(FileError::Other)
+        }
+    }
+}
+
+struct ExternalImageSourceWrapper {
+    value: ExternalImageSource
+}
+
+impl WimpyImageDataWriter for ExternalImageSourceWrapper {
+    fn write(self: Box<Self>,queue: &Queue,texture: &Texture,max_size: UWimpyPoint) {
+        let size = self.size();
+        queue.copy_external_image_to_texture(
+            &CopyExternalImageSourceInfo {
+                source: self.value,
+                origin: Origin2d::ZERO,
+                flip_y: false,
+            },
+            CopyExternalImageDestInfo {
+                texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            Extent3d {
+                width: size.x.min(max_size.x),
+                height: size.y.max(max_size.y),
+                depth_or_array_layers:1,
+            }
+        );
+    }
+    fn size(&self) -> UWimpyPoint {
+        UWimpyPoint {
+            x: self.value.width(),
+            y: self.value.height()
         }
     }
 }
@@ -101,31 +139,3 @@ fn path_to_str(path: &Path) -> Result<&str,FileError> {
     }
 }
 
-struct ExternalImageSourceWrapper {
-    value: ExternalImageSource
-}
-
-impl TextureData for ExternalImageSourceWrapper {
-    fn size(&self) -> UWimpyPoint {
-        return [self.value.width(),self.value.height()].into();
-    }
-
-    fn write_to_queue(self,parameters: &TextureDataWriteParameters) {
-        parameters.queue.copy_external_image_to_texture(
-            &CopyExternalImageSourceInfo {
-                source: self.value,
-                origin: Origin2d::ZERO,
-                flip_y: false,
-            },
-            CopyExternalImageDestInfo {
-                texture: parameters.texture,
-                mip_level: parameters.mip_level,
-                origin: parameters.origin,
-                aspect: parameters.aspect,
-                color_space: wgpu::PredefinedColorSpace::Srgb,
-                premultiplied_alpha: false,
-            },
-            parameters.texture_size
-        );
-    }
-}

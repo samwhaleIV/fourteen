@@ -22,11 +22,11 @@ fn map_std_io_error(error: std::io::ErrorKind) -> FileError {
 }
 
 impl WimpyIO for DekstopAppIO {
-    async fn load_image_file(path: &Path) -> Result<ImageData,FileError> {
+    async fn load_image_file(path: &Path) -> Result<WimpyImageData,FileError> {
         match ImageReader::open(path) {
             Ok(image_reader) => match image_reader.decode() {
                 Ok(value) => {
-                    Ok(ImageData {
+                    Ok(WimpyImageData {
                         size: [value.width(),value.height()].into(),
                         data: value.to_rgba8().to_vec(),
                     })
